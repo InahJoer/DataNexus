@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
 export class UpdateConnectionDto {
   @ApiPropertyOptional({
@@ -34,11 +34,4 @@ export class UpdateConnectionDto {
   @IsString({ message: 'La cadena de conexión debe ser un texto' })
   connectionString?: string;
 
-  @ApiPropertyOptional({
-    example: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
-    description: 'UUID del Workspace',
-  })
-  @IsOptional()
-  @IsUUID('4', { message: 'El workspaceId debe ser un UUID v4 válido' })
-  workspaceId?: string;
 }

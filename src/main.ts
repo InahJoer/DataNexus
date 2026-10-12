@@ -20,9 +20,11 @@ async function bootstrap() {
   const config = new DocumentBuilder()
     .setTitle('DataNexus API')
     .setDescription('Plataforma Unificada de Gestión de Datos Mixtas y Business Intelligence')
-    .setVersion('1.0')
+    .setVersion('1.1.0')
     .addTag('Auth', 'Autenticación y generación de tokens JWT')
     .addTag('Connections', 'Gestión y administración de conexiones DB encriptadas con AES-256')
+    .addTag('Users', 'Gestión de usuarios y roles dentro del workspace')
+    .addTag('Data Engine', 'Exploración de metadatos en motores externos')
     .addTag('DataNexus')
     .addBearerAuth()
     .build();

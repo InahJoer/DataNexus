@@ -2,6 +2,8 @@ import { Injectable, UnauthorizedException, ConflictException, NotFoundException
 import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { AuditService } from '../audit/audit.service.js';
+import type { RequestAuditContext } from './interfaces/authenticated-user.interface.js';
 import { LoginDto } from './dto/login.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
 import type { JwtPayload } from './interfaces/jwt-payload.interface.js';
@@ -11,6 +13,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly auditService: AuditService,
   ) {}
 
   /**
@@ -18,17 +21,32 @@ export class AuthService {
    * @param loginDto Datos de autenticación (email y contraseña)
    * @returns Token JWT de acceso y datos públicos del usuario
    */
-  async login(loginDto: LoginDto) {
+  async login(loginDto: LoginDto, requestContext: RequestAuditContext = {}) {
+    const normalizedEmail = loginDto.email.toLowerCase();
     const user = await this.prisma.user.findUnique({
-      where: { email: loginDto.email.toLowerCase() },
+      where: { email: normalizedEmail },
     });
 
     if (!user) {
+      await this.auditService.record({
+        eventType: 'LOGIN_FAILURE',
+        outcome: 'FAILURE',
+        actorEmail: normalizedEmail,
+        ...requestContext,
+      });
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
     const isPasswordValid = await bcrypt.compare(loginDto.password, user.password);
     if (!isPasswordValid) {
+      await this.auditService.record({
+        eventType: 'LOGIN_FAILURE',
+        outcome: 'FAILURE',
+        actorUserId: user.id,
+        actorEmail: user.email,
+        workspaceId: user.workspaceId,
+        ...requestContext,
+      });
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
@@ -41,6 +59,15 @@ export class AuthService {
     };
 
     const token = this.jwtService.sign(payload);
+
+    await this.auditService.record({
+      eventType: 'LOGIN_SUCCESS',
+      outcome: 'SUCCESS',
+      actorUserId: user.id,
+      actorEmail: user.email,
+      workspaceId: user.workspaceId,
+      ...requestContext,
+    });
 
     return {
       access_token: token,
@@ -84,7 +111,7 @@ export class AuthService {
         email: registerDto.email.toLowerCase(),
         name: registerDto.name,
         password: hashedPassword,
-        role: registerDto.role ?? 'LECTOR',
+        role: 'LECTOR',
         workspaceId: registerDto.workspaceId,
       },
       select: {

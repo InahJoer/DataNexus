@@ -37,3 +37,22 @@ model ConexionDB {
   workspaceId                String
   workspace                  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 }
+
+model RegistroAuditoria {
+  id          String   @id @default(uuid())
+  eventType   String
+  outcome     String
+  actorUserId String?
+  actorEmail  String?
+  workspaceId String?
+  targetType  String?
+  targetId    String?
+  detailsJson String?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([workspaceId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([eventType, createdAt])
+}
