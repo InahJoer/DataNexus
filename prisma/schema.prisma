@@ -11,10 +11,11 @@ datasource db {
 }
 
 model Workspace {
-  id            String   @id @default(uuid())
+  id            String       @id @default(uuid())
   nombreEmpresa String
-  fechaCreacion DateTime @default(now())
+  fechaCreacion DateTime     @default(now())
   users         User[]
+  conexiones    ConexionDB[]
 }
 
 model User {
@@ -25,4 +26,14 @@ model User {
   role        String    @default("LECTOR")
   workspaceId String
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model ConexionDB {
+  id                         String    @id @default(uuid())
+  tipoMotor                  String
+  host                       String
+  dbName                     String
+  connectionStringEncriptada String
+  workspaceId                String
+  workspace                  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 }
