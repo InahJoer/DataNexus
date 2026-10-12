@@ -7,16 +7,17 @@ import {
   Param,
   Delete,
   UseGuards,
-  Query,
   HttpCode,
   HttpStatus,
   ParseUUIDPipe,
+  Req,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { ConnectionsService } from './connections.service.js';
 import { CreateConnectionDto } from './dto/create-connection.dto.js';
 import { UpdateConnectionDto } from './dto/update-connection.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
+import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-user.interface.js';
 
 @ApiTags('Connections')
 @ApiBearerAuth()
@@ -27,140 +28,61 @@ export class ConnectionsController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({
-    summary: 'Crear nueva conexión a base de datos',
-    description:
-      'Recibe credenciales en texto plano, las encripta con AES-256 (RNF-01) y almacena el resultado en connectionStringEncriptada.',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'Conexión creada exitosamente con credenciales encriptadas.',
-  })
-  @ApiResponse({
-    status: 400,
-    description: 'Datos de entrada inválidos.',
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'No autorizado / Token JWT no provisto o inválido.',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Workspace no encontrado.',
-  })
-  create(@Body() createConnectionDto: CreateConnectionDto) {
-    return this.connectionsService.create(createConnectionDto);
+  @ApiOperation({ summary: 'Crear una conexión en el workspace autenticado' })
+  @ApiResponse({ status: 201, description: 'Conexión creada; las credenciales no se devuelven.' })
+  @ApiResponse({ status: 403, description: 'Solo ADMIN puede crear conexiones.' })
+  create(@Req() request: AuthenticatedRequest, @Body() input: CreateConnectionDto) {
+    return this.connectionsService.create(request.user, input, this.auditContext(request));
   }
 
   @Get()
-  @ApiOperation({
-    summary: 'Listar conexiones registradas',
-    description: 'Retorna todas las conexiones o filtra por workspaceId si se provee en la query.',
-  })
-  @ApiQuery({
-    name: 'workspaceId',
-    required: false,
-    description: 'Filtrar conexiones por UUID de Workspace',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Lista de conexiones obtenida.',
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'No autorizado.',
-  })
-  findAll(@Query('workspaceId') workspaceId?: string) {
-    return this.connectionsService.findAll(workspaceId);
+  @ApiOperation({ summary: 'Listar conexiones del workspace autenticado' })
+  @ApiResponse({ status: 200, description: 'Lista segura de conexiones.' })
+  findAll(@Req() request: AuthenticatedRequest) {
+    return this.connectionsService.findAll(request.user);
   }
 
   @Get(':id')
-  @ApiOperation({
-    summary: 'Obtener conexión por ID',
-    description: 'Retorna los datos de una conexión específica.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Detalle de la conexión.',
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'No autorizado.',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Conexión no encontrada.',
-  })
-  findOne(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
-    return this.connectionsService.findOne(id);
+  @ApiOperation({ summary: 'Obtener una conexión del workspace autenticado' })
+  @ApiResponse({ status: 200, description: 'Detalle seguro de la conexión.' })
+  @ApiResponse({ status: 404, description: 'Conexión no encontrada.' })
+  findOne(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ) {
+    return this.connectionsService.findOne(request.user, id);
   }
 
   @Patch(':id')
-  @ApiOperation({
-    summary: 'Actualizar conexión',
-    description:
-      'Permite actualizar metadata o la connectionString (que será nuevamente encriptada con AES-256).',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Conexión actualizada exitosamente.',
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'No autorizado.',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Conexión o Workspace no encontrado.',
-  })
+  @ApiOperation({ summary: 'Actualizar una conexión del workspace autenticado' })
+  @ApiResponse({ status: 200, description: 'Conexión actualizada y cambio auditado.' })
+  @ApiResponse({ status: 403, description: 'Solo ADMIN puede actualizar conexiones.' })
+  @ApiResponse({ status: 404, description: 'Conexión no encontrada.' })
   update(
+    @Req() request: AuthenticatedRequest,
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
-    @Body() updateConnectionDto: UpdateConnectionDto,
+    @Body() input: UpdateConnectionDto,
   ) {
-    return this.connectionsService.update(id, updateConnectionDto);
+    return this.connectionsService.update(request.user, id, input, this.auditContext(request));
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Eliminar conexión',
-    description: 'Elimina permanentemente una conexión por su ID.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Conexión eliminada exitosamente.',
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'No autorizado.',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Conexión no encontrada.',
-  })
-  remove(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
-    return this.connectionsService.remove(id);
+  @ApiOperation({ summary: 'Eliminar una conexión del workspace autenticado' })
+  @ApiResponse({ status: 200, description: 'Conexión eliminada y acción auditada.' })
+  @ApiResponse({ status: 403, description: 'Solo ADMIN puede eliminar conexiones.' })
+  @ApiResponse({ status: 404, description: 'Conexión no encontrada.' })
+  remove(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ) {
+    return this.connectionsService.remove(request.user, id, this.auditContext(request));
   }
 
-  @Get(':id/decrypted')
-  @ApiOperation({
-    summary: 'Obtener conexión con credenciales desencriptadas',
-    description:
-      'Desencripta con AES-256 la connectionString almacenada. Exclusivo para motores de procesamiento interno.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Conexión con credenciales desencriptadas.',
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'No autorizado.',
-  })
-  @ApiResponse({
-    status: 404,
-    description: 'Conexión no encontrada.',
-  })
-  getDecrypted(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
-    return this.connectionsService.getDecrypted(id);
+  private auditContext(request: AuthenticatedRequest) {
+    return {
+      ipAddress: request.ip,
+      userAgent: request.get('user-agent'),
+    };
   }
 }

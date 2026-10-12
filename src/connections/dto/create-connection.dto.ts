@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, IsUUID } from 'class-validator';
+import { IsNotEmpty, IsString } from 'class-validator';
 
 export class CreateConnectionDto {
   @ApiProperty({
@@ -34,11 +34,4 @@ export class CreateConnectionDto {
   @IsNotEmpty({ message: 'La cadena de conexión es requerida' })
   connectionString: string;
 
-  @ApiProperty({
-    example: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
-    description: 'Identificador UUID del Workspace al que pertenece la conexión',
-  })
-  @IsUUID('4', { message: 'El workspaceId debe ser un UUID v4 válido' })
-  @IsNotEmpty({ message: 'El workspaceId es requerido' })
-  workspaceId: string;
 }

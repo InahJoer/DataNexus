@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
 
 export class RegisterDto {
   @ApiProperty({ example: 'admin@datanexus.com', description: 'Correo electrónico del usuario' })
@@ -16,11 +16,6 @@ export class RegisterDto {
   @IsString()
   @MinLength(6)
   password: string;
-
-  @ApiProperty({ example: 'ADMIN', description: 'Rol del usuario', default: 'LECTOR', required: false })
-  @IsOptional()
-  @IsString()
-  role?: string;
 
   @ApiProperty({ example: 'UUID-DEL-WORKSPACE', description: 'ID del Workspace al que pertenece el usuario' })
   @IsString()

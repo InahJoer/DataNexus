@@ -1,9 +1,11 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, Get, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus, Get, UseGuards, Req } from '@nestjs/common';
+import type { Request } from 'express';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
 import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
+import type { AuthenticatedRequest } from './interfaces/authenticated-user.interface.js';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -24,8 +26,11 @@ export class AuthController {
     status: 401,
     description: 'Credenciales inválidas (email o contraseña incorrectos).',
   })
-  async login(@Body() loginDto: LoginDto) {
-    return this.authService.login(loginDto);
+  async login(@Body() loginDto: LoginDto, @Req() request: Request) {
+    return this.authService.login(loginDto, {
+      ipAddress: request.ip,
+      userAgent: request.get('user-agent') ?? undefined,
+    });
   }
 
   @Post('register')
@@ -61,7 +66,7 @@ export class AuthController {
     status: 401,
     description: 'No autorizado / Token ausente o inválido',
   })
-  getProfile(@Request() req: any) {
+  getProfile(@Req() req: AuthenticatedRequest) {
     return req.user;
   }
 }
