@@ -182,4 +182,128 @@ describe('DataEngineService', () => {
     expect(explorer.close).toHaveBeenCalledOnce();
     expect(explorer.cancel).toHaveBeenCalledOnce();
   });
+
+  describe('executeCrossJoin and executeCrossJoinForExport', () => {
+    it('executes in-memory cross join, applies LECTOR masking and paginates result', async () => {
+      const sqlConn = {
+        id: 'conn-sql',
+        tipoMotor: 'PostgreSQL',
+        dbName: 'crm',
+        connectionString: 'postgres://safe',
+      };
+      const noSqlConn = {
+        id: 'conn-nosql',
+        tipoMotor: 'Firestore',
+        dbName: 'store',
+        connectionString: 'firestore://safe',
+      };
+
+      const connectionsService = {
+        getConnectionForExploration: vi.fn().mockImplementation((id: string) => {
+          if (id === 'conn-sql') return Promise.resolve(sqlConn);
+          if (id === 'conn-nosql') return Promise.resolve(noSqlConn);
+          return Promise.reject(new Error('Not found'));
+        }),
+      } as unknown as ConnectionsService;
+
+      const mockExtractor = {
+        extract: vi.fn().mockImplementation((conn, entity) => {
+          if (entity === 'clientes') {
+            return Promise.resolve([
+              { id: '1', cliente_id: 'C1', nombre: 'Cliente 1', email: 'test@corp.com' },
+              { id: '2', cliente_id: 'C2', nombre: 'Cliente 2', email: 'otro@corp.com' },
+            ]);
+          }
+          if (entity === 'pedidos') {
+            return Promise.resolve([
+              { order_id: 'O1', cliente_ref: 'C1', total: 500, telefono: '+12345678' },
+              { order_id: 'O2', cliente_ref: 'C99', total: 999 }, // No hace match
+            ]);
+          }
+          return Promise.resolve([]);
+        }),
+      };
+
+      const service = new DataEngineService(
+        connectionsService,
+        () => undefined,
+        mockExtractor as any,
+      );
+
+      const result = await service.executeCrossJoin(
+        {
+          conexionSqlId: 'conn-sql',
+          conexionNoSqlId: 'conn-nosql',
+          tablaSql: 'clientes',
+          coleccionNoSql: 'pedidos',
+          llaveSql: 'cliente_id',
+          llaveNoSql: 'cliente_ref',
+          limit: 10,
+          offset: 0,
+        },
+        actor, // role: 'LECTOR'
+      );
+
+      expect(result.total).toBe(1);
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0].cliente_id).toBe('C1');
+      expect(result.data[0].order_id).toBe('O1');
+      // Verificamos que se enmascaró para rol LECTOR
+      expect(result.data[0].email).toBe('***@corp.com');
+      expect(result.data[0].telefono).toBe('********');
+    });
+
+    it('exports cross-join data to Excel and PDF formats', async () => {
+      const connectionsService = {
+        getConnectionForExploration: vi.fn().mockResolvedValue({
+          id: 'conn-1',
+          tipoMotor: 'PostgreSQL',
+          dbName: 'crm',
+          connectionString: 'postgres://safe',
+        }),
+      } as unknown as ConnectionsService;
+
+      const mockExtractor = {
+        extract: vi.fn().mockResolvedValue([{ id: '1', key: 'K1', value: 100 }]),
+      };
+
+      const service = new DataEngineService(
+        connectionsService,
+        () => undefined,
+        mockExtractor as any,
+      );
+
+      const excelExport = await service.executeCrossJoinForExport(
+        {
+          conexionSqlId: 'conn-1',
+          conexionNoSqlId: 'conn-1',
+          tablaSql: 't1',
+          coleccionNoSql: 't2',
+          llaveSql: 'key',
+          llaveNoSql: 'key',
+          format: 'excel',
+        },
+        actor,
+      );
+
+      expect(excelExport.contentType).toContain('spreadsheetml');
+      expect(Buffer.isBuffer(excelExport.buffer)).toBe(true);
+
+      const pdfExport = await service.executeCrossJoinForExport(
+        {
+          conexionSqlId: 'conn-1',
+          conexionNoSqlId: 'conn-1',
+          tablaSql: 't1',
+          coleccionNoSql: 't2',
+          llaveSql: 'key',
+          llaveNoSql: 'key',
+          format: 'pdf',
+        },
+        actor,
+      );
+
+      expect(pdfExport.contentType).toBe('application/pdf');
+      expect(Buffer.isBuffer(pdfExport.buffer)).toBe(true);
+    });
+  });
 });

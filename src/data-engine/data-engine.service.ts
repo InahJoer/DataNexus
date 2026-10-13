@@ -13,14 +13,34 @@ import {
   type DataExplorer,
   type DataExplorerFactory,
 } from './data-explorer.interface.js';
+import { DataExtractorService } from './adapters/data-extractor.adapter.js';
+import { MaskingService } from './masking/masking.service.js';
+import { ExportService } from './export/export.service.js';
+import { CrossJoinDto, ExportCrossJoinDto } from './dto/cross-join.dto.js';
 
 const EXPLORATION_TIMEOUT_MS = 10_000;
+
+export interface PaginatedCrossJoinResult {
+  total: number;
+  limit: number;
+  offset: number;
+  data: Record<string, any>[];
+}
+
+export interface ExportResult {
+  buffer: Buffer;
+  contentType: string;
+  filename: string;
+}
 
 @Injectable()
 export class DataEngineService {
   constructor(
     private readonly connectionsService: ConnectionsService,
     @Inject(DATA_EXPLORER_FACTORY) private readonly createExplorer: DataExplorerFactory,
+    private readonly dataExtractor: DataExtractorService = new DataExtractorService(),
+    private readonly maskingService: MaskingService = new MaskingService(),
+    private readonly exportService: ExportService = new ExportService(),
   ) {}
 
   async exploreConnection(actor: AuthenticatedUser, connectionId: string) {
@@ -53,6 +73,135 @@ export class DataEngineService {
     } finally {
       await this.closeWithinDeadline(explorer, deadline);
     }
+  }
+
+  /**
+   * Fase 4: Motor de Cross-Joins en memoria con extracción por Adaptador y Paginación.
+   * Fase 5: Enmascaramiento de datos si el usuario tiene rol LECTOR.
+   */
+  async executeCrossJoin(
+    payload: CrossJoinDto,
+    user: AuthenticatedUser,
+  ): Promise<PaginatedCrossJoinResult> {
+    const combinedData = await this.performJoin(payload, user);
+
+    // Enmascaramiento si es LECTOR
+    const securedData = this.maskingService.maskDataset(combinedData, user.role);
+
+    // Paginación nativa en memoria
+    const limit = payload.limit ?? 50;
+    const offset = payload.offset ?? 0;
+    const paginatedData = securedData.slice(offset, offset + limit);
+
+    return {
+      total: securedData.length,
+      limit,
+      offset,
+      data: paginatedData,
+    };
+  }
+
+  /**
+   * Fase 5: Exportación de datos combinados en Excel, PDF o JSON.
+   */
+  async executeCrossJoinForExport(
+    payload: ExportCrossJoinDto,
+    user: AuthenticatedUser,
+  ): Promise<ExportResult> {
+    const combinedData = await this.performJoin(payload, user);
+    const securedData = this.maskingService.maskDataset(combinedData, user.role);
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+
+    switch (payload.format) {
+      case 'excel': {
+        const buffer = await this.exportService.exportToExcel(securedData);
+        return {
+          buffer,
+          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          filename: `datanexus_export_${timestamp}.xlsx`,
+        };
+      }
+      case 'pdf': {
+        const buffer = await this.exportService.exportToPdf(
+          securedData,
+          `DataNexus - Join ${payload.tablaSql} x ${payload.coleccionNoSql}`,
+        );
+        return {
+          buffer,
+          contentType: 'application/pdf',
+          filename: `datanexus_export_${timestamp}.pdf`,
+        };
+      }
+      case 'json':
+      default: {
+        const buffer = this.exportService.exportToJson(securedData);
+        return {
+          buffer,
+          contentType: 'application/json',
+          filename: `datanexus_export_${timestamp}.json`,
+        };
+      }
+    }
+  }
+
+  /**
+   * Lógica nuclear de Inner Join en memoria indexada O(N + M).
+   */
+  private async performJoin(
+    payload: CrossJoinDto,
+    user: AuthenticatedUser,
+  ): Promise<Record<string, any>[]> {
+    // 1. Obtener y validar pertenencia al workspace para ambas conexiones
+    const [sqlConnection, noSqlConnection] = await Promise.all([
+      this.connectionsService.getConnectionForExploration(
+        payload.conexionSqlId,
+        user.workspaceId,
+      ),
+      this.connectionsService.getConnectionForExploration(
+        payload.conexionNoSqlId,
+        user.workspaceId,
+      ),
+    ]);
+
+    // 2. Extraer los datos mediante el Patrón Adaptador
+    const [sqlRecords, noSqlRecords] = await Promise.all([
+      this.dataExtractor.extract(sqlConnection, payload.tablaSql),
+      this.dataExtractor.extract(noSqlConnection, payload.coleccionNoSql),
+    ]);
+
+    // 3. Indexar la colección NoSQL por llaveNoSql para búsqueda en O(1)
+    const noSqlIndex = new Map<string, Record<string, any>[]>();
+    for (const doc of noSqlRecords) {
+      const keyValue = doc[payload.llaveNoSql];
+      if (keyValue !== undefined && keyValue !== null) {
+        const normalizedKey = String(keyValue).trim();
+        const existing = noSqlIndex.get(normalizedKey) ?? [];
+        existing.push(doc);
+        noSqlIndex.set(normalizedKey, existing);
+      }
+    }
+
+    // 4. Algoritmo de Inner Join cruzando con la tabla SQL
+    const joinedRows: Record<string, any>[] = [];
+    for (const sqlRow of sqlRecords) {
+      const keyValue = sqlRow[payload.llaveSql];
+      if (keyValue !== undefined && keyValue !== null) {
+        const normalizedKey = String(keyValue).trim();
+        const matches = noSqlIndex.get(normalizedKey);
+
+        if (matches && matches.length > 0) {
+          for (const match of matches) {
+            joinedRows.push({
+              ...sqlRow,
+              ...match,
+            });
+          }
+        }
+      }
+    }
+
+    return joinedRows;
   }
 
   private async withTimeout<T>(operation: Promise<T>, deadline: number): Promise<T> {
