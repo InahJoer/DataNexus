@@ -1,9 +1,33 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
+import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface.js';
 import type { AuditEventInput, AuditEventType, AuditTransactionClient } from './audit.types.js';
+import { QueryAuditLogsDto } from './dto/query-audit-logs.dto.js';
 
 const CONNECTION_FIELDS = new Set(['tipoMotor', 'host', 'dbName', 'connectionString']);
+
+export interface PaginatedAuditLogsResult {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  data: Array<{
+    id: string;
+    eventType: string;
+    outcome: string;
+    actorUserId: string | null;
+    actorEmail: string | null;
+    workspaceId: string | null;
+    targetType: string | null;
+    targetId: string | null;
+    detailsJson: string | null;
+    ipAddress: string | null;
+    userAgent: string | null;
+    createdAt: Date;
+  }>;
+}
 
 @Injectable()
 export class AuditService {
@@ -23,6 +47,56 @@ export class AuditService {
         ${input.ipAddress?.slice(0, 128) ?? null}, ${input.userAgent?.slice(0, 512) ?? null}
       )
     `;
+  }
+
+  /**
+   * Consulta paginada y filtrada de la bitácora de auditoría para el Workspace del actor.
+   * Requiere rol ADMIN.
+   */
+  async findAll(
+    actor: AuthenticatedUser,
+    query: QueryAuditLogsDto,
+  ): Promise<PaginatedAuditLogsResult> {
+    if (actor.role !== 'ADMIN') {
+      throw new ForbiddenException('Se requiere rol ADMIN para consultar los logs de auditoría');
+    }
+
+    const page = query.page && query.page > 0 ? query.page : 1;
+    const limit = query.limit && query.limit > 0 ? query.limit : 50;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.RegistroAuditoriaWhereInput = {
+      workspaceId: actor.workspaceId,
+    };
+
+    if (query.tipoAccion) {
+      where.eventType = query.tipoAccion;
+    }
+
+    if (query.fechaInicio || query.fechaFin) {
+      where.createdAt = {
+        ...(query.fechaInicio ? { gte: new Date(query.fechaInicio) } : {}),
+        ...(query.fechaFin ? { lte: new Date(query.fechaFin) } : {}),
+      };
+    }
+
+    const [total, data] = await Promise.all([
+      this.prisma.registroAuditoria.count({ where }),
+      this.prisma.registroAuditoria.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    return {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      data,
+    };
   }
 
   private serializeSafeDetails(
