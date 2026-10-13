@@ -8,6 +8,9 @@ import { FirestoreDataExplorer } from './adapters/firestore-data-explorer.js';
 import { MysqlDataExplorer } from './adapters/mysql-data-explorer.js';
 import { PostgresDataExplorer } from './adapters/postgres-data-explorer.js';
 import { SqlServerDataExplorer } from './adapters/sqlserver-data-explorer.js';
+import { DataExtractorService } from './adapters/data-extractor.adapter.js';
+import { MaskingService } from './masking/masking.service.js';
+import { ExportService } from './export/export.service.js';
 
 const createExplorer: DataExplorerFactory = (tipoMotor) => {
   const motor = tipoMotor.toLowerCase().replace(/[^a-z]/g, '');
@@ -25,7 +28,11 @@ const createExplorer: DataExplorerFactory = (tipoMotor) => {
   controllers: [DataEngineController],
   providers: [
     DataEngineService,
+    DataExtractorService,
+    MaskingService,
+    ExportService,
     { provide: DATA_EXPLORER_FACTORY, useValue: createExplorer },
   ],
+  exports: [DataEngineService, MaskingService, ExportService],
 })
 export class DataEngineModule {}
