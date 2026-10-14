@@ -191,6 +191,31 @@ export class ConnectionsService {
 
   /** Internal credential access for trusted backend modules; never expose through an HTTP route. */
   async getConnectionForExploration(id: string, workspaceId: string) {
+    const connection = await this.findConnectionForInternalUse(id, workspaceId);
+
+    return {
+      id: connection.id,
+      tipoMotor: connection.tipoMotor,
+      dbName: connection.dbName,
+      connectionString: this.encryptionService.decrypt(
+        connection.connectionStringEncriptada,
+      ),
+    };
+  }
+
+  /** Internal encrypted credential access for adapters that own decryption. */
+  async getConnectionForExtraction(id: string, workspaceId: string) {
+    const connection = await this.findConnectionForInternalUse(id, workspaceId);
+
+    return {
+      id: connection.id,
+      tipoMotor: connection.tipoMotor,
+      dbName: connection.dbName,
+      encryptedConnectionString: connection.connectionStringEncriptada,
+    };
+  }
+
+  private async findConnectionForInternalUse(id: string, workspaceId: string) {
     const connection = await this.prisma.conexionDB.findFirst({
       where: { id, workspaceId },
       select: {
@@ -202,13 +227,7 @@ export class ConnectionsService {
     });
 
     if (!connection) throw new NotFoundException(`Conexión con ID ${id} no encontrada`);
-
-    return {
-      id: connection.id,
-      tipoMotor: connection.tipoMotor,
-      dbName: connection.dbName,
-      connectionString: this.encryptionService.decrypt(connection.connectionStringEncriptada),
-    };
+    return connection;
   }
 
   private assertAdmin(actor: AuthenticatedUser): void {

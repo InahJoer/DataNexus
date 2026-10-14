@@ -6,6 +6,7 @@ import {
   IsString,
   IsUUID,
   IsIn,
+  MaxLength,
   Max,
   Min,
 } from 'class-validator';
@@ -34,7 +35,20 @@ export class CrossJoinDto {
   })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(128)
   tablaSql: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Esquema SQL de la tabla cuando se conoce o hay nombres duplicados',
+    example: 'dbo',
+    maxLength: 128,
+  })
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  esquemaSql?: string;
 
   @ApiProperty({
     description: 'Nombre de la colección NoSQL a consultar',
@@ -42,6 +56,7 @@ export class CrossJoinDto {
   })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(150)
   coleccionNoSql: string;
 
   @ApiProperty({
@@ -50,6 +65,7 @@ export class CrossJoinDto {
   })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(128)
   llaveSql: string;
 
   @ApiProperty({
@@ -58,6 +74,7 @@ export class CrossJoinDto {
   })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(150)
   llaveNoSql: string;
 
   @ApiPropertyOptional({
