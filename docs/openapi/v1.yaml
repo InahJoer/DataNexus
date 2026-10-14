@@ -207,6 +207,95 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /data-engine/join:
+    post:
+      tags: [Data Engine]
+      summary: Ejecutar un join real entre SQL Server y Firestore
+      description: >-
+        Lee hasta DATA_ENGINE_MAX_SOURCE_ROWS filas y DATA_ENGINE_MAX_SOURCE_BYTES
+        serializados por origen. El join limita las filas y los bytes resultantes
+        con DATA_ENGINE_MAX_JOIN_ROWS y DATA_ENGINE_MAX_JOIN_BYTES. Las columnas
+        duplicadas reciben prefijos sql. y nosql. Los motores sin extractor real
+        se rechazan.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrossJoinRequest'
+      responses:
+        '200':
+          description: Resultado combinado y enmascarado según el rol.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrossJoinResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '502':
+          description: Falló una conexión o consulta externa.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '504':
+          description: Una consulta externa excedió su timeout.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /data-engine/export:
+    post:
+      tags: [Data Engine]
+      summary: Exportar el resultado real del join
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrossJoinExportRequest'
+      responses:
+        '200':
+          description: Archivo generado en el formato solicitado.
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            application/json:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '502':
+          description: Falló una conexión o consulta externa.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '504':
+          description: Una consulta externa excedió su timeout.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
   /data-engine/connections/{connectionId}/schema:
     parameters:
       - name: connectionId
@@ -220,7 +309,7 @@ paths:
       tags: [Data Engine]
       summary: Explorar tablas, vistas o colecciones externas
       description: >-
-        Motores admitidos: SQLServer, PostgreSQL, MySQL y Firebase/Cloud Firestore.
+        Motores para explorar el catálogo: SQLServer, PostgreSQL, MySQL y Firebase/Cloud Firestore.
         Firestore lista colecciones de nivel raíz. Solo devuelve catálogo; no lee
         filas ni documentos. Tiempo máximo de 10 segundos.
       responses:
@@ -442,6 +531,70 @@ components:
           enum: [TABLE, VIEW, COLLECTION]
         schema:
           type: string
+    CrossJoinRequest:
+      type: object
+      required:
+        - conexionSqlId
+        - conexionNoSqlId
+        - tablaSql
+        - coleccionNoSql
+        - llaveSql
+        - llaveNoSql
+      properties:
+        conexionSqlId:
+          type: string
+          format: uuid
+        conexionNoSqlId:
+          type: string
+          format: uuid
+        tablaSql:
+          type: string
+          maxLength: 128
+        esquemaSql:
+          type: string
+          maxLength: 128
+        coleccionNoSql:
+          type: string
+          maxLength: 150
+        llaveSql:
+          type: string
+          maxLength: 128
+        llaveNoSql:
+          type: string
+          maxLength: 150
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 50
+        offset:
+          type: integer
+          minimum: 0
+          default: 0
+    CrossJoinExportRequest:
+      allOf:
+        - $ref: '#/components/schemas/CrossJoinRequest'
+        - type: object
+          required: [format]
+          properties:
+            format:
+              type: string
+              enum: [excel, pdf, json]
+    CrossJoinResult:
+      type: object
+      required: [total, limit, offset, data]
+      properties:
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+        data:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
     ApiError:
       type: object
       properties:
@@ -472,6 +625,12 @@ components:
             $ref: '#/components/schemas/ApiError'
     NotFound:
       description: Recurso no encontrado en el workspace autenticado.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    PayloadTooLarge:
+      description: El origen o resultado supera los límites de filas configurados.
       content:
         application/json:
           schema:

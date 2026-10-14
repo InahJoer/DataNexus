@@ -2,6 +2,7 @@ import {
   BadGatewayException,
   BadRequestException,
   GatewayTimeoutException,
+  PayloadTooLargeException,
   Inject,
   Injectable,
 } from '@nestjs/common';
@@ -17,6 +18,11 @@ import { DataExtractorService } from './adapters/data-extractor.adapter.js';
 import { MaskingService } from './masking/masking.service.js';
 import { ExportService } from './export/export.service.js';
 import { CrossJoinDto, ExportCrossJoinDto } from './dto/cross-join.dto.js';
+import {
+  getJsonByteLength,
+  getMaxJoinBytes,
+  getMaxJoinRows,
+} from './data-engine.constants.js';
 
 const EXPLORATION_TIMEOUT_MS = 10_000;
 
@@ -37,20 +43,23 @@ export interface ExportResult {
 export class DataEngineService {
   constructor(
     private readonly connectionsService: ConnectionsService,
-    @Inject(DATA_EXPLORER_FACTORY) private readonly createExplorer: DataExplorerFactory,
+    @Inject(DATA_EXPLORER_FACTORY)
+    private readonly createExplorer: DataExplorerFactory,
     private readonly dataExtractor: DataExtractorService = new DataExtractorService(),
     private readonly maskingService: MaskingService = new MaskingService(),
     private readonly exportService: ExportService = new ExportService(),
   ) {}
 
   async exploreConnection(actor: AuthenticatedUser, connectionId: string) {
-    const connection = await this.connectionsService.getConnectionForExploration(
-      connectionId,
-      actor.workspaceId,
-    );
+    const connection =
+      await this.connectionsService.getConnectionForExploration(
+        connectionId,
+        actor.workspaceId,
+      );
 
     const explorer = this.createExplorer(connection.tipoMotor);
-    if (!explorer) throw new BadRequestException('Motor de base de datos no soportado');
+    if (!explorer)
+      throw new BadRequestException('Motor de base de datos no soportado');
 
     const deadline = Date.now() + EXPLORATION_TIMEOUT_MS;
     try {
@@ -67,9 +76,13 @@ export class DataEngineService {
     } catch (error) {
       if (error instanceof GatewayTimeoutException) throw error;
       if (this.isTimeoutError(error)) {
-        throw new GatewayTimeoutException('La exploración excedió el tiempo permitido');
+        throw new GatewayTimeoutException(
+          'La exploración excedió el tiempo permitido',
+        );
       }
-      throw new BadGatewayException('No fue posible explorar el esquema de la conexión');
+      throw new BadGatewayException(
+        'No fue posible explorar el esquema de la conexión',
+      );
     } finally {
       await this.closeWithinDeadline(explorer, deadline);
     }
@@ -86,7 +99,10 @@ export class DataEngineService {
     const combinedData = await this.performJoin(payload, user);
 
     // Enmascaramiento si es LECTOR
-    const securedData = this.maskingService.maskDataset(combinedData, user.role);
+    const securedData = this.maskingService.maskDataset(
+      combinedData,
+      user.role,
+    );
 
     // Paginación nativa en memoria
     const limit = payload.limit ?? 50;
@@ -109,7 +125,10 @@ export class DataEngineService {
     user: AuthenticatedUser,
   ): Promise<ExportResult> {
     const combinedData = await this.performJoin(payload, user);
-    const securedData = this.maskingService.maskDataset(combinedData, user.role);
+    const securedData = this.maskingService.maskDataset(
+      combinedData,
+      user.role,
+    );
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 
@@ -118,7 +137,8 @@ export class DataEngineService {
         const buffer = await this.exportService.exportToExcel(securedData);
         return {
           buffer,
-          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          contentType:
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
           filename: `datanexus_export_${timestamp}.xlsx`,
         };
       }
@@ -154,11 +174,11 @@ export class DataEngineService {
   ): Promise<Record<string, any>[]> {
     // 1. Obtener y validar pertenencia al workspace para ambas conexiones
     const [sqlConnection, noSqlConnection] = await Promise.all([
-      this.connectionsService.getConnectionForExploration(
+      this.connectionsService.getConnectionForExtraction(
         payload.conexionSqlId,
         user.workspaceId,
       ),
-      this.connectionsService.getConnectionForExploration(
+      this.connectionsService.getConnectionForExtraction(
         payload.conexionNoSqlId,
         user.workspaceId,
       ),
@@ -166,7 +186,11 @@ export class DataEngineService {
 
     // 2. Extraer los datos mediante el Patrón Adaptador
     const [sqlRecords, noSqlRecords] = await Promise.all([
-      this.dataExtractor.extract(sqlConnection, payload.tablaSql),
+      this.dataExtractor.extract(
+        sqlConnection,
+        payload.tablaSql,
+        payload.esquemaSql ? { schema: payload.esquemaSql } : undefined,
+      ),
       this.dataExtractor.extract(noSqlConnection, payload.coleccionNoSql),
     ]);
 
@@ -184,6 +208,9 @@ export class DataEngineService {
 
     // 4. Algoritmo de Inner Join cruzando con la tabla SQL
     const joinedRows: Record<string, any>[] = [];
+    const maxJoinRows = getMaxJoinRows();
+    const maxJoinBytes = getMaxJoinBytes();
+    let joinedBytes = 0;
     for (const sqlRow of sqlRecords) {
       const keyValue = sqlRow[payload.llaveSql];
       if (keyValue !== undefined && keyValue !== null) {
@@ -192,10 +219,20 @@ export class DataEngineService {
 
         if (matches && matches.length > 0) {
           for (const match of matches) {
-            joinedRows.push({
-              ...sqlRow,
-              ...match,
-            });
+            if (joinedRows.length >= maxJoinRows) {
+              throw new PayloadTooLargeException(
+                `El join supera el máximo de ${maxJoinRows} filas configurado`,
+              );
+            }
+            const joinedRow = this.mergeRows(sqlRow, match);
+            const rowBytes = getJsonByteLength(joinedRow);
+            if (joinedBytes + rowBytes > maxJoinBytes) {
+              throw new PayloadTooLargeException(
+                `El join supera el máximo de ${maxJoinBytes} bytes configurado`,
+              );
+            }
+            joinedBytes += rowBytes;
+            joinedRows.push(joinedRow);
           }
         }
       }
@@ -204,7 +241,53 @@ export class DataEngineService {
     return joinedRows;
   }
 
-  private async withTimeout<T>(operation: Promise<T>, deadline: number): Promise<T> {
+  private mergeRows(
+    sqlRow: Record<string, any>,
+    noSqlRow: Record<string, any>,
+  ): Record<string, any> {
+    const duplicateKeys = new Set(
+      Object.keys(sqlRow).filter((key) =>
+        Object.prototype.hasOwnProperty.call(noSqlRow, key),
+      ),
+    );
+    const merged: Record<string, any> = {};
+
+    for (const [key, value] of Object.entries(sqlRow)) {
+      this.assignUnique(
+        merged,
+        duplicateKeys.has(key) ? `sql.${key}` : key,
+        value,
+      );
+    }
+    for (const [key, value] of Object.entries(noSqlRow)) {
+      this.assignUnique(
+        merged,
+        duplicateKeys.has(key) ? `nosql.${key}` : key,
+        value,
+      );
+    }
+
+    return merged;
+  }
+
+  private assignUnique(
+    target: Record<string, any>,
+    preferredKey: string,
+    value: any,
+  ): void {
+    let key = preferredKey;
+    let suffix = 2;
+    while (Object.prototype.hasOwnProperty.call(target, key)) {
+      key = `${preferredKey}_${suffix}`;
+      suffix += 1;
+    }
+    target[key] = value;
+  }
+
+  private async withTimeout<T>(
+    operation: Promise<T>,
+    deadline: number,
+  ): Promise<T> {
     const remainingMs = deadline - Date.now();
     if (remainingMs <= 0) {
       throw new GatewayTimeoutException('La exploración excedió 10 segundos');
@@ -215,12 +298,11 @@ export class DataEngineService {
       return await Promise.race([
         operation,
         new Promise<never>((_, reject) => {
-          timeout = setTimeout(
-            () => {
-              reject(new GatewayTimeoutException('La exploración excedió 10 segundos'));
-            },
-            remainingMs,
-          );
+          timeout = setTimeout(() => {
+            reject(
+              new GatewayTimeoutException('La exploración excedió 10 segundos'),
+            );
+          }, remainingMs);
         }),
       ]);
     } finally {
@@ -228,7 +310,10 @@ export class DataEngineService {
     }
   }
 
-  private async closeWithinDeadline(explorer: DataExplorer, deadline: number): Promise<void> {
+  private async closeWithinDeadline(
+    explorer: DataExplorer,
+    deadline: number,
+  ): Promise<void> {
     const remainingMs = deadline - Date.now();
     if (remainingMs <= 0) {
       void explorer.cancel().catch(() => undefined);
@@ -267,7 +352,9 @@ export class DataEngineService {
       code === 'ETIMEOUT' ||
       code === 'ESOCKETTIMEDOUT' ||
       code === 'ER_QUERY_TIMEOUT' ||
-      /timeout|deadline exceeded|maximum statement execution time exceeded/i.test(error.message)
+      /timeout|deadline exceeded|maximum statement execution time exceeded/i.test(
+        error.message,
+      )
     );
   }
 }

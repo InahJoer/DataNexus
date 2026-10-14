@@ -1,74 +1,94 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  GatewayTimeoutException,
+  HttpException,
+  Inject,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 
-export interface DecryptedConnectionInfo {
+export interface EncryptedConnectionInfo {
   id: string;
   tipoMotor: string;
   dbName: string;
-  connectionString: string;
+  encryptedConnectionString: string;
+}
+
+export interface DataExtractorOptions {
+  schema?: string;
 }
 
 export interface DataExtractorAdapter {
   extract(
-    connection: DecryptedConnectionInfo,
+    connection: EncryptedConnectionInfo,
     entityName: string,
+    options?: DataExtractorOptions,
   ): Promise<Record<string, any>[]>;
 }
+
+export type DataExtractorFactory = (
+  tipoMotor: string,
+) => DataExtractorAdapter | undefined;
+
+export const DATA_EXTRACTOR_FACTORY = Symbol('DATA_EXTRACTOR_FACTORY');
 
 @Injectable()
 export class DataExtractorService implements DataExtractorAdapter {
   private readonly logger = new Logger(DataExtractorService.name);
 
+  constructor(
+    @Inject(DATA_EXTRACTOR_FACTORY)
+    private readonly createExtractor: DataExtractorFactory = () => undefined,
+  ) {}
+
   async extract(
-    connection: DecryptedConnectionInfo,
+    connection: EncryptedConnectionInfo,
     entityName: string,
+    options?: DataExtractorOptions,
   ): Promise<Record<string, any>[]> {
     this.logger.log(
       `Extrayendo datos de '${entityName}' en motor '${connection.tipoMotor}' (DB: ${connection.dbName})`,
     );
 
-    const isNoSql = ['FIRESTORE', 'FIREBASE', 'MONGODB'].includes(
-      connection.tipoMotor.toUpperCase(),
+    const extractor = this.createExtractor(connection.tipoMotor);
+    if (!extractor) {
+      throw new BadRequestException(
+        'El motor de la conexión no tiene un extractor real disponible',
+      );
+    }
+
+    try {
+      return await extractor.extract(connection, entityName, options);
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      if (this.isTimeoutError(error)) {
+        throw new GatewayTimeoutException(
+          'La extracción excedió el tiempo permitido',
+        );
+      }
+
+      // Do not expose provider errors, which can contain connection or credential details.
+      this.logger.warn(
+        `Falló la extracción en motor '${connection.tipoMotor}'`,
+      );
+      throw new BadGatewayException(
+        'No fue posible extraer datos de la fuente externa',
+      );
+    }
+  }
+
+  private isTimeoutError(error: unknown): boolean {
+    if (!(error instanceof Error)) return false;
+    const code = (error as Error & { code?: string }).code;
+    return (
+      code === 'ETIMEDOUT' ||
+      code === 'ETIMEOUT' ||
+      code === 'ESOCKETTIMEDOUT' ||
+      code === 'DEADLINE_EXCEEDED' ||
+      /timeout|deadline exceeded|maximum statement execution time exceeded/i.test(
+        error.message,
+      )
     );
-
-    if (isNoSql) {
-      return this.generateSampleNoSqlData(entityName);
-    }
-
-    return this.generateSampleSqlData(entityName);
-  }
-
-  private generateSampleSqlData(tableName: string): Record<string, any>[] {
-    const records: Record<string, any>[] = [];
-    for (let i = 1; i <= 20; i++) {
-      records.push({
-        id: `cli_${i}`,
-        cliente_id: `cli_${i}`,
-        nombre: `Empresa Corp ${i}`,
-        email: `contacto${i}@empresacorp${i}.com`,
-        telefono: `+54 9 11 4455-66${i.toString().padStart(2, '0')}`,
-        pais: i % 2 === 0 ? 'Argentina' : 'México',
-        activo: true,
-        saldo: (i * 1500.5).toFixed(2),
-      });
-    }
-    return records;
-  }
-
-  private generateSampleNoSqlData(collectionName: string): Record<string, any>[] {
-    const documents: Record<string, any>[] = [];
-    for (let i = 1; i <= 30; i++) {
-      const clientIndex = (i % 20) + 1;
-      documents.push({
-        pedido_id: `ord_${1000 + i}`,
-        cliente_id: `cli_${clientIndex}`,
-        id: `ord_${1000 + i}`,
-        total: (i * 240.75).toFixed(2),
-        estado: i % 3 === 0 ? 'ENTREGADO' : i % 2 === 0 ? 'EN_CAMINO' : 'PENDIENTE',
-        fecha_creacion: new Date(Date.now() - i * 3600 * 24 * 1000).toISOString(),
-        items_count: (i % 5) + 1,
-        telefono_contacto: `+1 555 019${i.toString().padStart(2, '0')}`,
-      });
-    }
-    return documents;
   }
 }
