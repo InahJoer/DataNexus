@@ -20,6 +20,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiPayloadTooLargeResponse,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -42,14 +43,23 @@ export class DataEngineController {
       'Devuelve solo metadatos del catálogo externo. No incluye credenciales ni filas/documentos.',
   })
   @ApiOkResponse({ description: 'Catálogo de metadatos externos.' })
-  @ApiBadRequestResponse({ description: 'Motor de base de datos no soportado.' })
+  @ApiBadRequestResponse({
+    description: 'Motor de base de datos no soportado.',
+  })
   @ApiUnauthorizedResponse({ description: 'Token JWT inválido o ausente.' })
-  @ApiNotFoundResponse({ description: 'Conexión fuera del workspace o inexistente.' })
-  @ApiBadGatewayResponse({ description: 'Falló la conexión o la consulta del catálogo externo.' })
-  @ApiGatewayTimeoutResponse({ description: 'La exploración superó el límite de 10 segundos.' })
+  @ApiNotFoundResponse({
+    description: 'Conexión fuera del workspace o inexistente.',
+  })
+  @ApiBadGatewayResponse({
+    description: 'Falló la conexión o la consulta del catálogo externo.',
+  })
+  @ApiGatewayTimeoutResponse({
+    description: 'La exploración superó el límite de 10 segundos.',
+  })
   explore(
     @Req() request: AuthenticatedRequest,
-    @Param('connectionId', new ParseUUIDPipe({ version: '4' })) connectionId: string,
+    @Param('connectionId', new ParseUUIDPipe({ version: '4' }))
+    connectionId: string,
   ) {
     return this.dataEngineService.exploreConnection(request.user, connectionId);
   }
@@ -61,10 +71,23 @@ export class DataEngineController {
     description:
       'Cruza tablas relacionales y colecciones NoSQL por llaves foráneas. Aplica enmascaramiento automático de datos sensibles si el rol del usuario es LECTOR.',
   })
-  @ApiOkResponse({ description: 'Resultado combinado del Inner Join con paginación nativa.' })
+  @ApiOkResponse({
+    description: 'Resultado combinado del Inner Join con paginación nativa.',
+  })
   @ApiBadRequestResponse({ description: 'Payload inválido.' })
   @ApiUnauthorizedResponse({ description: 'Token JWT inválido o ausente.' })
-  @ApiNotFoundResponse({ description: 'Alguna de las conexiones no existe en el workspace.' })
+  @ApiNotFoundResponse({
+    description: 'Alguna de las conexiones no existe en el workspace.',
+  })
+  @ApiBadGatewayResponse({
+    description: 'Falló la extracción de una fuente externa.',
+  })
+  @ApiGatewayTimeoutResponse({
+    description: 'La consulta a una fuente externa agotó el tiempo.',
+  })
+  @ApiPayloadTooLargeResponse({
+    description: 'El origen o el resultado supera los límites configurados.',
+  })
   async crossJoin(
     @Req() request: AuthenticatedRequest,
     @Body() payload: CrossJoinDto,
@@ -79,16 +102,31 @@ export class DataEngineController {
     description:
       'Genera y descarga el archivo con los datos combinados y enmascarados según el rol del usuario.',
   })
-  @ApiOkResponse({ description: 'Archivo binario descargable con sus respectivos encabezados HTTP.' })
+  @ApiOkResponse({
+    description:
+      'Archivo binario descargable con sus respectivos encabezados HTTP.',
+  })
   @ApiBadRequestResponse({ description: 'Formato o parámetros no soportados.' })
   @ApiUnauthorizedResponse({ description: 'Token JWT inválido o ausente.' })
+  @ApiBadGatewayResponse({
+    description: 'Falló la extracción de una fuente externa.',
+  })
+  @ApiGatewayTimeoutResponse({
+    description: 'La consulta a una fuente externa agotó el tiempo.',
+  })
+  @ApiPayloadTooLargeResponse({
+    description: 'El origen o el resultado supera los límites configurados.',
+  })
   async exportJoin(
     @Req() request: AuthenticatedRequest,
     @Body() payload: ExportCrossJoinDto,
     @Res() res: Response,
   ) {
     const { buffer, contentType, filename } =
-      await this.dataEngineService.executeCrossJoinForExport(payload, request.user);
+      await this.dataEngineService.executeCrossJoinForExport(
+        payload,
+        request.user,
+      );
 
     res.set({
       'Content-Type': contentType,

@@ -38,6 +38,12 @@ Formatos de `connectionString` al crear una conexión:
 - SQL Server: cadena ADO.NET, por ejemplo `Server=host,1433;Database=db;User Id=user;Password=...;Encrypt=true`.
 - Firestore: JSON de cuenta de servicio de Google Cloud, con `project_id`, `client_email` y `private_key`; `dbName` puede ser `(default)` o el ID de una base Firestore.
 
+## Extracción y joins reales
+
+El join real admite SQL Server y Firebase/Cloud Firestore. PostgreSQL y MySQL siguen disponibles para explorar el catálogo, pero aún no tienen extractor real para el join. Firestore lee colecciones de nivel raíz y agrega el ID del documento como `__documentId`. En SQL Server se puede enviar `esquemaSql`; los identificadores se citan antes de formar la consulta.
+
+Para mantener acotado el join en memoria, `DATA_ENGINE_MAX_SOURCE_ROWS` limita cada origen (10 000 por defecto) y `DATA_ENGINE_MAX_SOURCE_BYTES` limita el tamaño serializado por origen (32 MiB). `DATA_ENGINE_MAX_JOIN_ROWS` limita las filas resultantes (100 000) y `DATA_ENGINE_MAX_JOIN_BYTES` su tamaño serializado (64 MiB). Los límites se leen al ejecutar cada extracción o join. Si se supera uno, la API devuelve HTTP 413. Las columnas con el mismo nombre se conservan como `sql.<campo>` y `nosql.<campo>`.
+
 La API debe ejecutarse en un entorno backend confiable para poder conectarse a los motores externos. Trata las cadenas de conexión y las cuentas de servicio como secretos; nunca las registres ni las expongas a clientes.
 
 ## Verificación enfocada
