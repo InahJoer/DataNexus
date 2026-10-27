@@ -1,53 +1,74 @@
 # DataNexus Backend
 
-API NestJS del backend de DataNexus. Este repositorio mantiene el esquema Prisma, migraciones, reglas de autorización y contratos HTTP. Los demás repositorios del Polyrepo integran la API por HTTP usando el contrato OpenAPI versionado.
+API NestJS del backend de DataNexus: Plataforma Unificada de Gestión de Datos Mixtas, Business Intelligence & Federación.
 
-## Desarrollo
+Para la especificación arquitectónica detallada, consulta [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md).
+
+## Requisitos y Configuración Inicial
 
 ```bash
 npm ci
 cp .env.example .env
 ```
 
-Configura `DATABASE_URL`, `JWT_SECRET` y `ENCRYPTION_KEY` en `.env`, y aplica las migraciones Prisma antes de iniciar la API:
+Configura las variables esenciales en `.env`:
+- `DATABASE_URL`: Cadena de conexión (SQLite local `file:./dev.db` o PostgreSQL).
+- `JWT_SECRET`: Clave secreta para firma y verificación de tokens JWT.
+- `ENCRYPTION_KEY`: Clave hex de 32 bytes (64 caracteres) para el cifrado AES-256-GCM.
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`: Configuración opcional para envío de correos (en local se utiliza transporter en memoria simulado).
+
+Aplica las migraciones de base de datos antes de iniciar:
 
 ```bash
-./node_modules/.bin/prisma migrate deploy
+npx prisma migrate dev
 npm run start:dev
+# o bien
+npm run dev
 ```
 
-La documentación Swagger se sirve en `/api/docs`. El contrato estable para consumo entre repositorios se mantiene en [`docs/openapi/v1.yaml`](docs/openapi/v1.yaml); las modificaciones de rutas o respuestas deben actualizar este archivo en el mismo cambio.
+La documentación Swagger interactiva se encuentra disponible en:
+- `http://localhost:3000/api/docs`
 
-## Auditoría y permisos
+---
 
-- Se registran logins exitosos y fallidos, cambios de rol y creación, actualización o eliminación de conexiones.
-- Los eventos de cambios de rol y conexiones se guardan en la misma transacción que el cambio.
-- Solo `ADMIN` puede cambiar roles o modificar conexiones. Las consultas y exploraciones siempre se limitan al `workspaceId` del JWT.
-- Las respuestas de conexiones no incluyen credenciales en claro ni cifradas. El endpoint de exploración devuelve únicamente metadatos.
+## Módulos y Capacidades Implementadas
 
-El registro público todavía recibe el `workspaceId` del cliente. La política de admisión de nuevos usuarios a workspaces sigue pendiente de definición; no considerar resuelta esa decisión por las restricciones añadidas a las operaciones de esta fase.
+1. **Autenticación & RBAC (`/auth`):**
+   - Registro de empresas/workspaces y login con JWT.
+   - Roles soportados: `ADMIN` y `LECTOR`.
+2. **Conexiones Cifradas (`/connections`):**
+   - Cifrado en reposo AES-256-GCM para cadenas de conexión.
+   - Acceso seguro sin exposición de credenciales hacia clientes.
+3. **Auditoría del Sistema (`/audit`):**
+   - Registro inmutable de inicios de sesión, cambios de rol y modificación de conexiones.
+   - `GET /audit/logs`: Consulta paginada (`page`, `limit`) y filtros por `fechaInicio`, `fechaFin` y `tipoAccion` (exclusivo `ADMIN`).
+4. **Motor de Datos & Cross-Joins (`/engine`):**
+   - Exploración de catálogos y esquemas externos en SQL Server, PostgreSQL, MySQL y Firestore.
+   - `POST /engine/join`: Cruce de datos en memoria (Inner Join indexado) con enmascaramiento automático de campos sensibles para rol `LECTOR`.
+   - `POST /engine/export`: Exportación descargable en Excel (`.xlsx`), PDF y JSON protegida con rate limiting de 20 req/min.
+5. **Automatización de Reportes & Cron (`/reports`):**
+   - Tarea programada diaria a la medianoche (UTC) mediante `@nestjs/schedule`.
+   - Despacho de reportes consolidados por correo electrónico con adjuntos binarios mediante `nodemailer`.
+6. **Seguridad Perimetral & Rate Limiting:**
+   - Políticas CORS restrictivas para orígenes autorizados de frontend (Next.js en local y producción).
+   - Throttling global mediante `@nestjs/throttler`.
+7. **Ecosistema Empresarial de Miembros (`/users`):**
+   - `GET /users`: Listado de miembros del Workspace.
+   - `POST /users/invite`: Invitación y alta de nuevos miembros con rol asignado (`ADMIN`/`LECTOR`).
+   - `PATCH /users/:id/role`: Modificación de roles por parte de administradores.
 
-## Exploración de esquemas externos
+---
 
-`GET /data-engine/connections/{connectionId}/schema` lista tablas y vistas de SQL Server, PostgreSQL y MySQL, o colecciones de nivel raíz de Cloud Firestore. No recorre subcolecciones anidadas, filas ni documentos. La operación tiene un límite de 10 segundos.
+## Pruebas de Calidad
 
-Formatos de `connectionString` al crear una conexión:
-
-- PostgreSQL: URL `postgres://` o `postgresql://`.
-- MySQL: URL `mysql://` con usuario/contraseña; `dbName` selecciona la base de datos.
-- SQL Server: cadena ADO.NET, por ejemplo `Server=host,1433;Database=db;User Id=user;Password=...;Encrypt=true`.
-- Firestore: JSON de cuenta de servicio de Google Cloud, con `project_id`, `client_email` y `private_key`; `dbName` puede ser `(default)` o el ID de una base Firestore.
-
-## Extracción y joins reales
-
-El join real admite SQL Server y Firebase/Cloud Firestore. PostgreSQL y MySQL siguen disponibles para explorar el catálogo, pero aún no tienen extractor real para el join. Firestore lee colecciones de nivel raíz y agrega el ID del documento como `__documentId`. En SQL Server se puede enviar `esquemaSql`; los identificadores se citan antes de formar la consulta.
-
-Para mantener acotado el join en memoria, `DATA_ENGINE_MAX_SOURCE_ROWS` limita cada origen (10 000 por defecto) y `DATA_ENGINE_MAX_SOURCE_BYTES` limita el tamaño serializado por origen (32 MiB). `DATA_ENGINE_MAX_JOIN_ROWS` limita las filas resultantes (100 000) y `DATA_ENGINE_MAX_JOIN_BYTES` su tamaño serializado (64 MiB). Los límites se leen al ejecutar cada extracción o join. Si se supera uno, la API devuelve HTTP 413. Las columnas con el mismo nombre se conservan como `sql.<campo>` y `nosql.<campo>`.
-
-La API debe ejecutarse en un entorno backend confiable para poder conectarse a los motores externos. Trata las cadenas de conexión y las cuentas de servicio como secretos; nunca las registres ni las expongas a clientes.
-
-## Verificación enfocada
+Ejecución completa de la suite de pruebas unitarias:
 
 ```bash
-npm test -- src/audit/audit.service.spec.ts src/auth/auth.service.spec.ts src/users/users.service.spec.ts src/connections/connections.service.spec.ts src/data-engine/data-engine.service.spec.ts
+npm run test
+```
+
+Compilación de producción:
+
+```bash
+npm run build
 ```
