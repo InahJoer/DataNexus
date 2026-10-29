@@ -24,6 +24,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-user.interface.js';
 import { DataEngineService } from './data-engine.service.js';
@@ -95,6 +96,7 @@ export class DataEngineController {
     return this.dataEngineService.executeCrossJoin(payload, request.user);
   }
 
+  @Throttle({ export: { limit: 20, ttl: 60000 } })
   @Post('export')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({

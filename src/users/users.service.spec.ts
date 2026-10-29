@@ -148,4 +148,76 @@ describe('UsersService', () => {
     expect(tx.user.update).not.toHaveBeenCalled();
     expect(auditService.record).not.toHaveBeenCalled();
   });
+
+  describe('findAll', () => {
+    it('returns all members of the actor workspace', async () => {
+      const mockUsers = [
+        { id: 'u1', name: 'User 1', email: 'u1@ws.com', role: 'ADMIN', workspaceId: 'ws-1' },
+        { id: 'u2', name: 'User 2', email: 'u2@ws.com', role: 'LECTOR', workspaceId: 'ws-1' },
+      ];
+      prismaService.user = { findMany: vi.fn().mockResolvedValue(mockUsers) };
+
+      const result = await service.findAll({
+        id: 'u1',
+        email: 'u1@ws.com',
+        name: 'User 1',
+        role: 'ADMIN',
+        workspaceId: 'ws-1',
+      });
+
+      expect(prismaService.user.findMany).toHaveBeenCalledWith({
+        where: { workspaceId: 'ws-1' },
+        select: expect.any(Object),
+        orderBy: { name: 'asc' },
+      });
+      expect(result).toHaveLength(2);
+    });
+  });
+
+  describe('inviteMember', () => {
+    it('blocks non-admin from inviting members', async () => {
+      await expect(
+        service.inviteMember(
+          { id: 'u2', email: 'u2@ws.com', name: 'User 2', role: 'LECTOR', workspaceId: 'ws-1' },
+          { email: 'new@ws.com', name: 'New', role: 'LECTOR' },
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('creates new user and records audit log for ADMIN', async () => {
+      prismaService.user = {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({
+          id: 'u-new',
+          email: 'new@ws.com',
+          name: 'New User',
+          role: 'LECTOR',
+          workspaceId: 'ws-1',
+        }),
+      };
+
+      const result = await service.inviteMember(
+        { id: 'u1', email: 'u1@ws.com', name: 'Admin', role: 'ADMIN', workspaceId: 'ws-1' },
+        { email: 'new@ws.com', name: 'New User', role: 'LECTOR' },
+      );
+
+      expect(prismaService.user.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          email: 'new@ws.com',
+          name: 'New User',
+          role: 'LECTOR',
+          workspaceId: 'ws-1',
+        }),
+        select: expect.any(Object),
+      });
+      expect(auditService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'USER_ROLE_CHANGED',
+          outcome: 'SUCCESS',
+          actorUserId: 'u1',
+        }),
+      );
+      expect(result.id).toBe('u-new');
+    });
+  });
 });
