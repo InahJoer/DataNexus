@@ -17,7 +17,14 @@ import {
 import { DataExtractorService } from './adapters/data-extractor.adapter.js';
 import { MaskingService } from './masking/masking.service.js';
 import { ExportService } from './export/export.service.js';
-import { CrossJoinDto, ExportCrossJoinDto } from './dto/cross-join.dto.js';
+import {
+  AGGREGATION_OPERATIONS,
+  CrossJoinDto,
+  ExportCrossJoinDto,
+  type AggregationMetricDto,
+  type AggregationOperation,
+} from './dto/cross-join.dto.js';
+import type { DataExtractorOptions } from './adapters/data-extractor.adapter.js';
 import {
   getJsonByteLength,
   getMaxJoinBytes,
@@ -37,6 +44,19 @@ export interface ExportResult {
   buffer: Buffer;
   contentType: string;
   filename: string;
+}
+
+interface AggregateMetricState {
+  count: number;
+  sum: number;
+  masked: boolean;
+}
+
+interface AggregateBucket {
+  keys: Record<string, any>;
+  metrics: Map<string, AggregateMetricState>;
+  output: Record<string, any>;
+  bytes: number;
 }
 
 @Injectable()
@@ -172,6 +192,8 @@ export class DataEngineService {
     payload: CrossJoinDto,
     user: AuthenticatedUser,
   ): Promise<Record<string, any>[]> {
+    this.validateAggregation(payload);
+
     // 1. Obtener y validar pertenencia al workspace para ambas conexiones
     const [sqlConnection, noSqlConnection] = await Promise.all([
       this.connectionsService.getConnectionForExtraction(
@@ -184,14 +206,25 @@ export class DataEngineService {
       ),
     ]);
 
-    // 2. Extraer los datos mediante el Patrón Adaptador
+    // 2. Aplicar filtros en los adaptadores antes de cargar registros
+    const sqlOptions: DataExtractorOptions = {
+      ...(payload.esquemaSql ? { schema: payload.esquemaSql } : {}),
+      ...(payload.filtrosSql ? { filters: payload.filtrosSql } : {}),
+    };
+    const noSqlOptions: DataExtractorOptions = payload.filtrosNoSql
+      ? { filters: payload.filtrosNoSql }
+      : {};
     const [sqlRecords, noSqlRecords] = await Promise.all([
       this.dataExtractor.extract(
         sqlConnection,
         payload.tablaSql,
-        payload.esquemaSql ? { schema: payload.esquemaSql } : undefined,
+        Object.keys(sqlOptions).length ? sqlOptions : undefined,
       ),
-      this.dataExtractor.extract(noSqlConnection, payload.coleccionNoSql),
+      this.dataExtractor.extract(
+        noSqlConnection,
+        payload.coleccionNoSql,
+        Object.keys(noSqlOptions).length ? noSqlOptions : undefined,
+      ),
     ]);
 
     // 3. Indexar la colección NoSQL por llaveNoSql para búsqueda en O(1)
@@ -206,39 +239,231 @@ export class DataEngineService {
       }
     }
 
-    // 4. Algoritmo de Inner Join cruzando con la tabla SQL
+    // 4. Cruzar filas y, cuando se solicita, conservar solo el estado agregado.
     const joinedRows: Record<string, any>[] = [];
+    const groupBy = payload.groupBy ?? [];
+    const aggregations = payload.aggregations ?? [];
+    const aggregate = groupBy.length > 0 || aggregations.length > 0;
+    const aggregateGroups = new Map<string, AggregateBucket>();
     const maxJoinRows = getMaxJoinRows();
     const maxJoinBytes = getMaxJoinBytes();
+    let joinedCount = 0;
     let joinedBytes = 0;
+    let aggregateBytes = 0;
+
+    if (aggregate && groupBy.length === 0 && aggregations.length > 0) {
+      const bucket = this.createAggregateBucket({}, aggregations);
+      bucket.output = this.toAggregateRow(bucket, aggregations);
+      bucket.bytes = getJsonByteLength(bucket.output);
+      aggregateBytes = bucket.bytes;
+      aggregateGroups.set('[]', bucket);
+    }
+
     for (const sqlRow of sqlRecords) {
       const keyValue = sqlRow[payload.llaveSql];
-      if (keyValue !== undefined && keyValue !== null) {
-        const normalizedKey = String(keyValue).trim();
-        const matches = noSqlIndex.get(normalizedKey);
+      if (keyValue === undefined || keyValue === null) continue;
+      const matches = noSqlIndex.get(String(keyValue).trim());
+      if (!matches?.length) continue;
 
-        if (matches && matches.length > 0) {
-          for (const match of matches) {
-            if (joinedRows.length >= maxJoinRows) {
-              throw new PayloadTooLargeException(
-                `El join supera el máximo de ${maxJoinRows} filas configurado`,
-              );
-            }
-            const joinedRow = this.mergeRows(sqlRow, match);
-            const rowBytes = getJsonByteLength(joinedRow);
-            if (joinedBytes + rowBytes > maxJoinBytes) {
-              throw new PayloadTooLargeException(
-                `El join supera el máximo de ${maxJoinBytes} bytes configurado`,
-              );
-            }
-            joinedBytes += rowBytes;
-            joinedRows.push(joinedRow);
-          }
+      for (const match of matches) {
+        if (joinedCount >= maxJoinRows) {
+          throw new PayloadTooLargeException(
+            `El join supera el máximo de ${maxJoinRows} filas configurado`,
+          );
         }
+        joinedCount += 1;
+        const joinedRow = this.mergeRows(sqlRow, match);
+
+        if (aggregate) {
+          // Aggregate the secured source row so arbitrary metric aliases cannot
+          // reveal values that are masked for LECTOR users.
+          const aggregationRow = this.maskingService.maskRecordForRole(
+            joinedRow,
+            user.role,
+          );
+          const groupValues = Object.fromEntries(
+            groupBy.map((field) => [
+              field,
+              this.getOwnValue(aggregationRow, field),
+            ]),
+          );
+          const groupKey = this.serializeGroupValues(
+            groupBy.map((field) => this.getOwnValue(aggregationRow, field)),
+          );
+          let bucket = aggregateGroups.get(groupKey);
+          if (!bucket) {
+            bucket = this.createAggregateBucket(groupValues, aggregations);
+            aggregateGroups.set(groupKey, bucket);
+          }
+          const oldBytes = bucket.bytes;
+          this.addToAggregateBucket(
+            bucket,
+            joinedRow,
+            aggregationRow,
+            aggregations,
+            user.role,
+          );
+          bucket.output = this.toAggregateRow(bucket, aggregations);
+          bucket.bytes = getJsonByteLength(bucket.output);
+          aggregateBytes += bucket.bytes - oldBytes;
+          if (aggregateBytes > maxJoinBytes) {
+            throw new PayloadTooLargeException(
+              `El join supera el máximo de ${maxJoinBytes} bytes configurado`,
+            );
+          }
+          continue;
+        }
+
+        const rowBytes = getJsonByteLength(joinedRow);
+        if (joinedBytes + rowBytes > maxJoinBytes) {
+          throw new PayloadTooLargeException(
+            `El join supera el máximo de ${maxJoinBytes} bytes configurado`,
+          );
+        }
+        joinedBytes += rowBytes;
+        joinedRows.push(joinedRow);
       }
     }
 
-    return joinedRows;
+    return aggregate
+      ? Array.from(aggregateGroups.values(), (bucket) => bucket.output)
+      : joinedRows;
+  }
+
+  private validateAggregation(payload: CrossJoinDto): void {
+    const groupBy = payload.groupBy ?? [];
+    const aggregations = payload.aggregations ?? [];
+    const outputFields = new Set(groupBy);
+
+    if (
+      groupBy.some((field) => typeof field !== 'string' || !field.trim()) ||
+      aggregations.some(
+        (metric) =>
+          !metric ||
+          !AGGREGATION_OPERATIONS.includes(metric.operation) ||
+          typeof metric.as !== 'string' ||
+          !metric.as.trim() ||
+          (metric.operation !== 'COUNT' &&
+            (typeof metric.field !== 'string' || !metric.field.trim())),
+      )
+    ) {
+      throw new BadRequestException(
+        'La configuración de agregación no es válida',
+      );
+    }
+
+    for (const metric of aggregations) {
+      if (outputFields.has(metric.as)) {
+        throw new BadRequestException(
+          'Los nombres de grupo y agregación deben ser distintos',
+        );
+      }
+      outputFields.add(metric.as);
+    }
+
+    if (outputFields.size !== groupBy.length + aggregations.length) {
+      throw new BadRequestException(
+        'Los campos de agregación deben ser únicos',
+      );
+    }
+  }
+
+  private createAggregateBucket(
+    keys: Record<string, any>,
+    aggregations: AggregationMetricDto[],
+  ): AggregateBucket {
+    const metrics = new Map<string, AggregateMetricState>();
+    for (const metric of aggregations) {
+      metrics.set(metric.as, { count: 0, sum: 0, masked: false });
+    }
+    return { keys, metrics, output: {}, bytes: 0 };
+  }
+
+  private addToAggregateBucket(
+    bucket: AggregateBucket,
+    joinedRow: Record<string, any>,
+    aggregationRow: Record<string, any>,
+    aggregations: AggregationMetricDto[],
+    role?: string,
+  ): void {
+    for (const metric of aggregations) {
+      const state = bucket.metrics.get(metric.as)!;
+      if (state.masked) continue;
+      const rawValue = metric.field
+        ? this.getOwnValue(joinedRow, metric.field)
+        : undefined;
+      if (
+        metric.field &&
+        this.maskingService.isValueMasked(metric.field, rawValue, role)
+      ) {
+        state.masked = true;
+        continue;
+      }
+      const value = metric.field
+        ? this.getOwnValue(aggregationRow, metric.field)
+        : undefined;
+      if (metric.operation === 'COUNT') {
+        if (!metric.field || (value !== null && value !== undefined)) {
+          state.count += 1;
+        }
+        continue;
+      }
+      if (value === null || value === undefined) continue;
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        throw new BadRequestException(
+          `El campo '${metric.field}' debe contener valores numéricos para ${metric.operation}`,
+        );
+      }
+      state.sum += value;
+      if (!Number.isFinite(state.sum)) {
+        throw new BadRequestException(
+          `El campo '${metric.field}' supera el rango numérico permitido`,
+        );
+      }
+      state.count += 1;
+    }
+  }
+
+  private toAggregateRow(
+    bucket: AggregateBucket,
+    aggregations: AggregationMetricDto[],
+  ): Record<string, any> {
+    const metricEntries = aggregations.map((metric) => {
+      const state = bucket.metrics.get(metric.as)!;
+      let value: string | number | null;
+      if (state.masked) {
+        value = '********';
+      } else {
+        switch (metric.operation as AggregationOperation) {
+          case 'COUNT':
+            value = state.count;
+            break;
+          case 'SUM':
+            value = state.count ? state.sum : null;
+            break;
+          case 'AVG':
+            value = state.count ? state.sum / state.count : null;
+            break;
+        }
+      }
+      return [metric.as, value];
+    });
+    return Object.fromEntries([
+      ...Object.entries(bucket.keys),
+      ...metricEntries,
+    ]);
+  }
+
+  private getOwnValue(row: Record<string, any>, field: string): unknown {
+    return Object.prototype.hasOwnProperty.call(row, field)
+      ? row[field]
+      : undefined;
+  }
+
+  private serializeGroupValues(values: unknown[]): string {
+    return JSON.stringify(values, (_key, value) =>
+      typeof value === 'bigint' ? value.toString() : value,
+    );
   }
 
   private mergeRows(

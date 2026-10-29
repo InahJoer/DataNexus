@@ -1,10 +1,20 @@
 import { BadRequestException, PayloadTooLargeException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { cert, deleteApp, initializeApp } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import {
+  getFirestore,
+  type Query,
+  type WhereFilterOp,
+} from 'firebase-admin/firestore';
+import {
+  FILTER_OPERATORS,
+  type DataFilter,
+  type FilterOperator,
+} from '../dto/cross-join.dto.js';
 import type { EncryptionService } from '../../common/encryption/encryption.service.js';
 import type {
   DataExtractorAdapter,
+  DataExtractorOptions,
   EncryptedConnectionInfo,
 } from './data-extractor.adapter.js';
 import {
@@ -13,6 +23,17 @@ import {
   getMaxSourceBytes,
   getMaxSourceRows,
 } from '../data-engine.constants.js';
+
+const WHERE_FILTER_OPERATORS: Record<FilterOperator, WhereFilterOp> = {
+  eq: '==',
+  neq: '!=',
+  gt: '>',
+  gte: '>=',
+  lt: '<',
+  lte: '<=',
+  in: 'in',
+  'not-in': 'not-in',
+};
 
 interface FirestoreServiceAccount {
   project_id?: string;
@@ -34,6 +55,7 @@ export class FirestoreDataExtractor implements DataExtractorAdapter {
   async extract(
     connection: EncryptedConnectionInfo,
     collectionName: string,
+    options: DataExtractorOptions = {},
   ): Promise<Record<string, any>[]> {
     this.validateCollectionName(collectionName);
     const account = this.parseServiceAccount(
@@ -58,9 +80,16 @@ export class FirestoreDataExtractor implements DataExtractorAdapter {
           ? getFirestore(app, connection.dbName)
           : getFirestore(app);
 
-      const query = firestore
-        .collection(collectionName)
-        .limit(this.maxRows + 1);
+      let query: Query = firestore.collection(collectionName);
+      for (const filter of options.filters ?? []) {
+        this.validateFilter(filter);
+        query = query.where(
+          filter.campo,
+          WHERE_FILTER_OPERATORS[filter.operador],
+          filter.valor,
+        );
+      }
+      query = query.limit(this.maxRows + 1);
       const stream = query.stream() as NodeJS.ReadableStream & {
         destroy(error?: Error): unknown;
       };
@@ -102,6 +131,48 @@ export class FirestoreDataExtractor implements DataExtractorAdapter {
     } finally {
       if (firestore) await firestore.terminate().catch(() => undefined);
       await deleteApp(app).catch(() => undefined);
+    }
+  }
+
+  private validateFilter(filter: DataFilter): void {
+    if (
+      !filter ||
+      typeof filter.campo !== 'string' ||
+      !filter.campo.trim() ||
+      filter.campo.length > 150 ||
+      !FILTER_OPERATORS.includes(filter.operador)
+    ) {
+      throw new BadRequestException('El filtro de Firestore no es válido');
+    }
+
+    const isScalar = (value: unknown) =>
+      typeof value === 'string' ||
+      typeof value === 'boolean' ||
+      (typeof value === 'number' && Number.isFinite(value));
+    if (filter.operador === 'in' || filter.operador === 'not-in') {
+      if (
+        !Array.isArray(filter.valor) ||
+        filter.valor.length === 0 ||
+        filter.valor.length > 10 ||
+        filter.valor.some((value) => value === null || !isScalar(value))
+      ) {
+        throw new BadRequestException(
+          'El valor del filtro de Firestore no es válido',
+        );
+      }
+      return;
+    }
+
+    if (
+      filter.valor === undefined ||
+      (filter.valor === null &&
+        filter.operador !== 'eq' &&
+        filter.operador !== 'neq') ||
+      (filter.valor !== null && !isScalar(filter.valor))
+    ) {
+      throw new BadRequestException(
+        'El valor del filtro de Firestore no es válido',
+      );
     }
   }
 

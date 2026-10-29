@@ -1,3 +1,4 @@
+import type { DataFilter } from '../dto/cross-join.dto.js';
 import {
   BadGatewayException,
   BadRequestException,
@@ -17,6 +18,7 @@ export interface EncryptedConnectionInfo {
 
 export interface DataExtractorOptions {
   schema?: string;
+  filters?: DataFilter[];
 }
 
 export interface DataExtractorAdapter {
