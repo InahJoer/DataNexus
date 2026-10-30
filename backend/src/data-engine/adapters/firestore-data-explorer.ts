@@ -12,6 +12,19 @@ export class FirestoreDataExplorer implements DataExplorer {
   private firestore?: Firestore;
 
   async listObjects(connectionString: string, dbName: string): Promise<CatalogObject[]> {
+    const firestore = this.connect(connectionString, dbName);
+    const collections = await firestore.listCollections();
+    return collections.map((collection) => ({ name: collection.id, type: 'COLLECTION' }));
+  }
+
+  async listFields(connectionString: string, dbName: string, collectionName: string): Promise<string[]> {
+    const firestore = this.firestore ?? this.connect(connectionString, dbName);
+    const snapshot = await firestore.collection(collectionName).limit(1).get();
+    if (snapshot.empty) return [];
+    return Object.keys(snapshot.docs[0].data() ?? {});
+  }
+
+  private connect(connectionString: string, dbName: string): Firestore {
     const account = JSON.parse(connectionString) as FirestoreServiceAccount;
     if (!account.project_id || !account.client_email || !account.private_key) {
       throw new Error('Invalid Firestore service account');
@@ -39,8 +52,7 @@ export class FirestoreDataExplorer implements DataExplorer {
       },
     });
 
-    const collections = await this.firestore.listCollections();
-    return collections.map((collection) => ({ name: collection.id, type: 'COLLECTION' }));
+    return this.firestore;
   }
 
   async cancel(): Promise<void> {

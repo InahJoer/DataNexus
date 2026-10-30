@@ -2,6 +2,7 @@ import {
   BadGatewayException,
   BadRequestException,
   GatewayTimeoutException,
+  NotFoundException,
   PayloadTooLargeException,
   Inject,
   Injectable,
@@ -18,6 +19,7 @@ import { DataExtractorService } from './adapters/data-extractor.adapter.js';
 import { MaskingService } from './masking/masking.service.js';
 import { ExportService } from './export/export.service.js';
 import type { ConnectionHealthItemDto, ConnectionHealthResponseDto } from './dto/connection-health.dto.js';
+import type { ConnectionFieldsResponseDto } from './dto/connection-schema.dto.js';
 import {
   AGGREGATION_OPERATIONS,
   CrossJoinDto,
@@ -164,6 +166,54 @@ export class DataEngineService {
       throw new BadGatewayException(
         'No fue posible explorar el esquema de la conexión',
       );
+    } finally {
+      await this.closeWithinDeadline(explorer, deadline);
+    }
+  }
+
+  async exploreConnectionFields(
+    actor: AuthenticatedUser,
+    connectionId: string,
+    objectName: string,
+    schema?: string,
+  ): Promise<ConnectionFieldsResponseDto> {
+    const connection = await this.connectionsService.getConnectionForExploration(
+      connectionId,
+      actor.workspaceId,
+    );
+    const explorer = this.createExplorer(connection.tipoMotor);
+    if (!explorer?.listFields) {
+      throw new BadRequestException('La exploración de campos no está disponible para este motor');
+    }
+
+    const deadline = Date.now() + EXPLORATION_TIMEOUT_MS;
+    try {
+      const objects = await this.withTimeout(
+        explorer.listObjects(connection.connectionString, connection.dbName),
+        deadline,
+      );
+      const objectExists = objects.some((object) =>
+        object.name === objectName && (!schema || object.schema === schema),
+      );
+      if (!objectExists) throw new NotFoundException('Tabla o colección no encontrada en la conexión');
+
+      const fields = await this.withTimeout(
+        explorer.listFields(connection.connectionString, connection.dbName, objectName, schema),
+        deadline,
+      );
+      return {
+        connectionId: connection.id,
+        objectName,
+        fields: [...new Set(fields)].filter((field) => typeof field === 'string' && field.length > 0),
+      };
+    } catch (error) {
+      if (error instanceof GatewayTimeoutException || error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      if (this.isTimeoutError(error)) {
+        throw new GatewayTimeoutException('La exploración de campos excedió el límite de 10 segundos');
+      }
+      throw new BadGatewayException('No fue posible explorar los campos de la fuente');
     } finally {
       await this.closeWithinDeadline(explorer, deadline);
     }

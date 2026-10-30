@@ -1,8 +1,8 @@
 'use client';
 
-import Link from 'next/link';
 import { ActivityList } from '@/components/activity-list';
 import { ConnectionStatus } from '@/components/connection-status';
+import { CrossJoinBuilder } from '@/components/cross-join-builder';
 import { DashboardSidebar } from '@/components/dashboard-sidebar';
 import { Icon } from '@/components/icons';
 import { MetricCard } from '@/components/metric-card';
@@ -99,10 +99,7 @@ function DashboardView() {
 
         {canReviewAudit && <ActivityList />}
 
-        {canMonitorConnections && <section className="dashboard-cta" id="joins">
-          <div className="dashboard-cta-copy"><span className="cta-icon"><Icon name="spark" size={17} /></span><div><strong>¿Listo para encontrar nuevas relaciones?</strong><span>Combina fuentes y descubre patrones entre tus datos.</span></div></div>
-          <Link className="button button--primary" href="#connections" id="reports">Crear un cruce <Icon name="arrow-right" size={14} /></Link>
-        </section>}
+        {canMonitorConnections && <CrossJoinBuilder />}
 
         <footer className="dashboard-footer"><span>{canMonitorConnections ? 'Métricas y actividad de muestra · conexiones verificadas en vivo' : 'Métricas de muestra'}</span><span>Workspace {session.user.workspaceId.slice(0, 8)}</span></footer>
       </section>

@@ -5,6 +5,7 @@ import {
   Body,
   Param,
   ParseUUIDPipe,
+  Query,
   Req,
   Res,
   UseGuards,
@@ -21,6 +22,7 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiQuery,
   ApiPayloadTooLargeResponse,
   ApiTags,
   ApiUnauthorizedResponse,
@@ -33,6 +35,9 @@ import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-user
 import { DataEngineService } from './data-engine.service.js';
 import { CrossJoinDto, ExportCrossJoinDto } from './dto/cross-join.dto.js';
 import { ConnectionHealthResponseDto } from './dto/connection-health.dto.js';
+import { ConnectionFieldsResponseDto, ConnectionSchemaResponseDto } from './dto/connection-schema.dto.js';
+import { PaginatedCrossJoinResultDto } from './dto/cross-join-result.dto.js';
+import { ExploreFieldsQueryDto } from './dto/explore-fields.dto.js';
 
 @ApiTags('Engine - Cross-Join & Analytics')
 @ApiBearerAuth()
@@ -63,7 +68,7 @@ export class DataEngineController {
     description:
       'Devuelve solo metadatos del catálogo externo. No incluye credenciales ni filas/documentos.',
   })
-  @ApiOkResponse({ description: 'Catálogo de metadatos externos.' })
+  @ApiOkResponse({ type: ConnectionSchemaResponseDto, description: 'Catálogo de metadatos externos.' })
   @ApiBadRequestResponse({
     description: 'Motor de base de datos no soportado.',
   })
@@ -86,6 +91,31 @@ export class DataEngineController {
     return this.dataEngineService.exploreConnection(request.user, connectionId);
   }
 
+  @Get('connections/:connectionId/schema/fields')
+  @Roles('ADMIN', 'OPERADOR')
+  @ApiOperation({ summary: 'Listar los campos de una tabla o colección para configurar un cruce' })
+  @ApiQuery({ name: 'objectName', required: true, maxLength: 150 })
+  @ApiQuery({ name: 'schema', required: false, maxLength: 128 })
+  @ApiOkResponse({ type: ConnectionFieldsResponseDto })
+  @ApiBadRequestResponse({ description: 'La exploración de campos no está disponible para este motor.' })
+  @ApiUnauthorizedResponse({ description: 'Token JWT inválido o ausente.' })
+  @ApiForbiddenResponse({ description: 'Se requiere rol ADMIN u OPERADOR para explorar campos.' })
+  @ApiNotFoundResponse({ description: 'Conexión, tabla o colección inexistente.' })
+  @ApiBadGatewayResponse({ description: 'Falló la consulta de metadatos en la fuente.' })
+  @ApiGatewayTimeoutResponse({ description: 'La exploración de campos superó el límite de 10 segundos.' })
+  exploreFields(
+    @Req() request: AuthenticatedRequest,
+    @Param('connectionId', new ParseUUIDPipe({ version: '4' })) connectionId: string,
+    @Query() query: ExploreFieldsQueryDto,
+  ) {
+    return this.dataEngineService.exploreConnectionFields(
+      request.user,
+      connectionId,
+      query.objectName,
+      query.schema,
+    );
+  }
+
   @Post('join')
   @Roles('ADMIN', 'OPERADOR')
   @HttpCode(HttpStatus.OK)
@@ -94,9 +124,7 @@ export class DataEngineController {
     description:
       'Cruza tablas relacionales y colecciones NoSQL por llaves foráneas. Disponible para ADMIN y OPERADOR.',
   })
-  @ApiOkResponse({
-    description: 'Resultado combinado del Inner Join con paginación nativa.',
-  })
+  @ApiOkResponse({ type: PaginatedCrossJoinResultDto, description: 'Resultado combinado del Inner Join con paginación nativa.' })
   @ApiBadRequestResponse({ description: 'Payload inválido.' })
   @ApiUnauthorizedResponse({ description: 'Token JWT inválido o ausente.' })
   @ApiForbiddenResponse({ description: 'Se requiere rol ADMIN u OPERADOR para ejecutar Cross-Joins.' })

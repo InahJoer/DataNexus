@@ -274,6 +274,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/engine/connections/{connectionId}/schema/fields": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Listar los campos de una tabla o colección para configurar un cruce */
+        get: operations["DataEngineController_exploreFields[0]"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/data-engine/connections/{connectionId}/schema/fields": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Listar los campos de una tabla o colección para configurar un cruce */
+        get: operations["DataEngineController_exploreFields[1]"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/engine/join": {
         parameters: {
             query?: never;
@@ -450,6 +484,18 @@ export interface components {
              */
             connectionString: string;
         };
+        ConnectionResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** @example POSTGRESQL */
+            tipoMotor: string;
+            /** @example db.internal */
+            host: string;
+            /** @example analytics */
+            dbName: string;
+            /** Format: uuid */
+            workspaceId: string;
+        };
         UpdateConnectionDto: {
             /**
              * @description Tipo de motor de base de datos
@@ -520,6 +566,35 @@ export interface components {
             /** Format: date-time */
             checkedAt: string;
             connections: components["schemas"]["ConnectionHealthItemDto"][];
+        };
+        CatalogObjectResponseDto: {
+            /** @example clientes */
+            name: string;
+            /** @enum {string} */
+            type: "TABLE" | "VIEW" | "COLLECTION";
+            /** @example public */
+            schema?: string;
+        };
+        ConnectionSchemaResponseDto: {
+            /** Format: uuid */
+            connectionId: string;
+            /** @example POSTGRESQL */
+            tipoMotor: string;
+            objects: components["schemas"]["CatalogObjectResponseDto"][];
+        };
+        ConnectionFieldsResponseDto: {
+            /** Format: uuid */
+            connectionId: string;
+            /** @example clientes */
+            objectName: string;
+            /**
+             * @example [
+             *       "id",
+             *       "email",
+             *       "created_at"
+             *     ]
+             */
+            fields: string[];
         };
         DataFilterDto: {
             /**
@@ -611,6 +686,18 @@ export interface components {
              * @default 0
              */
             offset: number;
+        };
+        PaginatedCrossJoinResultDto: {
+            /** @example 128 */
+            total: number;
+            /** @example 50 */
+            limit: number;
+            /** @example 0 */
+            offset: number;
+            /** @description Filas combinadas; los nombres de propiedad dependen de las fuentes. */
+            data: {
+                [key: string]: unknown;
+            }[];
         };
         ExportCrossJoinDto: {
             /**
@@ -876,7 +963,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ConnectionResponseDto"][];
+                };
             };
             /** @description Se requiere rol ADMIN u OPERADOR para listar conexiones. */
             403: {
@@ -932,7 +1021,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ConnectionResponseDto"];
+                };
             };
             /** @description Se requiere rol ADMIN u OPERADOR para consultar conexiones. */
             403: {
@@ -1224,7 +1315,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ConnectionSchemaResponseDto"];
+                };
             };
             /** @description Motor de base de datos no soportado. */
             400: {
@@ -1286,7 +1379,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ConnectionSchemaResponseDto"];
+                };
             };
             /** @description Motor de base de datos no soportado. */
             400: {
@@ -1332,6 +1427,138 @@ export interface operations {
             };
         };
     };
+    "DataEngineController_exploreFields[0]": {
+        parameters: {
+            query: {
+                objectName: string;
+                schema?: string;
+            };
+            header?: never;
+            path: {
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionFieldsResponseDto"];
+                };
+            };
+            /** @description La exploración de campos no está disponible para este motor. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Se requiere rol ADMIN u OPERADOR para explorar campos. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Conexión, tabla o colección inexistente. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Falló la consulta de metadatos en la fuente. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description La exploración de campos superó el límite de 10 segundos. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "DataEngineController_exploreFields[1]": {
+        parameters: {
+            query: {
+                objectName: string;
+                schema?: string;
+            };
+            header?: never;
+            path: {
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionFieldsResponseDto"];
+                };
+            };
+            /** @description La exploración de campos no está disponible para este motor. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Se requiere rol ADMIN u OPERADOR para explorar campos. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Conexión, tabla o colección inexistente. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Falló la consulta de metadatos en la fuente. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description La exploración de campos superó el límite de 10 segundos. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     "DataEngineController_crossJoin[0]": {
         parameters: {
             query?: never;
@@ -1350,7 +1577,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PaginatedCrossJoinResultDto"];
+                };
             };
             /** @description Payload inválido. */
             400: {
@@ -1421,7 +1650,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PaginatedCrossJoinResultDto"];
+                };
             };
             /** @description Payload inválido. */
             400: {

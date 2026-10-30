@@ -9,6 +9,7 @@ export interface CatalogObject {
 export interface DataExplorer {
   readonly tipoMotor: string;
   listObjects(connectionString: string, dbName: string): Promise<CatalogObject[]>;
+  listFields?(connectionString: string, dbName: string, objectName: string, schema?: string): Promise<string[]>;
   cancel(): Promise<void>;
   close(): Promise<void>;
 }
