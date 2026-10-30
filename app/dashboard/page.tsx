@@ -1,6 +1,6 @@
 'use client';
 
-import { ActivityList } from '@/components/activity-list';
+import { AuditTable } from '@/components/audit-table';
 import { ConnectionStatus } from '@/components/connection-status';
 import { CrossJoinBuilder } from '@/components/cross-join-builder';
 import { DashboardSidebar } from '@/components/dashboard-sidebar';
@@ -97,7 +97,7 @@ function DashboardView() {
           />}
         </div>
 
-        {canReviewAudit && <ActivityList />}
+        {canReviewAudit && <AuditTable />}
 
         {canMonitorConnections && <CrossJoinBuilder />}
 

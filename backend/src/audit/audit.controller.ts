@@ -13,6 +13,7 @@ import { Roles } from '../auth/decorators/roles.decorator.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-user.interface.js';
 import { AuditService } from './audit.service.js';
 import { QueryAuditLogsDto } from './dto/query-audit-logs.dto.js';
+import { PaginatedAuditLogsResponseDto } from './dto/audit-log-response.dto.js';
 
 @ApiTags('Audit')
 @ApiBearerAuth()
@@ -28,7 +29,7 @@ export class AuditController {
     description:
       'Obtiene los registros de auditoría del workspace con paginación nativa (?page=1&limit=50) y filtros opcionales por fechaInicio, fechaFin y tipoAccion. Requiere rol ADMIN.',
   })
-  @ApiOkResponse({ description: 'Listado paginado de logs de auditoría.' })
+  @ApiOkResponse({ type: PaginatedAuditLogsResponseDto, description: 'Listado paginado de logs de auditoría.' })
   @ApiForbiddenResponse({
     description: 'Se requiere rol ADMIN para consultar los logs de auditoría.',
   })

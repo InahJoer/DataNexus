@@ -462,6 +462,40 @@ export interface components {
              */
             workspaceId: string;
         };
+        AuditLogEntryResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** @example CONNECTION_CREATED */
+            eventType: string;
+            /** @enum {string} */
+            outcome: "SUCCESS" | "FAILURE";
+            /** Format: uuid */
+            actorUserId: string | null;
+            /** @example admin@datanexus.io */
+            actorEmail: string | null;
+            /** Format: uuid */
+            workspaceId: string | null;
+            /** @example CONNECTION */
+            targetType: string | null;
+            targetId: string | null;
+            /** @example {"tipoMotor":"SQLSERVER"} */
+            detailsJson: string | null;
+            ipAddress: string | null;
+            userAgent: string | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        PaginatedAuditLogsResponseDto: {
+            /** @example 129 */
+            total: number;
+            /** @example 1 */
+            page: number;
+            /** @example 50 */
+            limit: number;
+            /** @example 3 */
+            totalPages: number;
+            data: components["schemas"]["AuditLogEntryResponseDto"][];
+        };
         CreateConnectionDto: {
             /**
              * @description Tipo de motor de base de datos (ej. SQLServer, Firebase, PostgreSQL, MySQL)
@@ -931,7 +965,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["PaginatedAuditLogsResponseDto"];
+                };
             };
             /** @description Token JWT inválido o ausente. */
             401: {
