@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { PayloadTooLargeException } from '@nestjs/common';
+import { BadRequestException, PayloadTooLargeException } from '@nestjs/common';
 import type { EncryptionService } from '../../common/encryption/encryption.service.js';
 
 const mocks = vi.hoisted(() => ({
@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   deleteApp: vi.fn(),
   getFirestore: vi.fn(),
   collection: vi.fn(),
+  where: vi.fn(),
+  filterCalls: [] as Array<[string, string, unknown]>,
   limit: vi.fn(),
   stream: vi.fn(),
   terminate: vi.fn(),
@@ -57,9 +59,15 @@ describe('FirestoreDataExtractor', () => {
       collection: mocks.collection,
       terminate: mocks.terminate,
     });
-    mocks.collection
+    const query = { where: mocks.where, limit: mocks.limit };
+    mocks.filterCalls.length = 0;
+    mocks.where
       .mockReset()
-      .mockImplementation(() => ({ limit: mocks.limit }));
+      .mockImplementation((field: string, operator: string, value: unknown) => {
+        mocks.filterCalls.push([field, operator, value]);
+        return query;
+      });
+    mocks.collection.mockReset().mockReturnValue(query);
     mocks.limit
       .mockReset()
       .mockImplementation(() => ({ stream: mocks.stream }));
@@ -91,10 +99,7 @@ describe('FirestoreDataExtractor', () => {
     expect(mocks.appConfigs[0].options).toMatchObject({
       projectId: 'project-1',
     });
-    expect(mocks.getFirestore).toHaveBeenCalledWith(
-      mocks.app,
-      'orders-db',
-    );
+    expect(mocks.getFirestore).toHaveBeenCalledWith(mocks.app, 'orders-db');
     expect(mocks.collection).toHaveBeenCalledWith('orders');
     expect(mocks.limit).toHaveBeenCalledWith(6);
     expect(rows).toEqual([
@@ -107,6 +112,76 @@ describe('FirestoreDataExtractor', () => {
     expect(mocks.terminate).toHaveBeenCalledOnce();
     expect(mocks.deleteApp).toHaveBeenCalledWith(mocks.app);
   });
+
+  it('pushes multiple filters to Firestore before streaming', async () => {
+    const extractor = new FirestoreDataExtractor(encryptionService, 5);
+
+    const rows = await extractor.extract(connection, 'orders', {
+      filters: [
+        { campo: 'customer_id', operador: 'eq', valor: 'C1' },
+        { campo: 'total', operador: 'gte', valor: 10 },
+      ],
+    } as any);
+
+    expect(mocks.filterCalls).toEqual([
+      ['customer_id', '==', 'C1'],
+      ['total', '>=', 10],
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(mocks.limit).toHaveBeenCalledWith(6);
+  });
+
+  it.each([
+    ['eq', '==', 'C1'],
+    ['eq', '==', null],
+    ['neq', '!=', 'C1'],
+    ['neq', '!=', null],
+    ['gt', '>', 10],
+    ['gte', '>=', 10],
+    ['lt', '<', 10],
+    ['lte', '<=', 10],
+    ['in', 'in', ['C1', 'C2']],
+    ['not-in', 'not-in', ['C1', 'C2']],
+  ])(
+    'maps Firestore filter operator %s',
+    async (operator, nativeOperator, value) => {
+      await new FirestoreDataExtractor(encryptionService, 5).extract(
+        connection,
+        'orders',
+        {
+          filters: [{ campo: 'customer_id', operador: operator, valor: value }],
+        } as any,
+      );
+
+      expect(mocks.filterCalls).toEqual([
+        ['customer_id', nativeOperator, value],
+      ]);
+    },
+  );
+
+  it.each([
+    { campo: '', operador: 'eq', valor: 'C1' },
+    { campo: 'amount', operador: 'gt', valor: null },
+    {
+      campo: 'customer_id',
+      operador: 'in',
+      valor: Array.from({ length: 11 }, (_, i) => i),
+    },
+    { campo: 'customer_id', operador: 'raw', valor: 'C1' },
+  ])(
+    'rejects invalid source filters before querying Firestore',
+    async (filter) => {
+      await expect(
+        new FirestoreDataExtractor(encryptionService, 5).extract(
+          connection,
+          'orders',
+          { filters: [filter] } as any,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.filterCalls).toEqual([]);
+    },
+  );
 
   it('rejects collections over the row limit and still terminates the client', async () => {
     mocks.stream.mockImplementation(async function* () {
@@ -131,10 +206,10 @@ describe('FirestoreDataExtractor', () => {
       };
     });
 
-    const rows = await new FirestoreDataExtractor(
-      encryptionService,
-      5,
-    ).extract(connection, 'orders');
+    const rows = await new FirestoreDataExtractor(encryptionService, 5).extract(
+      connection,
+      'orders',
+    );
 
     expect(rows).toEqual([
       { __documentId: 'business-value', __documentId_2: 'firestore-id' },

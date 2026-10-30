@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { performance } from 'node:perf_hooks';
+const exportMocks = vi.hoisted(() => ({
+  datasets: [] as Array<Record<string, any>[]>,
+}));
+
 import {
   BadGatewayException,
   BadRequestException,
@@ -7,15 +11,18 @@ import {
 } from '@nestjs/common';
 vi.mock('./export/export.service.js', () => ({
   ExportService: class {
-    async exportToExcel() {
+    async exportToExcel(rows: Record<string, any>[]) {
+      exportMocks.datasets.push(rows);
       return Buffer.from('excel');
     }
 
-    async exportToPdf() {
+    async exportToPdf(rows: Record<string, any>[]) {
+      exportMocks.datasets.push(rows);
       return Buffer.from('pdf');
     }
 
-    exportToJson() {
+    exportToJson(rows: Record<string, any>[]) {
+      exportMocks.datasets.push(rows);
       return Buffer.from('json');
     }
   },
@@ -255,13 +262,11 @@ describe('DataEngineService', () => {
       };
 
       const connectionsService = {
-        getConnectionForExtraction: vi
-          .fn()
-          .mockImplementation((id: string) => {
-            if (id === 'conn-sql') return Promise.resolve(sqlConn);
-            if (id === 'conn-nosql') return Promise.resolve(noSqlConn);
-            return Promise.reject(new Error('Not found'));
-          }),
+        getConnectionForExtraction: vi.fn().mockImplementation((id: string) => {
+          if (id === 'conn-sql') return Promise.resolve(sqlConn);
+          if (id === 'conn-nosql') return Promise.resolve(noSqlConn);
+          return Promise.reject(new Error('Not found'));
+        }),
       } as unknown as ConnectionsService;
 
       const mockExtractor = {
@@ -569,5 +574,272 @@ describe('DataEngineService', () => {
       expect(pdfExport.contentType).toBe('application/pdf');
       expect(Buffer.isBuffer(pdfExport.buffer)).toBe(true);
     });
+  });
+});
+
+describe('DataEngineService aggregation pipeline', () => {
+  const actorWithAccess = { ...actor, role: 'ADMIN' };
+  const basePayload = {
+    conexionSqlId: 'conn-sql',
+    conexionNoSqlId: 'conn-nosql',
+    tablaSql: 'clients',
+    coleccionNoSql: 'orders',
+    llaveSql: 'client_id',
+    llaveNoSql: 'client_ref',
+  };
+
+  const createEngine = (
+    sqlRows: Record<string, any>[],
+    noSqlRows: Record<string, any>[],
+  ) => {
+    const connectionsService = {
+      getConnectionForExtraction: vi.fn().mockImplementation((id: string) =>
+        Promise.resolve({
+          id,
+          tipoMotor: id === 'conn-sql' ? 'SQLServer' : 'Firestore',
+          dbName: 'analytics',
+          encryptedConnectionString: 'encrypted-secret',
+        }),
+      ),
+    } as unknown as ConnectionsService;
+    const extractor = {
+      extract: vi
+        .fn()
+        .mockImplementation((_connection, entityName) =>
+          Promise.resolve(entityName === 'clients' ? sqlRows : noSqlRows),
+        ),
+    };
+    return {
+      service: new DataEngineService(
+        connectionsService,
+        () => undefined,
+        extractor as any,
+      ),
+      extractor,
+    };
+  };
+
+  it('passes source filters and SQL schema to their respective adapters', async () => {
+    const sqlFilter = { campo: 'active', operador: 'eq', valor: true };
+    const noSqlFilter = { campo: 'amount', operador: 'gte', valor: 10 };
+    const { service, extractor } = createEngine(
+      [{ client_id: 'C1' }],
+      [{ client_ref: 'C1' }],
+    );
+
+    await service.executeCrossJoin(
+      {
+        ...basePayload,
+        esquemaSql: 'sales',
+        filtrosSql: [sqlFilter],
+        filtrosNoSql: [noSqlFilter],
+      } as any,
+      actorWithAccess,
+    );
+
+    expect(extractor.extract).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ id: 'conn-sql' }),
+      'clients',
+      { schema: 'sales', filters: [sqlFilter] },
+    );
+    expect(extractor.extract).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ id: 'conn-nosql' }),
+      'orders',
+      { filters: [noSqlFilter] },
+    );
+  });
+
+  it('groups unified rows and calculates count, sum, and average', async () => {
+    const { service } = createEngine(
+      [
+        { client_id: 'C1', status: 'sql-status' },
+        { client_id: 'C2', status: 'sql-status' },
+        { client_id: 'C3', status: 'sql-status' },
+      ],
+      [
+        { client_ref: 'C1', status: 'paid', amount: 12 },
+        { client_ref: 'C1', status: 'paid', amount: null },
+        { client_ref: 'C2', status: 'paid', amount: 18 },
+        { client_ref: 'C3', status: 'cancelled', amount: 30 },
+      ],
+    );
+
+    const result = await service.executeCrossJoin(
+      {
+        ...basePayload,
+        groupBy: ['sql.status', 'nosql.status'],
+        aggregations: [
+          { operation: 'COUNT', as: 'rows' },
+          { operation: 'COUNT', field: 'amount', as: 'amounts' },
+          { operation: 'SUM', field: 'amount', as: 'total' },
+          { operation: 'AVG', field: 'amount', as: 'average' },
+        ],
+      } as any,
+      actorWithAccess,
+    );
+
+    expect(result.total).toBe(2);
+    expect(result.data).toEqual([
+      {
+        'sql.status': 'sql-status',
+        'nosql.status': 'paid',
+        rows: 3,
+        amounts: 2,
+        total: 30,
+        average: 15,
+      },
+      {
+        'sql.status': 'sql-status',
+        'nosql.status': 'cancelled',
+        rows: 1,
+        amounts: 1,
+        total: 30,
+        average: 30,
+      },
+    ]);
+  });
+
+  it('returns an empty grouped result and a zero-row global aggregate', async () => {
+    const { service } = createEngine([], []);
+    const grouped = await service.executeCrossJoin(
+      {
+        ...basePayload,
+        groupBy: ['status'],
+        aggregations: [{ operation: 'COUNT', as: 'rows' }],
+      } as any,
+      actorWithAccess,
+    );
+    const global = await service.executeCrossJoin(
+      {
+        ...basePayload,
+        aggregations: [
+          { operation: 'COUNT', as: 'rows' },
+          { operation: 'SUM', field: 'amount', as: 'total' },
+          { operation: 'AVG', field: 'amount', as: 'average' },
+        ],
+      } as any,
+      actorWithAccess,
+    );
+
+    expect(grouped.data).toEqual([]);
+    expect(global.data).toEqual([{ rows: 0, total: null, average: null }]);
+  });
+
+  it('rejects non-numeric values for SUM and AVG', async () => {
+    const { service } = createEngine(
+      [{ client_id: 'C1' }],
+      [{ client_ref: 'C1', amount: 'not-a-number' }],
+    );
+
+    await expect(
+      service.executeCrossJoin(
+        {
+          ...basePayload,
+          aggregations: [{ operation: 'SUM', field: 'amount', as: 'total' }],
+        } as any,
+        actorWithAccess,
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('masks aggregate metrics derived from sensitive fields for LECTOR', async () => {
+    const { service } = createEngine(
+      [{ client_id: 'C1' }],
+      [{ client_ref: 'C1', phone: 87654321 }],
+    );
+
+    const result = await service.executeCrossJoin(
+      {
+        ...basePayload,
+        aggregations: [{ operation: 'SUM', field: 'phone', as: 'value' }],
+      } as any,
+      { ...actor, role: 'LECTOR' },
+    );
+
+    expect(result.data).toEqual([{ value: '********' }]);
+  });
+
+  it('keeps sensitive aggregate values masked in exports', async () => {
+    exportMocks.datasets.length = 0;
+    const { service } = createEngine(
+      [{ client_id: 'C1' }],
+      [{ client_ref: 'C1', phone: 87654321 }],
+    );
+
+    await service.executeCrossJoinForExport(
+      {
+        ...basePayload,
+        aggregations: [{ operation: 'SUM', field: 'phone', as: 'value' }],
+        format: 'json',
+      } as any,
+      { ...actor, role: 'LECTOR' },
+    );
+
+    expect(exportMocks.datasets.at(-1)).toEqual([{ value: '********' }]);
+  });
+
+  it('preserves special metric aliases and ignores inherited source fields', async () => {
+    const { service } = createEngine(
+      [{ client_id: 'C1' }],
+      [{ client_ref: 'C1' }],
+    );
+
+    const result = await service.executeCrossJoin(
+      {
+        ...basePayload,
+        aggregations: [
+          { operation: 'COUNT', field: 'toString', as: 'methodCount' },
+          { operation: 'COUNT', field: 'phone', as: 'missingCount' },
+          { operation: 'COUNT', as: '__proto__' },
+        ],
+      } as any,
+      { ...actor, role: 'LECTOR' },
+    );
+    const row = result.data[0];
+
+    expect(row.methodCount).toBe(0);
+    expect(row.missingCount).toBe(0);
+    expect(Object.prototype.hasOwnProperty.call(row, '__proto__')).toBe(true);
+    expect(Object.getOwnPropertyDescriptor(row, '__proto__')?.value).toBe(1);
+  });
+
+  it('keeps 12,000 joined records within time and heap limits when grouped', async () => {
+    const rowCount = 12_000;
+    const sqlRows = Array.from({ length: rowCount }, (_, index) => ({
+      client_id: `client-${index}`,
+      bucket: `bucket-${Math.floor(index / 1_000)}`,
+    }));
+    const noSqlRows = Array.from({ length: rowCount }, (_, index) => ({
+      client_ref: `client-${index}`,
+      amount: 1,
+    }));
+    const { service } = createEngine(sqlRows, noSqlRows);
+    const heapBefore = process.memoryUsage().heapUsed;
+    const startedAt = performance.now();
+
+    const result = await service.executeCrossJoin(
+      {
+        ...basePayload,
+        groupBy: ['bucket'],
+        aggregations: [
+          { operation: 'COUNT', as: 'rows' },
+          { operation: 'SUM', field: 'amount', as: 'total' },
+          { operation: 'AVG', field: 'amount', as: 'average' },
+        ],
+      } as any,
+      actorWithAccess,
+    );
+
+    const elapsedMs = performance.now() - startedAt;
+    const heapGrowthBytes = Math.max(
+      0,
+      process.memoryUsage().heapUsed - heapBefore,
+    );
+    expect(result.total).toBe(12);
+    expect(result.data.reduce((sum, row) => sum + row.rows, 0)).toBe(rowCount);
+    expect(elapsedMs).toBeLessThan(2_000);
+    expect(heapGrowthBytes).toBeLessThan(64 * 1024 * 1024);
   });
 });

@@ -2,6 +2,7 @@ import { BadRequestException, PayloadTooLargeException } from '@nestjs/common';
 import sql from 'mssql';
 import type { ConnectionPool } from 'mssql';
 import type { EncryptionService } from '../../common/encryption/encryption.service.js';
+import { FILTER_OPERATORS, type DataFilter } from '../dto/cross-join.dto.js';
 import type {
   DataExtractorAdapter,
   DataExtractorOptions,
@@ -54,10 +55,17 @@ export class SqlServerDataExtractor implements DataExtractorAdapter {
           'La tabla no existe o no tiene columnas visibles',
         );
       }
-      const query = this.buildLimitedSelect(qualifiedTable, columns);
+      const query = this.buildLimitedSelect(
+        qualifiedTable,
+        columns,
+        options.filters ?? [],
+      );
 
       return await new Promise<Record<string, any>[]>((resolve, reject) => {
         const request = pool.request();
+        for (const [name, value] of Object.entries(query.parameters)) {
+          request.input(name, value);
+        }
         request.stream = true;
         const rows: Record<string, any>[] = [];
         let totalBytes = 0;
@@ -160,7 +168,12 @@ export class SqlServerDataExtractor implements DataExtractorAdapter {
   private buildLimitedSelect(
     qualifiedTable: string,
     columns: string[],
-  ): { sql: string; oversizedKey: string } {
+    filters: DataFilter[],
+  ): {
+    sql: string;
+    oversizedKey: string;
+    parameters: Record<string, unknown>;
+  } {
     const sourceAlias = '[__dataNexusSource]';
     const metricsAlias = '[__dataNexusMetrics]';
     const rowBytesAlias = `${metricsAlias}.[row_bytes]`;
@@ -184,10 +197,106 @@ export class SqlServerDataExtractor implements DataExtractorAdapter {
       `CASE WHEN ${estimatedJsonBytes} > ${this.maxBytes} THEN CONVERT(bit, 1) ELSE CONVERT(bit, 0) END AS ${this.quoteIdentifier(oversizedKey, 'columna')}`,
     );
 
+    const filterQuery = this.buildFilterQuery(columns, filters, sourceAlias);
+    const whereClause = filterQuery.clauses.length
+      ? ` WHERE ${filterQuery.clauses.join(' AND ')}`
+      : '';
+
     return {
-      sql: `SELECT TOP (${this.maxRows + 1}) ${projection.join(', ')} FROM ${qualifiedTable} AS ${sourceAlias} CROSS APPLY (SELECT ${rowBytesExpression} AS [row_bytes]) AS ${metricsAlias}`,
+      sql: `SELECT TOP (${this.maxRows + 1}) ${projection.join(', ')} FROM ${qualifiedTable} AS ${sourceAlias} CROSS APPLY (SELECT ${rowBytesExpression} AS [row_bytes]) AS ${metricsAlias}${whereClause}`,
       oversizedKey,
+      parameters: filterQuery.parameters,
     };
+  }
+
+  private buildFilterQuery(
+    columns: string[],
+    filters: DataFilter[],
+    sourceAlias: string,
+  ): { clauses: string[]; parameters: Record<string, unknown> } {
+    const clauses: string[] = [];
+    const parameters: Record<string, unknown> = {};
+    const columnSet = new Set(columns);
+    const supportedOperators = new Set<string>(FILTER_OPERATORS);
+
+    for (const [filterIndex, filter] of filters.entries()) {
+      if (
+        !filter ||
+        typeof filter.campo !== 'string' ||
+        !columnSet.has(filter.campo)
+      ) {
+        throw new BadRequestException(
+          'El campo de filtro no existe en la tabla',
+        );
+      }
+      if (!supportedOperators.has(filter.operador)) {
+        throw new BadRequestException(
+          'El operador de filtro no está soportado',
+        );
+      }
+
+      const column = `${sourceAlias}.${this.quoteIdentifier(filter.campo, 'filtro')}`;
+      if (filter.operador === 'eq' && filter.valor === null) {
+        clauses.push(`${column} IS NULL`);
+        continue;
+      }
+      if (filter.operador === 'neq' && filter.valor === null) {
+        clauses.push(`${column} IS NOT NULL`);
+        continue;
+      }
+
+      if (filter.operador === 'in' || filter.operador === 'not-in') {
+        if (
+          !Array.isArray(filter.valor) ||
+          filter.valor.length === 0 ||
+          filter.valor.length > 10 ||
+          filter.valor.some((value) => value === null || !this.isScalar(value))
+        ) {
+          throw new BadRequestException(
+            'El valor del filtro de lista no es válido',
+          );
+        }
+        const placeholders = filter.valor.map((value, valueIndex) => {
+          const parameterName = `filter_${filterIndex}_${valueIndex}`;
+          parameters[parameterName] = value;
+          return `@${parameterName}`;
+        });
+        clauses.push(
+          `${column} ${filter.operador === 'in' ? 'IN' : 'NOT IN'} (${placeholders.join(', ')})`,
+        );
+        continue;
+      }
+
+      if (!this.isScalar(filter.valor) || filter.valor === null) {
+        throw new BadRequestException('El valor del filtro no es válido');
+      }
+      const parameterName = `filter_${filterIndex}`;
+      parameters[parameterName] = filter.valor;
+      const operator = {
+        eq: '=',
+        neq: '<>',
+        gt: '>',
+        gte: '>=',
+        lt: '<',
+        lte: '<=',
+      }[filter.operador];
+      if (!operator) {
+        throw new BadRequestException(
+          'El operador de filtro no está soportado',
+        );
+      }
+      clauses.push(`${column} ${operator} @${parameterName}`);
+    }
+
+    return { clauses, parameters };
+  }
+
+  private isScalar(value: unknown): boolean {
+    return (
+      typeof value === 'string' ||
+      typeof value === 'boolean' ||
+      (typeof value === 'number' && Number.isFinite(value))
+    );
   }
 
   private uniqueColumnName(columns: string[], preferredName: string): string {
