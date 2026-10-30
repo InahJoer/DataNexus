@@ -1,16 +1,37 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icon } from '@/components/icons';
+import { useAuth } from '@/lib/auth-context';
 
 export function LoginForm() {
   const router = useRouter();
+  const { login, session } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  useEffect(() => {
+    if (session) router.replace('/workspaces');
+  }, [session, router]);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    router.push('/workspaces');
+    const formData = new FormData(event.currentTarget);
+    const email = String(formData.get('email') ?? '').trim();
+    const password = String(formData.get('password') ?? '');
+
+    setErrorMessage(null);
+    setIsSubmitting(true);
+    try {
+      await login({ email, password });
+      router.replace('/workspaces');
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'No se pudo iniciar sesión.');
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -25,6 +46,7 @@ export function LoginForm() {
           placeholder="nombre@empresa.com"
           autoComplete="email"
           required
+          aria-invalid={Boolean(errorMessage)}
         />
       </div>
 
@@ -42,6 +64,8 @@ export function LoginForm() {
           autoComplete="current-password"
           minLength={6}
           required
+          aria-invalid={Boolean(errorMessage)}
+          aria-describedby={errorMessage ? 'login-error' : undefined}
         />
         <button
           className="password-toggle"
@@ -53,10 +77,11 @@ export function LoginForm() {
         </button>
       </div>
 
-      <button className="button button--primary login-submit" type="submit">
-        Continuar <Icon name="arrow-right" size={17} />
+      {errorMessage && <p className="form-error" id="login-error" role="alert">{errorMessage}</p>}
+      <button className="button button--primary login-submit" type="submit" disabled={isSubmitting}>
+        {isSubmitting ? 'Verificando…' : 'Continuar'} {!isSubmitting && <Icon name="arrow-right" size={17} />}
       </button>
-      <p className="demo-note">Prototipo de diseño · cualquier correo y contraseña válidos funcionan.</p>
+      <p className="demo-note">Acceso validado de forma segura con DataNexus.</p>
     </form>
   );
 }

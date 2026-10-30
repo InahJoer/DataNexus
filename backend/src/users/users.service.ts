@@ -11,9 +11,8 @@ import type {
   AuthenticatedUser,
   RequestAuditContext,
 } from '../auth/interfaces/authenticated-user.interface.js';
+import type { UserRole } from '../auth/interfaces/user-role.js';
 import { InviteUserDto } from './dto/invite-user.dto.js';
-
-export type UserRole = 'ADMIN' | 'LECTOR';
 
 const SAFE_USER_SELECT = {
   id: true,

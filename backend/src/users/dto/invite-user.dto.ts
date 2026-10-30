@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEmail, IsIn, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
-import type { UserRole } from '../users.service.js';
+import { USER_ROLES, type UserRole } from '../../auth/interfaces/user-role.js';
 
 export class InviteUserDto {
   @ApiProperty({ description: 'Correo electrónico del nuevo miembro', example: 'nuevo.miembro@empresa.com' })
@@ -15,10 +15,10 @@ export class InviteUserDto {
 
   @ApiProperty({
     description: 'Rol inicial del usuario dentro del workspace',
-    enum: ['ADMIN', 'LECTOR'],
+    enum: [...USER_ROLES],
     example: 'LECTOR',
   })
-  @IsIn(['ADMIN', 'LECTOR'], { message: 'El rol debe ser ADMIN o LECTOR' })
+  @IsIn([...USER_ROLES], { message: 'El rol debe ser ADMIN, OPERADOR o LECTOR' })
   role: UserRole;
 
   @ApiPropertyOptional({

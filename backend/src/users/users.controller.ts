@@ -23,6 +23,8 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
+import { RolesGuard } from '../auth/guards/roles.guard.js';
+import { Roles } from '../auth/decorators/roles.decorator.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-user.interface.js';
 import { UpdateUserRoleDto } from './dto/update-user-role.dto.js';
 import { InviteUserDto } from './dto/invite-user.dto.js';
@@ -30,22 +32,25 @@ import { UsersService } from './users.service.js';
 
 @ApiTags('Users')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
+  @Roles('ADMIN')
   @Get()
   @ApiOperation({
-    summary: 'Listar miembros del workspace',
+    summary: 'Listar miembros del workspace (ADMIN)',
     description: 'Devuelve todos los usuarios que pertenecen al mismo Workspace del usuario autenticado.',
   })
   @ApiOkResponse({ description: 'Listado de usuarios del workspace.' })
+  @ApiForbiddenResponse({ description: 'Se requiere rol ADMIN para listar miembros.' })
   @ApiUnauthorizedResponse({ description: 'Token JWT inválido o ausente.' })
   findAll(@Req() request: AuthenticatedRequest) {
     return this.usersService.findAll(request.user);
   }
 
+  @Roles('ADMIN')
   @Post('invite')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
@@ -65,6 +70,7 @@ export class UsersController {
     });
   }
 
+  @Roles('ADMIN')
   @Patch(':id/role')
   @ApiOperation({ summary: 'Cambiar el rol de un usuario del workspace' })
   @ApiResponse({ status: 200, description: 'Rol actualizado.' })

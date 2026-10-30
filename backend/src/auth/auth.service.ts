@@ -7,6 +7,8 @@ import type { RequestAuditContext } from './interfaces/authenticated-user.interf
 import { LoginDto } from './dto/login.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
 import type { JwtPayload } from './interfaces/jwt-payload.interface.js';
+import { isUserRole } from './interfaces/user-role.js';
+import type { AuthResponseDto } from './dto/auth-response.dto.js';
 
 @Injectable()
 export class AuthService {
@@ -21,7 +23,10 @@ export class AuthService {
    * @param loginDto Datos de autenticación (email y contraseña)
    * @returns Token JWT de acceso y datos públicos del usuario
    */
-  async login(loginDto: LoginDto, requestContext: RequestAuditContext = {}) {
+  async login(
+    loginDto: LoginDto,
+    requestContext: RequestAuditContext = {},
+  ): Promise<AuthResponseDto> {
     const normalizedEmail = loginDto.email.toLowerCase();
     const user = await this.prisma.user.findUnique({
       where: { email: normalizedEmail },
@@ -38,7 +43,7 @@ export class AuthService {
     }
 
     const isPasswordValid = await bcrypt.compare(loginDto.password, user.password);
-    if (!isPasswordValid) {
+    if (!isPasswordValid || !isUserRole(user.role)) {
       await this.auditService.record({
         eventType: 'LOGIN_FAILURE',
         outcome: 'FAILURE',

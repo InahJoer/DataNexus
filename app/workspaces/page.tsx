@@ -1,9 +1,19 @@
+'use client';
+
 import Link from 'next/link';
 import { BrandMark } from '@/components/brand-mark';
 import { Icon } from '@/components/icons';
-import { sampleWorkspace } from '@/lib/mock-data';
+import { RequireAuth } from '@/components/require-auth';
+import { roleLabels, useAuth } from '@/lib/auth-context';
 
-export default function WorkspacesPage() {
+function WorkspaceSelection() {
+  const { session, logout } = useAuth();
+  if (!session) return null;
+
+  const { user } = session;
+  const firstName = user.name.split(' ')[0] ?? user.name;
+  const initials = user.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+
   return (
     <main className="onboarding-shell">
       <aside className="onboarding-aside onboarding-aside--workspace">
@@ -31,30 +41,33 @@ export default function WorkspacesPage() {
             <span className="step-copy">PASO 2 DE 2</span>
           </div>
           <div className="auth-heading workspace-heading">
-            <p className="eyebrow">BIENVENIDO, ALEX</p>
-            <h2>Elige tu workspace</h2>
-            <p>Selecciona el espacio de trabajo al que quieres entrar.</p>
+            <p className="eyebrow">BIENVENIDO, {firstName.toUpperCase()}</p>
+            <h2>Tu workspace</h2>
+            <p>Este es el espacio asociado a tu cuenta.</p>
           </div>
 
           <Link className="workspace-choice" href="/dashboard">
             <div className="workspace-choice-head">
-              <div className="workspace-avatar">{sampleWorkspace.initials}</div>
-              <div className="workspace-choice-title"><strong>{sampleWorkspace.name}</strong><span>{sampleWorkspace.domain}</span></div>
+              <div className="workspace-avatar">{initials}</div>
+              <div className="workspace-choice-title"><strong>Workspace asociado</strong><span>ID {user.workspaceId}</span></div>
               <span className="workspace-check"><Icon name="check" size={16} /></span>
             </div>
             <div className="workspace-choice-meta">
-              <span className="plan-pill"><i /> {sampleWorkspace.plan}</span>
-              <span><Icon name="users" size={15} /> {sampleWorkspace.members} miembros</span>
-              <span><Icon name="clock" size={15} /> Último acceso hoy</span>
+              <span className="plan-pill"><i /> {roleLabels[user.role]}</span>
+              <span><Icon name="mail" size={15} /> {user.email}</span>
             </div>
-            <div className="workspace-choice-footer"><span>Conexiones y análisis de tu organización</span><span className="workspace-open">Abrir workspace <Icon name="arrow-right" size={16} /></span></div>
+            <div className="workspace-choice-footer"><span>Tu usuario tiene un workspace asociado</span><span className="workspace-open">Abrir workspace <Icon name="arrow-right" size={16} /></span></div>
           </Link>
 
-          <div className="workspace-hint"><span className="hint-icon"><Icon name="help" size={16} /></span><p>¿No ves tu espacio? Pídele a un administrador que te invite con tu correo corporativo.</p></div>
-          <Link className="back-to-login" href="/login"><Icon name="arrow-left" size={15} /> Volver al acceso</Link>
+          <div className="workspace-hint"><span className="hint-icon"><Icon name="help" size={16} /></span><p>La API actual asocia una cuenta a un solo workspace; la gestión de varios espacios aún no está disponible.</p></div>
+          <Link className="back-to-login" href="/login" onClick={logout}><Icon name="arrow-left" size={15} /> Cerrar sesión</Link>
         </div>
         <footer className="page-footnote"><span>© 2026 DataNexus</span><span>Privacidad <i /> Seguridad <i /> Estado del sistema</span></footer>
       </section>
     </main>
   );
+}
+
+export default function WorkspacesPage() {
+  return <RequireAuth><WorkspaceSelection /></RequireAuth>;
 }

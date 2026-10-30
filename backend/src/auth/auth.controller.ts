@@ -1,9 +1,10 @@
 import { Controller, Post, Body, HttpCode, HttpStatus, Get, UseGuards, Req } from '@nestjs/common';
 import type { Request } from 'express';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiOkResponse } from '@nestjs/swagger';
 import { AuthService } from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
+import { AuthResponseDto, AuthUserResponseDto } from './dto/auth-response.dto.js';
 import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
 import type { AuthenticatedRequest } from './interfaces/authenticated-user.interface.js';
 
@@ -18,15 +19,18 @@ export class AuthController {
     summary: 'Iniciar sesión en DataNexus',
     description: 'Valida las credenciales del usuario con bcrypt y devuelve un JWT firmado',
   })
-  @ApiResponse({
-    status: 200,
+  @ApiOkResponse({
     description: 'Autenticación exitosa. Retorna el token JWT y los datos del usuario.',
+    type: AuthResponseDto,
   })
   @ApiResponse({
     status: 401,
     description: 'Credenciales inválidas (email o contraseña incorrectos).',
   })
-  async login(@Body() loginDto: LoginDto, @Req() request: Request) {
+  async login(
+    @Body() loginDto: LoginDto,
+    @Req() request: Request,
+  ): Promise<AuthResponseDto> {
     return this.authService.login(loginDto, {
       ipAddress: request.ip,
       userAgent: request.get('user-agent') ?? undefined,
@@ -58,15 +62,15 @@ export class AuthController {
     summary: 'Consultar perfil del usuario autenticado',
     description: 'Ruta protegida que valida el token JWT emitido',
   })
-  @ApiResponse({
-    status: 200,
+  @ApiOkResponse({
     description: 'Datos del usuario autenticado obtenidos desde el token',
+    type: AuthUserResponseDto,
   })
   @ApiResponse({
     status: 401,
     description: 'No autorizado / Token ausente o inválido',
   })
-  getProfile(@Req() req: AuthenticatedRequest) {
+  getProfile(@Req() req: AuthenticatedRequest): AuthUserResponseDto {
     return req.user;
   }
 }

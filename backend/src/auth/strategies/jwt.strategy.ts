@@ -4,6 +4,8 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { JwtPayload } from '../interfaces/jwt-payload.interface.js';
+import { isUserRole } from '../interfaces/user-role.js';
+import { getJwtSecret } from '../jwt-secret.js';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -14,10 +16,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey:
-        configService.get<string>('JWT_SECRET') ??
-        process.env.JWT_SECRET ??
-        'datanexus_super_secure_jwt_secret_key_2026_xyz',
+      secretOrKey: getJwtSecret(configService),
     });
   }
 
@@ -33,8 +32,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       },
     });
 
-    if (!user) {
-      throw new UnauthorizedException('El token no corresponde a un usuario activo');
+    if (!user || !isUserRole(user.role)) {
+      throw new UnauthorizedException('El token no corresponde a un usuario activo con un rol válido');
     }
 
     return user;

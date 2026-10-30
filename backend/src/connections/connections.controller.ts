@@ -17,16 +17,19 @@ import { ConnectionsService } from './connections.service.js';
 import { CreateConnectionDto } from './dto/create-connection.dto.js';
 import { UpdateConnectionDto } from './dto/update-connection.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
+import { RolesGuard } from '../auth/guards/roles.guard.js';
+import { Roles } from '../auth/decorators/roles.decorator.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-user.interface.js';
 
 @ApiTags('Connections')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('connections')
 export class ConnectionsController {
   constructor(private readonly connectionsService: ConnectionsService) {}
 
   @Post()
+  @Roles('ADMIN')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Crear una conexión en el workspace autenticado' })
   @ApiResponse({ status: 201, description: 'Conexión creada; las credenciales no se devuelven.' })
@@ -54,6 +57,7 @@ export class ConnectionsController {
   }
 
   @Patch(':id')
+  @Roles('ADMIN')
   @ApiOperation({ summary: 'Actualizar una conexión del workspace autenticado' })
   @ApiResponse({ status: 200, description: 'Conexión actualizada y cambio auditado.' })
   @ApiResponse({ status: 403, description: 'Solo ADMIN puede actualizar conexiones.' })
@@ -67,6 +71,7 @@ export class ConnectionsController {
   }
 
   @Delete(':id')
+  @Roles('ADMIN')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Eliminar una conexión del workspace autenticado' })
   @ApiResponse({ status: 200, description: 'Conexión eliminada y acción auditada.' })

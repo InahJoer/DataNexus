@@ -1,10 +1,14 @@
+'use client';
+
 import Link from 'next/link';
 import { ActivityList } from '@/components/activity-list';
 import { ConnectionStatus } from '@/components/connection-status';
 import { DashboardSidebar } from '@/components/dashboard-sidebar';
 import { Icon } from '@/components/icons';
 import { MetricCard } from '@/components/metric-card';
-import { dashboardMetrics, queryTrend, sampleWorkspace } from '@/lib/mock-data';
+import { RequireAuth } from '@/components/require-auth';
+import { useAuth } from '@/lib/auth-context';
+import { dashboardMetrics, queryTrend } from '@/lib/mock-data';
 
 const chartY = (value: number) => 142 - (value / 80) * 119;
 const chartPoints = queryTrend.map((point, index) => ({
@@ -15,13 +19,17 @@ const chartPoints = queryTrend.map((point, index) => ({
 const linePath = chartPoints.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
 const areaPath = `M ${chartPoints[0].x} 142 ${chartPoints.map((point) => `L ${point.x} ${point.y}`).join(' ')} L ${chartPoints.at(-1)?.x} 142 Z`;
 
-export default function DashboardPage() {
+function DashboardView() {
+  const { session } = useAuth();
+  if (!session) return null;
+  const firstName = session.user.name.split(' ')[0] ?? session.user.name;
+
   return (
     <main className="dashboard-shell">
       <DashboardSidebar />
       <section className="dashboard-main">
         <header className="dashboard-topbar">
-          <div className="breadcrumb"><span>{sampleWorkspace.name}</span><Icon name="chevron-down" size={13} /><strong>Resumen</strong></div>
+          <div className="breadcrumb"><span>Workspace</span><Icon name="chevron-down" size={13} /><strong>Resumen</strong></div>
           <div className="topbar-actions">
             <label className="search-box"><Icon name="search" size={15} /><input type="search" aria-label="Buscar en el workspace" placeholder="Buscar en tu workspace..." /><kbd>/</kbd></label>
             <button className="icon-button" type="button" aria-label="Ayuda"><Icon name="help" size={16} /></button>
@@ -30,7 +38,7 @@ export default function DashboardPage() {
         </header>
 
         <div className="dashboard-heading">
-          <div><p className="eyebrow">VIERNES, 30 DE OCTUBRE DE 2026</p><h1>Resumen</h1><p>Hola, Alex. Aquí tienes lo que pasa con tus datos.</p></div>
+          <div><p className="eyebrow">VIERNES, 30 DE OCTUBRE DE 2026</p><h1>Resumen</h1><p>Hola, {firstName}. Aquí tienes lo que pasa con tus datos.</p></div>
           <button className="date-button" type="button"><Icon name="calendar" size={15} />Últimos 30 días<Icon name="chevron-down" size={13} /></button>
         </div>
 
@@ -71,8 +79,12 @@ export default function DashboardPage() {
           <Link className="button button--primary" href="#connections" id="reports">Crear un cruce <Icon name="arrow-right" size={14} /></Link>
         </section>
 
-        <footer className="dashboard-footer"><span>Datos de muestra · Northstar Analytics</span><span>Última actualización hace 2 min</span></footer>
+        <footer className="dashboard-footer"><span>Datos visuales de muestra · aún no conectados a la API</span><span>Workspace {session.user.workspaceId.slice(0, 8)}</span></footer>
       </section>
     </main>
   );
+}
+
+export default function DashboardPage() {
+  return <RequireAuth><DashboardView /></RequireAuth>;
 }
