@@ -39,15 +39,19 @@ export class ConnectionsController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Listar conexiones del workspace autenticado' })
+  @Roles('ADMIN', 'OPERADOR')
+  @ApiOperation({ summary: 'Listar conexiones del workspace autenticado (ADMIN u OPERADOR)' })
   @ApiResponse({ status: 200, description: 'Lista segura de conexiones.' })
+  @ApiResponse({ status: 403, description: 'Se requiere rol ADMIN u OPERADOR para listar conexiones.' })
   findAll(@Req() request: AuthenticatedRequest) {
     return this.connectionsService.findAll(request.user);
   }
 
   @Get(':id')
+  @Roles('ADMIN', 'OPERADOR')
   @ApiOperation({ summary: 'Obtener una conexión del workspace autenticado' })
   @ApiResponse({ status: 200, description: 'Detalle seguro de la conexión.' })
+  @ApiResponse({ status: 403, description: 'Se requiere rol ADMIN u OPERADOR para consultar conexiones.' })
   @ApiResponse({ status: 404, description: 'Conexión no encontrada.' })
   findOne(
     @Req() request: AuthenticatedRequest,

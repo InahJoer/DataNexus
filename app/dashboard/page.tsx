@@ -8,6 +8,7 @@ import { Icon } from '@/components/icons';
 import { MetricCard } from '@/components/metric-card';
 import { RequireAuth } from '@/components/require-auth';
 import { useAuth } from '@/lib/auth-context';
+import { useConnectionHealth } from '@/lib/use-connection-health';
 import { dashboardMetrics, queryTrend } from '@/lib/mock-data';
 
 const chartY = (value: number) => 142 - (value / 80) * 119;
@@ -21,8 +22,26 @@ const areaPath = `M ${chartPoints[0].x} 142 ${chartPoints.map((point) => `L ${po
 
 function DashboardView() {
   const { session } = useAuth();
+  const health = useConnectionHealth();
   if (!session) return null;
+  const canMonitorConnections = session.user.role === 'ADMIN' || session.user.role === 'OPERADOR';
+  const canReviewAudit = session.user.role === 'ADMIN';
   const firstName = session.user.name.split(' ')[0] ?? session.user.name;
+  const checkedAt = health.report
+    ? new Intl.DateTimeFormat('es', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(health.report.checkedAt))
+    : null;
+  const availableConnections = health.report?.connections.filter((connection) => connection.status === 'HEALTHY').length;
+  const connectionMetric = {
+    ...dashboardMetrics[0],
+    label: 'Conexiones disponibles',
+    value: availableConnections === undefined ? '—' : String(availableConnections),
+    detail: health.report ? `de ${health.report.connections.length} fuentes` : 'esperando comprobación',
+    change: checkedAt ? `Actualizado ${checkedAt}` : health.errorMessage ? 'Sin conexión a API' : 'Verificando',
+    changeIcon: 'activity' as const,
+  };
+  const visibleMetrics = canMonitorConnections
+    ? [connectionMetric, ...dashboardMetrics.slice(1)]
+    : dashboardMetrics.slice(1, 3);
 
   return (
     <main className="dashboard-shell">
@@ -43,7 +62,7 @@ function DashboardView() {
         </div>
 
         <section className="summary-grid" aria-label="Indicadores principales">
-          {dashboardMetrics.map((metric) => <MetricCard key={metric.label} metric={metric} />)}
+          {visibleMetrics.map((metric) => <MetricCard key={metric.label} metric={metric} />)}
         </section>
 
         <div className="dashboard-grid">
@@ -69,17 +88,23 @@ function DashboardView() {
             <div className="chart-legend"><i /> Consultas procesadas</div>
           </section>
 
-          <ConnectionStatus />
+          {canMonitorConnections && <ConnectionStatus
+            report={health.report}
+            isLoading={health.isLoading}
+            isRefreshing={health.isRefreshing}
+            errorMessage={health.errorMessage}
+            onRefresh={health.refresh}
+          />}
         </div>
 
-        <ActivityList />
+        {canReviewAudit && <ActivityList />}
 
-        <section className="dashboard-cta" id="joins">
+        {canMonitorConnections && <section className="dashboard-cta" id="joins">
           <div className="dashboard-cta-copy"><span className="cta-icon"><Icon name="spark" size={17} /></span><div><strong>¿Listo para encontrar nuevas relaciones?</strong><span>Combina fuentes y descubre patrones entre tus datos.</span></div></div>
           <Link className="button button--primary" href="#connections" id="reports">Crear un cruce <Icon name="arrow-right" size={14} /></Link>
-        </section>
+        </section>}
 
-        <footer className="dashboard-footer"><span>Datos visuales de muestra · aún no conectados a la API</span><span>Workspace {session.user.workspaceId.slice(0, 8)}</span></footer>
+        <footer className="dashboard-footer"><span>{canMonitorConnections ? 'Métricas y actividad de muestra · conexiones verificadas en vivo' : 'Métricas de muestra'}</span><span>Workspace {session.user.workspaceId.slice(0, 8)}</span></footer>
       </section>
     </main>
   );

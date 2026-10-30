@@ -8,10 +8,10 @@ import { roleLabels, useAuth, type UserRole } from '@/lib/auth-context';
 
 const navigation: { label: string; icon: IconName; href: string; active?: boolean; roles?: readonly UserRole[] }[] = [
   { label: 'Resumen', icon: 'grid', href: '/dashboard', active: true },
-  { label: 'Conexiones', icon: 'plug', href: '#connections' },
+  { label: 'Conexiones', icon: 'plug', href: '#connections', roles: ['ADMIN', 'OPERADOR'] },
   { label: 'Explorador de datos', icon: 'database', href: '#query-trend' },
-  { label: 'Cruces de datos', icon: 'join', href: '#joins' },
-  { label: 'Reportes', icon: 'layers', href: '#reports' },
+  { label: 'Cruces de datos', icon: 'join', href: '#joins', roles: ['ADMIN', 'OPERADOR'] },
+  { label: 'Reportes', icon: 'layers', href: '#reports', roles: ['ADMIN', 'OPERADOR'] },
   { label: 'Auditoría', icon: 'shield', href: '#activity', roles: ['ADMIN'] },
 ];
 

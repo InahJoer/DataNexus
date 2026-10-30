@@ -107,7 +107,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Listar conexiones del workspace autenticado */
+        /** Listar conexiones del workspace autenticado (ADMIN u OPERADOR) */
         get: operations["ConnectionsController_findAll"];
         put?: never;
         /** Crear una conexión en el workspace autenticado */
@@ -194,6 +194,46 @@ export interface paths {
         patch: operations["UsersController_updateRole"];
         trace?: never;
     };
+    "/engine/connections/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Comprobar el estado actual de las conexiones del workspace
+         * @description Valida conectividad y acceso al catálogo con un límite de 10 segundos. No devuelve credenciales ni datos del catálogo.
+         */
+        get: operations["DataEngineController_getConnectionsHealth[0]"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/data-engine/connections/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Comprobar el estado actual de las conexiones del workspace
+         * @description Valida conectividad y acceso al catálogo con un límite de 10 segundos. No devuelve credenciales ni datos del catálogo.
+         */
+        get: operations["DataEngineController_getConnectionsHealth[1]"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/engine/connections/{connectionId}/schema": {
         parameters: {
             query?: never;
@@ -245,7 +285,7 @@ export interface paths {
         put?: never;
         /**
          * Ejecutar Cross-Join en memoria entre fuentes SQL y NoSQL
-         * @description Cruza tablas relacionales y colecciones NoSQL por llaves foráneas. Aplica enmascaramiento automático de datos sensibles si el rol del usuario es LECTOR.
+         * @description Cruza tablas relacionales y colecciones NoSQL por llaves foráneas. Disponible para ADMIN y OPERADOR.
          */
         post: operations["DataEngineController_crossJoin[0]"];
         delete?: never;
@@ -265,7 +305,7 @@ export interface paths {
         put?: never;
         /**
          * Ejecutar Cross-Join en memoria entre fuentes SQL y NoSQL
-         * @description Cruza tablas relacionales y colecciones NoSQL por llaves foráneas. Aplica enmascaramiento automático de datos sensibles si el rol del usuario es LECTOR.
+         * @description Cruza tablas relacionales y colecciones NoSQL por llaves foráneas. Disponible para ADMIN y OPERADOR.
          */
         post: operations["DataEngineController_crossJoin[1]"];
         delete?: never;
@@ -285,7 +325,7 @@ export interface paths {
         put?: never;
         /**
          * Exportar resultado del Cross-Join (Excel, PDF o JSON)
-         * @description Genera y descarga el archivo con los datos combinados y enmascarados según el rol del usuario.
+         * @description Genera y descarga el archivo con los datos combinados. Disponible para ADMIN y OPERADOR.
          */
         post: operations["DataEngineController_exportJoin[0]"];
         delete?: never;
@@ -305,7 +345,7 @@ export interface paths {
         put?: never;
         /**
          * Exportar resultado del Cross-Join (Excel, PDF o JSON)
-         * @description Genera y descarga el archivo con los datos combinados y enmascarados según el rol del usuario.
+         * @description Genera y descarga el archivo con los datos combinados. Disponible para ADMIN y OPERADOR.
          */
         post: operations["DataEngineController_exportJoin[1]"];
         delete?: never;
@@ -325,7 +365,7 @@ export interface paths {
         put?: never;
         /**
          * Disparar ejecución y envío de reporte por correo
-         * @description Ejecuta el cruce de datos en memoria, genera el archivo (Excel o PDF) y lo despacha como adjunto a los correos indicados. Requiere rol ADMIN.
+         * @description Ejecuta el cruce de datos en memoria, genera el archivo (Excel o PDF) y lo despacha como adjunto a los correos indicados. Requiere rol ADMIN u OPERADOR.
          */
         post: operations["ReportsController_trigger"];
         delete?: never;
@@ -461,6 +501,25 @@ export interface components {
              * @enum {string}
              */
             role: "ADMIN" | "OPERADOR" | "LECTOR";
+        };
+        ConnectionHealthItemDto: {
+            /** Format: uuid */
+            connectionId: string;
+            /** @example PostgreSQL */
+            tipoMotor: string;
+            /** @example db.internal */
+            host: string;
+            /** @example analytics */
+            dbName: string;
+            /** @enum {string} */
+            status: "HEALTHY" | "UNAVAILABLE" | "UNSUPPORTED";
+            /** @example 42 */
+            latencyMs: number | null;
+        };
+        ConnectionHealthResponseDto: {
+            /** Format: date-time */
+            checkedAt: string;
+            connections: components["schemas"]["ConnectionHealthItemDto"][];
         };
         DataFilterDto: {
             /**
@@ -819,6 +878,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Se requiere rol ADMIN u OPERADOR para listar conexiones. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     ConnectionsController_create: {
@@ -863,6 +929,13 @@ export interface operations {
         responses: {
             /** @description Detalle seguro de la conexión. */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Se requiere rol ADMIN u OPERADOR para consultar conexiones. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1055,6 +1128,86 @@ export interface operations {
             };
         };
     };
+    "DataEngineController_getConnectionsHealth[0]": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionHealthResponseDto"];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Se requiere rol ADMIN u OPERADOR para consultar la salud de conexiones. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description La consulta de conexiones superó el límite de 10 segundos. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "DataEngineController_getConnectionsHealth[1]": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionHealthResponseDto"];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Se requiere rol ADMIN u OPERADOR para consultar la salud de conexiones. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description La consulta de conexiones superó el límite de 10 segundos. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     "DataEngineController_explore[0]": {
         parameters: {
             query?: never;
@@ -1082,6 +1235,13 @@ export interface operations {
             };
             /** @description Token JWT inválido o ausente. */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Se requiere rol ADMIN u OPERADOR para explorar conexiones. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1142,6 +1302,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Se requiere rol ADMIN u OPERADOR para explorar conexiones. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Conexión fuera del workspace o inexistente. */
             404: {
                 headers: {
@@ -1194,6 +1361,13 @@ export interface operations {
             };
             /** @description Token JWT inválido o ausente. */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Se requiere rol ADMIN u OPERADOR para ejecutar Cross-Joins. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1263,6 +1437,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Se requiere rol ADMIN u OPERADOR para ejecutar Cross-Joins. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Alguna de las conexiones no existe en el workspace. */
             404: {
                 headers: {
@@ -1327,6 +1508,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Se requiere rol ADMIN u OPERADOR para exportar resultados. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description El origen o el resultado supera los límites configurados. */
             413: {
                 headers: {
@@ -1384,6 +1572,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Se requiere rol ADMIN u OPERADOR para exportar resultados. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description El origen o el resultado supera los límites configurados. */
             413: {
                 headers: {
@@ -1434,7 +1629,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Se requiere rol ADMIN para automatizar reportes. */
+            /** @description Se requiere rol ADMIN u OPERADOR para automatizar reportes. */
             403: {
                 headers: {
                     [name: string]: unknown;

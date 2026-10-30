@@ -245,8 +245,23 @@ button { color: inherit; }
 .connection-state { display: flex; flex: 0 0 auto; align-items: flex-end; flex-direction: column; gap: 5px; color: #38886f; font-size: 8px; font-weight: 620; }
 .connection-state small { color: #a3ada8; font-size: 8px; font-weight: 450; }
 .connection-state--warning { color: #b6823e; }
-.status-dot { width: 6px; height: 6px; margin-right: 4px; border-radius: 50%; background: #4ab890; }
+.connection-state--error { color: #b45454; }
+.connection-state--unknown { color: #82908a; }
+.status-dot { display: inline-block; width: 6px; height: 6px; margin-right: 4px; border-radius: 50%; background: #4ab890; }
 .connection-state--warning .status-dot { background: #d9a044; }
+.connection-state--error .status-dot { background: #ce6969; }
+.connection-state--unknown .status-dot { background: #99a49e; }
+.connection-mysql { color: #a77631; background: #fbf2df; }
+.connection-sqlserver { color: #9d4b55; background: #fae9eb; }
+.connection-firestore { color: #a67925; background: #fff3d9; }
+.connection-generic { color: #65756e; background: #eaf0ed; }
+.connection-refresh { padding: 0; border: 0; background: transparent; cursor: pointer; }
+.connection-refresh:disabled { cursor: wait; opacity: .6; }
+.connection-message { margin: 0; padding: 17px; color: #84918b; font-size: 10px; line-height: 1.5; }
+.connection-message--error { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #a34c4c; }
+.connection-message p { margin: 0; }
+.connection-message button { padding: 6px 9px; color: #187d6c; border: 1px solid #dce8e2; border-radius: 6px; background: #fff; font-size: 9px; cursor: pointer; }
+.connection-inline-error { margin: 0 17px 8px; color: #a77743; font-size: 9px; line-height: 1.45; }
 .activity-card { margin-top: 14px; scroll-margin-top: 20px; }
 .activity-card .surface-header { padding-bottom: 7px; }
 .activity-list { padding: 0 18px 4px; }

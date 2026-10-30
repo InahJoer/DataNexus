@@ -102,8 +102,8 @@ export class ReportsService {
     actor: AuthenticatedUser,
     dto: TriggerReportDto,
   ): Promise<ReportExecutionResult> {
-    if (actor.role !== 'ADMIN') {
-      throw new ForbiddenException('Se requiere rol ADMIN para automatizar y enviar reportes');
+    if (actor.role !== 'ADMIN' && actor.role !== 'OPERADOR') {
+      throw new ForbiddenException('Se requiere rol ADMIN u OPERADOR para automatizar y enviar reportes');
     }
 
     this.logger.log(

@@ -17,6 +17,7 @@ import {
 import { DataExtractorService } from './adapters/data-extractor.adapter.js';
 import { MaskingService } from './masking/masking.service.js';
 import { ExportService } from './export/export.service.js';
+import type { ConnectionHealthItemDto, ConnectionHealthResponseDto } from './dto/connection-health.dto.js';
 import {
   AGGREGATION_OPERATIONS,
   CrossJoinDto,
@@ -69,6 +70,66 @@ export class DataEngineService {
     private readonly maskingService: MaskingService = new MaskingService(),
     private readonly exportService: ExportService = new ExportService(),
   ) {}
+
+  async getConnectionsHealth(actor: AuthenticatedUser): Promise<ConnectionHealthResponseDto> {
+    const connections = await this.withTimeout(
+      this.connectionsService.findAll(actor),
+      Date.now() + EXPLORATION_TIMEOUT_MS,
+    );
+    const healthItems = await Promise.all(
+      connections.map(async (connection): Promise<ConnectionHealthItemDto> => {
+        const startedAt = Date.now();
+        const explorer = this.createExplorer(connection.tipoMotor);
+
+        if (!explorer) {
+          return {
+            connectionId: connection.id,
+            tipoMotor: connection.tipoMotor,
+            host: connection.host,
+            dbName: connection.dbName,
+            status: 'UNSUPPORTED',
+            latencyMs: null,
+          };
+        }
+
+        const deadline = startedAt + EXPLORATION_TIMEOUT_MS;
+        try {
+          const credentials = await this.withTimeout(
+            this.connectionsService.getConnectionForExploration(
+              connection.id,
+              actor.workspaceId,
+            ),
+            deadline,
+          );
+          await this.withTimeout(
+            explorer.listObjects(credentials.connectionString, credentials.dbName),
+            deadline,
+          );
+          return {
+            connectionId: connection.id,
+            tipoMotor: connection.tipoMotor,
+            host: connection.host,
+            dbName: connection.dbName,
+            status: 'HEALTHY',
+            latencyMs: Date.now() - startedAt,
+          };
+        } catch {
+          return {
+            connectionId: connection.id,
+            tipoMotor: connection.tipoMotor,
+            host: connection.host,
+            dbName: connection.dbName,
+            status: 'UNAVAILABLE',
+            latencyMs: Date.now() - startedAt,
+          };
+        } finally {
+          await this.closeWithinDeadline(explorer, deadline);
+        }
+      }),
+    );
+
+    return { checkedAt: new Date().toISOString(), connections: healthItems };
+  }
 
   async exploreConnection(actor: AuthenticatedUser, connectionId: string) {
     const connection =
