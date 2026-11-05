@@ -1,7 +1,7 @@
 # Arquitectura Integral de DataNexus
 
 > **Plataforma Unificada de Gestión de Datos Mixtas, Business Intelligence & Federación**  
-> *Stack Tecnológico:* NestJS 12, TypeScript 5+, Prisma ORM, SQLite / PostgreSQL, Swagger (OpenAPI).
+> *Stack Tecnológico:* NestJS 12, TypeScript 5+, Prisma ORM, PostgreSQL (enums nativos para roles, motores y eventos), Swagger (OpenAPI).
 
 ---
 
@@ -56,7 +56,7 @@ graph TD
     end
     
     subgraph "Almacenamiento Local"
-        PrismaService[Prisma ORM Client] --> LocalDB[(SQLite dev.db / PostgreSQL)]
+        PrismaService[Prisma ORM Client] --> LocalDB[(PostgreSQL)]
         AuditService --> PrismaService
         ConnService --> PrismaService
     end
