@@ -2,6 +2,7 @@
 **/dist/
 **/node_modules/
 **/.next/
+**/storage/reports/
 **/next-env.d.ts
 
 # Environment variables

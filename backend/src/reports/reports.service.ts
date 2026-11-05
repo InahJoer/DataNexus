@@ -1,12 +1,16 @@
 import {
   Injectable,
   Logger,
-  NotFoundException,
   ForbiddenException,
+  Inject,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { randomUUID } from 'node:crypto';
+import type { LocalReportDownload, ReportStorageAdapter } from './storage/report-storage.interface.js';
+import { REPORT_STORAGE_ADAPTER } from './storage/report-storage.interface.js';
 import { DataEngineService } from '../data-engine/data-engine.service.js';
 import { MailService } from '../mailer/mail.service.js';
+import { renderReportEmail } from './templates/report-email.template.js';
 import { AuditService } from '../audit/audit.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface.js';
@@ -16,9 +20,12 @@ import { TriggerReportDto } from './dto/trigger-report.dto.js';
 export interface ReportExecutionResult {
   reportTitle: string;
   recipients: string[];
-  format: string;
+  format: 'excel' | 'pdf';
   filename: string;
+  totalRows: number;
   fileSizeBytes: number;
+  downloadUrl: string;
+  expiresAt: string;
   messageId: string;
   sentAt: string;
 }
@@ -32,6 +39,8 @@ export class ReportsService {
     private readonly mailService: MailService,
     private readonly auditService: AuditService,
     private readonly prisma: PrismaService,
+    @Inject(REPORT_STORAGE_ADAPTER)
+    private readonly reportStorage: ReportStorageAdapter,
   ) {}
 
   /**
@@ -111,40 +120,57 @@ export class ReportsService {
       `Generando reporte '${dto.reportTitle}' para Workspace ${actor.workspaceId} en formato ${dto.format}`,
     );
 
-    // 1. Ejecución del Cross-Join y generación de Buffer en memoria
-    const exportResult = await this.dataEngineService.executeCrossJoinForExport(
-      {
-        ...dto.crossJoinParams,
-        format: dto.format,
-      },
-      actor,
-    );
+    const reportId = randomUUID();
+    const contentType =
+      dto.format === 'excel'
+        ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        : 'application/pdf';
+    const writeTarget = await this.reportStorage.createWriteTarget(reportId, contentType);
 
-    // 2. Envío por correo con archivo adjunto
+    let exportResult: Awaited<ReturnType<DataEngineService['executeCrossJoinToStream']>>;
+    let fileSizeBytes: number;
+    try {
+      [exportResult, fileSizeBytes] = await Promise.all([
+        this.dataEngineService.executeCrossJoinToStream(
+          {
+            ...dto.crossJoinParams,
+            format: dto.format,
+          },
+          actor,
+          writeTarget.writable,
+        ),
+        writeTarget.completed,
+      ]);
+    } catch (error) {
+      if (!writeTarget.writable.destroyed) {
+        writeTarget.writable.destroy(error instanceof Error ? error : new Error(String(error)));
+      }
+      await writeTarget.completed.catch(() => undefined);
+      throw error;
+    }
+
+    const download = await this.reportStorage.createDownloadUrl(reportId, exportResult.filename);
+    const generatedAt = new Date().toLocaleString('es');
+    const expiresAt = new Date(download.expiresAt).toLocaleString('es');
+    const customMessage =
+      dto.customMessage ?? 'Se generó un nuevo informe consolidado de DataNexus.';
+    const email = renderReportEmail({
+      reportTitle: dto.reportTitle,
+      customMessage,
+      filename: exportResult.filename,
+      fileSizeBytes,
+      fileSizeLabel: `${(fileSizeBytes / 1024).toFixed(2)} KB`,
+      generatedAt,
+      expiresAt,
+      downloadUrl: download.url,
+    });
+
+    // El reporte se entrega mediante un enlace temporal; no se adjunta el archivo en memoria.
     const emailResult = await this.mailService.sendReportEmail({
       to: dto.recipients,
       subject: `[DataNexus] ${dto.reportTitle}`,
-      text:
-        dto.customMessage ??
-        `Adjunto encontrará el archivo del reporte '${dto.reportTitle}' generado por DataNexus.`,
-      html: `
-        <div style="font-family: Arial, sans-serif; color: #222; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #E0E0E0; border-radius: 8px;">
-          <h2 style="color: #1F4E78; margin-top: 0;">${dto.reportTitle}</h2>
-          <p>${dto.customMessage ?? 'Adjunto encontrará el informe consolidado correspondiente a la consulta de datos.'}</p>
-          <div style="background-color: #F8F9FA; padding: 12px; border-left: 4px solid #1F4E78; margin: 15px 0;">
-            <p style="margin: 0;"><strong>Archivo adjunto:</strong> ${exportResult.filename}</p>
-            <p style="margin: 5px 0 0 0;"><strong>Tamaño:</strong> ${(exportResult.buffer.length / 1024).toFixed(2)} KB</p>
-          </div>
-          <p style="color: #777; font-size: 12px;">Generado automáticamente por DataNexus Platform.</p>
-        </div>
-      `,
-      attachments: [
-        {
-          filename: exportResult.filename,
-          content: exportResult.buffer,
-          contentType: exportResult.contentType,
-        },
-      ],
+      text: email.text,
+      html: email.html,
     });
 
     // 3. Auditoría de la acción
@@ -155,12 +181,14 @@ export class ReportsService {
       actorEmail: actor.email,
       workspaceId: actor.workspaceId,
       targetType: 'REPORT',
-      targetId: exportResult.filename,
+      targetId: reportId,
       details: {
         title: dto.reportTitle,
         format: dto.format,
         recipientsCount: dto.recipients.length,
-        fileSizeBytes: exportResult.buffer.length,
+        filename: exportResult.filename,
+        totalRows: exportResult.totalRows,
+        fileSizeBytes,
       },
     });
 
@@ -169,9 +197,21 @@ export class ReportsService {
       recipients: dto.recipients,
       format: dto.format,
       filename: exportResult.filename,
-      fileSizeBytes: exportResult.buffer.length,
+      totalRows: exportResult.totalRows,
+      fileSizeBytes,
+      downloadUrl: download.url,
+      expiresAt: download.expiresAt,
       messageId: emailResult.messageId,
       sentAt: new Date().toISOString(),
     };
+  }
+
+  async openLocalDownload(
+    id: string,
+    filename: string,
+    expires: string,
+    signature: string,
+  ): Promise<LocalReportDownload> {
+    return this.reportStorage.openLocalDownload(id, filename, expires, signature);
   }
 }
