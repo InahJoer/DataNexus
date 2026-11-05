@@ -41,6 +41,8 @@ enum AuditEventType {
   EXPORT
   MODIFY_RECORD
   AUDIT_LOG_EXPORTED
+  PASSWORD_RESET_REQUESTED
+  PASSWORD_RESET
 }
 
 model Workspace {
@@ -52,13 +54,14 @@ model Workspace {
 }
 
 model User {
-  id          String    @id @default(uuid())
-  email       String    @unique
-  name        String
-  password    String
-  role        Role      @default(LECTOR)
-  workspaceId String
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  id                  String               @id @default(uuid())
+  email               String               @unique
+  name                String
+  password            String
+  role                Role                 @default(LECTOR)
+  workspaceId         String
+  workspace           Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  passwordResetTokens PasswordResetToken[]
 
   @@index([workspaceId])
 }
@@ -94,4 +97,17 @@ model RegistroAuditoria {
   @@index([workspaceId, createdAt])
   @@index([actorUserId, createdAt])
   @@index([eventType, createdAt])
+}
+
+/// Token de un solo uso para recuperar la contraseña (RF-03). Solo se guarda el hash SHA-256 del token.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }

@@ -52,6 +52,27 @@ export class MailService {
     }
   }
 
+  /** Envía un correo transaccional (recuperación de contraseña, invitaciones, etc.). */
+  async sendMail(options: SendMailOptions & { text: string; html: string }): Promise<SendMailResult> {
+    const from =
+      this.configService.get<string>('MAIL_FROM') ?? 'DataNexus <no-reply@datanexus.io>';
+    const info = await this.transporter.sendMail({
+      from,
+      to: options.to,
+      subject: options.subject,
+      text: options.text,
+      html: options.html,
+    });
+    this.logger.log(`Correo transaccional enviado. ID: ${info.messageId}`);
+
+    const recipients = Array.isArray(options.to) ? options.to : [options.to];
+    return {
+      messageId: info.messageId,
+      accepted: (info.accepted as string[]) ?? recipients,
+      rejected: (info.rejected as string[]) ?? [],
+    };
+  }
+
   async sendReportEmail(options: SendMailOptions): Promise<SendMailResult> {
     const from =
       this.configService.get<string>('MAIL_FROM') ?? 'DataNexus <no-reply@datanexus.io>';
