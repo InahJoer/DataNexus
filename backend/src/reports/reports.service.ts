@@ -10,6 +10,7 @@ import { MailService } from '../mailer/mail.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface.js';
+import { hasPermission } from '../auth/interfaces/user-role.js';
 import { TriggerReportDto } from './dto/trigger-report.dto.js';
 
 export interface ReportExecutionResult {
@@ -102,7 +103,7 @@ export class ReportsService {
     actor: AuthenticatedUser,
     dto: TriggerReportDto,
   ): Promise<ReportExecutionResult> {
-    if (actor.role !== 'ADMIN' && actor.role !== 'OPERADOR') {
+    if (!hasPermission(actor.role, 'MANAGE_REPORTS')) {
       throw new ForbiddenException('Se requiere rol ADMIN u OPERADOR para automatizar y enviar reportes');
     }
 

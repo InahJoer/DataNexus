@@ -18,6 +18,7 @@ export const roleLabels: Record<UserRole, string> = {
   ADMIN: 'Administrador',
   OPERADOR: 'Operador',
   LECTOR: 'Lector',
+  AUDITOR: 'Auditor de TI',
 };
 
 export const AuthContext = createContext<AuthContextValue | null>(null);

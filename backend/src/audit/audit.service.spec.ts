@@ -94,11 +94,25 @@ describe('AuditService', () => {
   });
 
   describe('findAll pagination and filters', () => {
-    it('throws ForbiddenException when actor is not ADMIN', async () => {
+    it('throws ForbiddenException when actor is not ADMIN or AUDITOR', async () => {
       await expect(service.findAll(lectorUser, { page: 1, limit: 10 })).rejects.toThrow(
         ForbiddenException,
       );
+      await expect(
+        service.findAll({ ...lectorUser, role: 'OPERADOR' }, { page: 1, limit: 10 }),
+      ).rejects.toThrow(ForbiddenException);
       expect(prismaService.registroAuditoria.findMany).not.toHaveBeenCalled();
+    });
+
+    it('allows an AUDITOR to read the workspace audit log', async () => {
+      prismaService.registroAuditoria.findMany.mockResolvedValue([]);
+      prismaService.registroAuditoria.count.mockResolvedValue(0);
+
+      await service.findAll({ ...lectorUser, role: 'AUDITOR' }, { page: 1, limit: 10 });
+
+      expect(prismaService.registroAuditoria.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ workspaceId: lectorUser.workspaceId }) }),
+      );
     });
 
     it('queries with correct skip and take pagination for ADMIN', async () => {

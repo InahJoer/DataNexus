@@ -19,7 +19,7 @@ import { UpdateConnectionDto } from './dto/update-connection.dto.js';
 import { ConnectionResponseDto } from './dto/connection-response.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
-import { Roles } from '../auth/decorators/roles.decorator.js';
+import { RequirePermission } from '../auth/decorators/roles.decorator.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-user.interface.js';
 
 @ApiTags('Connections')
@@ -30,7 +30,7 @@ export class ConnectionsController {
   constructor(private readonly connectionsService: ConnectionsService) {}
 
   @Post()
-  @Roles('ADMIN')
+  @RequirePermission('MANAGE_CONNECTIONS')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Crear una conexión en el workspace autenticado' })
   @ApiResponse({ status: 201, description: 'Conexión creada; las credenciales no se devuelven.' })
@@ -40,7 +40,7 @@ export class ConnectionsController {
   }
 
   @Get()
-  @Roles('ADMIN', 'OPERADOR')
+  @RequirePermission('VIEW_CONNECTIONS')
   @ApiOperation({ summary: 'Listar conexiones del workspace autenticado (ADMIN u OPERADOR)' })
   @ApiOkResponse({ type: ConnectionResponseDto, isArray: true, description: 'Lista segura de conexiones.' })
   @ApiResponse({ status: 403, description: 'Se requiere rol ADMIN u OPERADOR para listar conexiones.' })
@@ -49,7 +49,7 @@ export class ConnectionsController {
   }
 
   @Get(':id')
-  @Roles('ADMIN', 'OPERADOR')
+  @RequirePermission('VIEW_CONNECTIONS')
   @ApiOperation({ summary: 'Obtener una conexión del workspace autenticado' })
   @ApiOkResponse({ type: ConnectionResponseDto, description: 'Detalle seguro de la conexión.' })
   @ApiResponse({ status: 403, description: 'Se requiere rol ADMIN u OPERADOR para consultar conexiones.' })
@@ -62,7 +62,7 @@ export class ConnectionsController {
   }
 
   @Patch(':id')
-  @Roles('ADMIN')
+  @RequirePermission('MANAGE_CONNECTIONS')
   @ApiOperation({ summary: 'Actualizar una conexión del workspace autenticado' })
   @ApiResponse({ status: 200, description: 'Conexión actualizada y cambio auditado.' })
   @ApiResponse({ status: 403, description: 'Solo ADMIN puede actualizar conexiones.' })
@@ -76,7 +76,7 @@ export class ConnectionsController {
   }
 
   @Delete(':id')
-  @Roles('ADMIN')
+  @RequirePermission('MANAGE_CONNECTIONS')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Eliminar una conexión del workspace autenticado' })
   @ApiResponse({ status: 200, description: 'Conexión eliminada y acción auditada.' })

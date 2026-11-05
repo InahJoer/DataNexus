@@ -30,7 +30,7 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
-import { Roles } from '../auth/decorators/roles.decorator.js';
+import { RequirePermission } from '../auth/decorators/roles.decorator.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-user.interface.js';
 import { DataEngineService } from './data-engine.service.js';
 import { CrossJoinDto, ExportCrossJoinDto } from './dto/cross-join.dto.js';
@@ -47,7 +47,7 @@ export class DataEngineController {
   constructor(private readonly dataEngineService: DataEngineService) {}
 
   @Get('connections/health')
-  @Roles('ADMIN', 'OPERADOR')
+  @RequirePermission('VIEW_CONNECTIONS')
   @ApiOperation({
     summary: 'Comprobar el estado actual de las conexiones del workspace',
     description:
@@ -62,7 +62,7 @@ export class DataEngineController {
   }
 
   @Get('connections/:connectionId/schema')
-  @Roles('ADMIN', 'OPERADOR')
+  @RequirePermission('EXPLORE_DATA')
   @ApiOperation({
     summary: 'Explorar tablas, vistas o colecciones de una conexión propia',
     description:
@@ -92,7 +92,7 @@ export class DataEngineController {
   }
 
   @Get('connections/:connectionId/schema/fields')
-  @Roles('ADMIN', 'OPERADOR')
+  @RequirePermission('EXPLORE_DATA')
   @ApiOperation({ summary: 'Listar los campos de una tabla o colección para configurar un cruce' })
   @ApiQuery({ name: 'objectName', required: true, maxLength: 150 })
   @ApiQuery({ name: 'schema', required: false, maxLength: 128 })
@@ -117,7 +117,7 @@ export class DataEngineController {
   }
 
   @Post('join')
-  @Roles('ADMIN', 'OPERADOR')
+  @RequirePermission('RUN_JOINS')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Ejecutar Cross-Join en memoria entre fuentes SQL y NoSQL',
@@ -149,7 +149,7 @@ export class DataEngineController {
 
   @Throttle({ export: { limit: 20, ttl: 60000 } })
   @Post('export')
-  @Roles('ADMIN', 'OPERADOR')
+  @RequirePermission('EXPORT_DATA')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Exportar resultado del Cross-Join (Excel, PDF o JSON)',

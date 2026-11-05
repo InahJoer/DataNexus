@@ -11,7 +11,7 @@ import type {
   AuthenticatedUser,
   RequestAuditContext,
 } from '../auth/interfaces/authenticated-user.interface.js';
-import type { UserRole } from '../auth/interfaces/user-role.js';
+import { hasPermission, type UserRole } from '../auth/interfaces/user-role.js';
 import { InviteUserDto } from './dto/invite-user.dto.js';
 
 const SAFE_USER_SELECT = {
@@ -49,7 +49,7 @@ export class UsersService {
     dto: InviteUserDto,
     requestContext: RequestAuditContext = {},
   ) {
-    if (actor.role !== 'ADMIN') {
+    if (!hasPermission(actor.role, 'MANAGE_MEMBERS')) {
       throw new ForbiddenException('Se requiere rol ADMIN para invitar miembros');
     }
 
@@ -96,7 +96,7 @@ export class UsersService {
     newRole: UserRole,
     requestContext: RequestAuditContext = {},
   ) {
-    if (actor.role !== 'ADMIN') {
+    if (!hasPermission(actor.role, 'MANAGE_MEMBERS')) {
       throw new ForbiddenException('Se requiere rol ADMIN para cambiar roles');
     }
     if (actor.id === targetUserId) {

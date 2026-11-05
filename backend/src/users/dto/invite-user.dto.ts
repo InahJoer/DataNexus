@@ -18,7 +18,7 @@ export class InviteUserDto {
     enum: [...USER_ROLES],
     example: 'LECTOR',
   })
-  @IsIn([...USER_ROLES], { message: 'El rol debe ser ADMIN, OPERADOR o LECTOR' })
+  @IsIn([...USER_ROLES], { message: 'El rol debe ser ADMIN, OPERADOR, LECTOR o AUDITOR' })
   role: UserRole;
 
   @ApiPropertyOptional({

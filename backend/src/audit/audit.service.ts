@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface.js';
+import { hasPermission } from '../auth/interfaces/user-role.js';
 import type { AuditEventInput, AuditEventType, AuditTransactionClient } from './audit.types.js';
 import { QueryAuditLogsDto } from './dto/query-audit-logs.dto.js';
 
@@ -51,14 +52,14 @@ export class AuditService {
 
   /**
    * Consulta paginada y filtrada de la bitácora de auditoría para el Workspace del actor.
-   * Requiere rol ADMIN.
+   * Requiere permiso READ_AUDIT (ADMIN o AUDITOR).
    */
   async findAll(
     actor: AuthenticatedUser,
     query: QueryAuditLogsDto,
   ): Promise<PaginatedAuditLogsResult> {
-    if (actor.role !== 'ADMIN') {
-      throw new ForbiddenException('Se requiere rol ADMIN para consultar los logs de auditoría');
+    if (!hasPermission(actor.role, 'READ_AUDIT')) {
+      throw new ForbiddenException('Se requiere rol ADMIN o AUDITOR para consultar los logs de auditoría');
     }
 
     const page = query.page && query.page > 0 ? query.page : 1;
