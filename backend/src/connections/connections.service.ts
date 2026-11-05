@@ -13,6 +13,7 @@ import { EncryptionService } from '../common/encryption/encryption.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { CreateConnectionDto } from './dto/create-connection.dto.js';
 import { UpdateConnectionDto } from './dto/update-connection.dto.js';
+import { hasPermission } from '../auth/interfaces/user-role.js';
 
 const SAFE_CONNECTION_SELECT = {
   id: true,
@@ -231,7 +232,7 @@ export class ConnectionsService {
   }
 
   private assertAdmin(actor: AuthenticatedUser): void {
-    if (actor.role !== 'ADMIN') {
+    if (!hasPermission(actor.role, 'MANAGE_CONNECTIONS')) {
       throw new ForbiddenException('Solo un ADMIN puede modificar conexiones');
     }
   }

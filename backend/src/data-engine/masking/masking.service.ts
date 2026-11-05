@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { hasPermission } from '../../auth/interfaces/user-role.js';
 
 @Injectable()
 export class MaskingService {
@@ -22,14 +23,15 @@ export class MaskingService {
   ];
 
   /**
-   * Enmascara el conjunto de datos si el rol del usuario es 'LECTOR'.
-   * Si es ADMIN o cualquier otro rol privilegiado, devuelve los datos íntegros.
+   * Enmascara el conjunto de datos salvo que el rol tenga el permiso VIEW_UNMASKED_DATA
+   * (ADMIN u OPERADOR). Política fail-closed: LECTOR, AUDITOR o un rol desconocido
+   * siempre reciben los datos enmascarados.
    */
   maskDataset(
     records: Record<string, any>[],
     role?: string,
   ): Record<string, any>[] {
-    if (!role || role.toUpperCase() !== 'LECTOR') {
+    if (this.canViewUnmasked(role)) {
       return records;
     }
 
@@ -44,20 +46,23 @@ export class MaskingService {
     record: Record<string, any>,
     role?: string,
   ): Record<string, any> {
-    if (!role || role.toUpperCase() !== 'LECTOR') return record;
+    if (this.canViewUnmasked(role)) return record;
     return this.maskRecord(record);
   }
 
   isValueMasked(key: string, value: any, role?: string): boolean {
     if (
-      !role ||
-      role.toUpperCase() !== 'LECTOR' ||
+      this.canViewUnmasked(role) ||
       value === null ||
       value === undefined
     ) {
       return false;
     }
     return this.maskValue(key, value) !== value;
+  }
+
+  private canViewUnmasked(role?: string): boolean {
+    return hasPermission(role, 'VIEW_UNMASKED_DATA');
   }
 
   private maskRecord(record: Record<string, any>): Record<string, any> {

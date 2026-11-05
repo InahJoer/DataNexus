@@ -87,7 +87,7 @@ export function AuditTable() {
   const { session, logout } = useAuth();
   const router = useRouter();
   const accessToken = session?.accessToken;
-  const isAdmin = session?.user.role === 'ADMIN';
+  const canReadAudit = session?.user.role === 'ADMIN' || session?.user.role === 'AUDITOR';
   const [draftFilters, setDraftFilters] = useState<AuditFilters>(EMPTY_FILTERS);
   const [filters, setFilters] = useState<AuditFilters>(EMPTY_FILTERS);
   const [filterError, setFilterError] = useState<string | null>(null);
@@ -99,7 +99,7 @@ export function AuditTable() {
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
-    if (!isAdmin || !accessToken) return;
+    if (!canReadAudit || !accessToken) return;
     let cancelled = false;
     setIsLoading(true);
     setErrorMessage(null);
@@ -122,7 +122,7 @@ export function AuditTable() {
           return;
         }
         if (response.response.status === 403) {
-          setErrorMessage('Solo ADMIN puede consultar la bitácora de auditoría.');
+          setErrorMessage('Solo ADMIN o AUDITOR pueden consultar la bitácora de auditoría.');
           return;
         }
         if (!response.response.ok || !response.data) {
@@ -139,9 +139,9 @@ export function AuditTable() {
 
     void loadAuditLogs();
     return () => { cancelled = true; };
-  }, [accessToken, filters, isAdmin, logout, page, pageSize, reloadKey, router]);
+  }, [accessToken, filters, canReadAudit, logout, page, pageSize, reloadKey, router]);
 
-  if (!isAdmin || !session) return null;
+  if (!canReadAudit || !session) return null;
 
   function applyFilters(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -171,7 +171,7 @@ export function AuditTable() {
           <h2 id="audit-title">Bitácora de auditoría</h2>
           <p>Consulta accesos y cambios registrados en este workspace.</p>
         </div>
-        <span className="audit-admin-badge"><Icon name="shield" size={14} />Solo ADMIN</span>
+        <span className="audit-admin-badge"><Icon name="shield" size={14} />ADMIN · AUDITOR</span>
       </header>
 
       <form className="audit-filters" onSubmit={applyFilters}>

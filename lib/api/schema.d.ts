@@ -89,7 +89,7 @@ export interface paths {
         };
         /**
          * Consultar logs de auditoría con paginación y filtros
-         * @description Obtiene los registros de auditoría del workspace con paginación nativa (?page=1&limit=50) y filtros opcionales por fechaInicio, fechaFin y tipoAccion. Requiere rol ADMIN.
+         * @description Obtiene los registros de auditoría del workspace con paginación nativa (?page=1&limit=50) y filtros opcionales por fechaInicio, fechaFin y tipoAccion. Requiere rol ADMIN o AUDITOR.
          */
         get: operations["AuditController_findAll"];
         put?: never;
@@ -431,7 +431,7 @@ export interface components {
             email: string;
             name: string;
             /** @enum {string} */
-            role: "ADMIN" | "OPERADOR" | "LECTOR";
+            role: "ADMIN" | "OPERADOR" | "LECTOR" | "AUDITOR";
             /** Format: uuid */
             workspaceId: string;
         };
@@ -568,7 +568,7 @@ export interface components {
              * @example LECTOR
              * @enum {string}
              */
-            role: "ADMIN" | "OPERADOR" | "LECTOR";
+            role: "ADMIN" | "OPERADOR" | "LECTOR" | "AUDITOR";
             /**
              * @description Contraseña temporal inicial (mínimo 6 caracteres)
              * @example Temporal123!
@@ -580,7 +580,7 @@ export interface components {
              * @example LECTOR
              * @enum {string}
              */
-            role: "ADMIN" | "OPERADOR" | "LECTOR";
+            role: "ADMIN" | "OPERADOR" | "LECTOR" | "AUDITOR";
         };
         ConnectionHealthItemDto: {
             /** Format: uuid */
@@ -976,7 +976,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Se requiere rol ADMIN para consultar los logs de auditoría. */
+            /** @description Se requiere rol ADMIN o AUDITOR para consultar los logs de auditoría. */
             403: {
                 headers: {
                     [name: string]: unknown;
