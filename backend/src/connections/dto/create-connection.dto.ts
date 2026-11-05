@@ -1,14 +1,32 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+import { IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  normalizeTipoMotor,
+  TIPO_MOTOR_MESSAGE,
+  TIPOS_MOTOR,
+  type TipoMotor,
+} from '../../common/tipo-motor.js';
 
 export class CreateConnectionDto {
-  @ApiProperty({
-    example: 'SQLServer',
-    description: 'Tipo de motor de base de datos (ej. SQLServer, Firebase, PostgreSQL, MySQL)',
+  @ApiPropertyOptional({
+    example: 'Ventas producción',
+    description: 'Nombre descriptivo de la conexión',
   })
-  @IsString({ message: 'El tipo de motor debe ser un texto' })
-  @IsNotEmpty({ message: 'El tipo de motor es requerido' })
-  tipoMotor: string;
+  @IsOptional()
+  @IsString({ message: 'El nombre debe ser un texto' })
+  @MaxLength(120, { message: 'El nombre no puede superar 120 caracteres' })
+  nombre?: string;
+
+  @ApiProperty({
+    enum: [...TIPOS_MOTOR],
+    example: 'SQLSERVER',
+    description:
+      'Tipo de motor. Se aceptan alias como "SQL Server", "Firebase" o "postgres", que se normalizan al valor canónico.',
+  })
+  @Transform(({ value }) => normalizeTipoMotor(value))
+  @IsIn([...TIPOS_MOTOR], { message: TIPO_MOTOR_MESSAGE })
+  tipoMotor: TipoMotor;
 
   @ApiProperty({
     example: 'sqlserver.datanexus.internal',
@@ -33,5 +51,4 @@ export class CreateConnectionDto {
   @IsString({ message: 'La cadena de conexión debe ser un texto' })
   @IsNotEmpty({ message: 'La cadena de conexión es requerida' })
   connectionString: string;
-
 }

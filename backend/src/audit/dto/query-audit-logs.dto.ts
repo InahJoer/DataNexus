@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsDateString, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { AUDIT_EVENT_TYPES, type AuditEventType } from '../audit.types.js';
 
 export class QueryAuditLogsDto {
   @ApiPropertyOptional({
@@ -46,10 +47,13 @@ export class QueryAuditLogsDto {
   fechaFin?: string;
 
   @ApiPropertyOptional({
-    description: 'Filtrar por tipo de acción o evento (ej. CONNECTION_DELETED, LOGIN_SUCCESS)',
+    description: 'Filtrar por tipo de acción o evento',
+    enum: [...AUDIT_EVENT_TYPES],
     example: 'CONNECTION_DELETED',
   })
   @IsOptional()
-  @IsString()
-  tipoAccion?: string;
+  @IsIn([...AUDIT_EVENT_TYPES], {
+    message: `tipoAccion debe ser uno de: ${AUDIT_EVENT_TYPES.join(', ')}`,
+  })
+  tipoAccion?: AuditEventType;
 }
