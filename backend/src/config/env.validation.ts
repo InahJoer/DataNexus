@@ -98,6 +98,22 @@ export class EnvironmentVariables {
   @Max(1440)
   PASSWORD_RESET_TTL_MINUTES?: number;
 
+  /** Minutos sin actividad tras los que se cierra la sesión (RF-04, por defecto 30). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(1440)
+  SESSION_IDLE_TIMEOUT_MINUTES?: number;
+
+  /** Días de vida máxima de una sesión aunque haya actividad (por defecto 7). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(90)
+  REFRESH_TOKEN_TTL_DAYS?: number;
+
   @IsOptional()
   @Type(() => Number)
   @IsInt()

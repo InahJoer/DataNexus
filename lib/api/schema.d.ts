@@ -20,6 +20,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Renovar el access token con el refresh token (rotación)
+         * @description Devuelve un access token nuevo y un refresh token nuevo; el anterior deja de servir. Si la sesión lleva más de 30 minutos sin actividad, venció o el refresh token ya se había usado, responde 401 y la sesión queda cerrada.
+         */
+        post: operations["AuthController_refresh"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cerrar sesión
+         * @description Revoca la sesión del refresh token: tanto el refresh token como los access tokens emitidos dejan de funcionar de inmediato. Es idempotente.
+         */
+        post: operations["AuthController_logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/forgot-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Solicitar enlace de recuperación de contraseña (RF-03)
+         * @description Envía un enlace de un solo uso que vence en 30 minutos. La respuesta es la misma exista o no el correo.
+         */
+        post: operations["AuthController_forgotPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restablecer la contraseña con el token del correo
+         * @description Consume el token (un solo uso) y guarda la nueva contraseña con bcrypt.
+         */
+        post: operations["AuthController_resetPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/login": {
         parameters: {
             query?: never;
@@ -92,6 +172,26 @@ export interface paths {
          * @description Obtiene los registros de auditoría del workspace con paginación nativa (?page=1&limit=50) y filtros opcionales por fechaInicio, fechaFin y tipoAccion. Requiere rol ADMIN o AUDITOR.
          */
         get: operations["AuditController_findAll"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/audit/logs/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Exportar la bitácora filtrada a CSV o JSON
+         * @description Descarga los registros del workspace con los mismos filtros que /audit/logs (máximo 10000 por archivo). La exportación queda registrada como AUDIT_LOG_EXPORTED. Requiere rol ADMIN o AUDITOR.
+         */
+        get: operations["AuditController_exportLogs"];
         put?: never;
         post?: never;
         delete?: never;
@@ -412,17 +512,9 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        LoginDto: {
-            /**
-             * @description Correo electrónico registrado del usuario
-             * @example admin@datanexus.com
-             */
-            email: string;
-            /**
-             * @description Contraseña del usuario
-             * @example SecurePassword123!
-             */
-            password: string;
+        RefreshTokenDto: {
+            /** @description Refresh token recibido en el login o en la última renovación */
+            refresh_token: string;
         };
         AuthUserResponseDto: {
             /** Format: uuid */
@@ -436,9 +528,41 @@ export interface components {
             workspaceId: string;
         };
         AuthResponseDto: {
-            /** @description JWT de acceso para Authorization: Bearer */
+            /** @description JWT de acceso para Authorization: Bearer (vence en expires_in segundos) */
             access_token: string;
+            /** @description Refresh token rotativo para POST /auth/refresh. Es de un solo uso: cada renovación devuelve uno nuevo. */
+            refresh_token: string;
+            /**
+             * @description Segundos de vida del access token
+             * @example 900
+             */
+            expires_in: number;
             user: components["schemas"]["AuthUserResponseDto"];
+        };
+        ForgotPasswordDto: {
+            /** @example admin@datanexus.demo */
+            email: string;
+        };
+        MessageResponseDto: {
+            message: string;
+        };
+        ResetPasswordDto: {
+            /** @description Token recibido en el enlace del correo */
+            token: string;
+            /** @example NuevaClave2026! */
+            newPassword: string;
+        };
+        LoginDto: {
+            /**
+             * @description Correo electrónico registrado del usuario
+             * @example admin@datanexus.com
+             */
+            email: string;
+            /**
+             * @description Contraseña del usuario
+             * @example SecurePassword123!
+             */
+            password: string;
         };
         RegisterDto: {
             /**
@@ -498,10 +622,16 @@ export interface components {
         };
         CreateConnectionDto: {
             /**
-             * @description Tipo de motor de base de datos (ej. SQLServer, Firebase, PostgreSQL, MySQL)
-             * @example SQLServer
+             * @description Nombre descriptivo de la conexión
+             * @example Ventas producción
              */
-            tipoMotor: string;
+            nombre?: string;
+            /**
+             * @description Tipo de motor. Se aceptan alias como "SQL Server", "Firebase" o "postgres", que se normalizan al valor canónico.
+             * @example SQLSERVER
+             * @enum {string}
+             */
+            tipoMotor: "POSTGRESQL" | "MYSQL" | "SQLSERVER" | "FIRESTORE" | "MONGODB";
             /**
              * @description Dirección o nombre de host del servidor de base de datos
              * @example sqlserver.datanexus.internal
@@ -521,8 +651,13 @@ export interface components {
         ConnectionResponseDto: {
             /** Format: uuid */
             id: string;
-            /** @example POSTGRESQL */
-            tipoMotor: string;
+            /** @example Ventas producción */
+            nombre: string | null;
+            /**
+             * @example POSTGRESQL
+             * @enum {string}
+             */
+            tipoMotor: "POSTGRESQL" | "MYSQL" | "SQLSERVER" | "FIRESTORE" | "MONGODB";
             /** @example db.internal */
             host: string;
             /** @example analytics */
@@ -532,10 +667,16 @@ export interface components {
         };
         UpdateConnectionDto: {
             /**
-             * @description Tipo de motor de base de datos
-             * @example SQLServer
+             * @description Nombre descriptivo de la conexión
+             * @example Ventas producción
              */
-            tipoMotor?: string;
+            nombre?: string;
+            /**
+             * @description Tipo de motor de base de datos (acepta alias que se normalizan)
+             * @example SQLSERVER
+             * @enum {string}
+             */
+            tipoMotor?: "POSTGRESQL" | "MYSQL" | "SQLSERVER" | "FIRESTORE" | "MONGODB";
             /**
              * @description Dirección o nombre de host del servidor de base de datos
              * @example sqlserver.datanexus.internal
@@ -853,6 +994,125 @@ export interface operations {
             };
         };
     };
+    AuthController_refresh: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefreshTokenDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthResponseDto"];
+                };
+            };
+            /** @description Sesión expirada, cerrada o refresh token inválido. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AuthController_logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefreshTokenDto"];
+            };
+        };
+        responses: {
+            /** @description Sesión cerrada (o ya estaba cerrada). */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AuthController_forgotPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ForgotPasswordDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponseDto"];
+                };
+            };
+            /** @description Demasiadas solicitudes. Intenta más tarde. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AuthController_resetPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetPasswordDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponseDto"];
+                };
+            };
+            /** @description Token inválido, usado o expirado, o contraseña inválida. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Demasiadas solicitudes. Intenta más tarde. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     AuthController_login: {
         parameters: {
             query?: never;
@@ -951,8 +1211,8 @@ export interface operations {
                 fechaInicio?: string;
                 /** @description Filtrar registros hasta esta fecha (formato ISO 8601) */
                 fechaFin?: string;
-                /** @description Filtrar por tipo de acción o evento (ej. CONNECTION_DELETED, LOGIN_SUCCESS) */
-                tipoAccion?: string;
+                /** @description Filtrar por tipo de acción o evento */
+                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED";
             };
             header?: never;
             path?: never;
@@ -977,6 +1237,53 @@ export interface operations {
                 content?: never;
             };
             /** @description Se requiere rol ADMIN o AUDITOR para consultar los logs de auditoría. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AuditController_exportLogs: {
+        parameters: {
+            query?: {
+                /** @description Filtrar registros a partir de esta fecha (formato ISO 8601) */
+                fechaInicio?: string;
+                /** @description Filtrar registros hasta esta fecha (formato ISO 8601) */
+                fechaFin?: string;
+                /** @description Filtrar por tipo de acción o evento */
+                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED";
+                format?: "csv" | "json";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Archivo descargable. El encabezado X-Audit-Export-Truncated vale "true" si había más registros que el máximo. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Formato o filtros inválidos. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Se requiere rol ADMIN o AUDITOR para exportar la bitácora. */
             403: {
                 headers: {
                     [name: string]: unknown;

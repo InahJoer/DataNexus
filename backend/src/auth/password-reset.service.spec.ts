@@ -11,6 +11,7 @@ import {
   PasswordResetService,
   hashResetToken,
 } from './password-reset.service.js';
+import type { SessionsService } from './sessions.service.js';
 import { renderPasswordResetEmail } from '../mailer/templates/password-reset.template.js';
 
 const user = { id: 'u1', email: 'ana@corp.com', name: 'Ana', workspaceId: 'ws-1' };
@@ -33,13 +34,15 @@ function setup(config: Record<string, unknown> = {}) {
   const audit = { record: vi.fn().mockResolvedValue(undefined) };
   const mail = { sendMail: vi.fn().mockResolvedValue({ messageId: 'm1', accepted: [], rejected: [] }) };
   const configService = { get: (key: string) => config[key] } as unknown as ConfigService;
+  const sessions = { revokeAllForUser: vi.fn().mockResolvedValue(2) };
   const service = new PasswordResetService(
     prisma as unknown as PrismaService,
     audit as unknown as AuditService,
     mail as unknown as MailService,
     configService,
+    sessions as unknown as SessionsService,
   );
-  return { service, prisma, tx, audit, mail };
+  return { service, prisma, tx, audit, mail, sessions };
 }
 
 describe('PasswordResetService.requestReset', () => {
@@ -97,7 +100,7 @@ describe('PasswordResetService.resetPassword', () => {
   const token = 'a'.repeat(43);
 
   it('actualiza la contraseña con bcrypt, consume el token y audita', async () => {
-    const { service, tx, audit } = setup();
+    const { service, tx, audit, sessions } = setup();
     tx.passwordResetToken.findUnique.mockResolvedValue({
       id: 't1',
       userId: 'u1',
@@ -115,6 +118,7 @@ describe('PasswordResetService.resetPassword', () => {
       where: { id: 't1', usedAt: null },
       data: { usedAt: expect.any(Date) },
     });
+    expect(sessions.revokeAllForUser).toHaveBeenCalledWith('u1', 'cambio_contrasena', tx);
     const newHash = tx.user.update.mock.calls[0][0].data.password;
     expect(await bcrypt.compare('NuevaClave2026!', newHash)).toBe(true);
     expect(audit.record).toHaveBeenCalledWith(

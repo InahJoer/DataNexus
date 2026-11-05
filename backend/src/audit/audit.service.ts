@@ -280,7 +280,9 @@ export class AuditService {
     }
 
     if (
-      (eventType === 'PASSWORD_RESET_REQUESTED' || eventType === 'PASSWORD_RESET') &&
+      (eventType === 'PASSWORD_RESET_REQUESTED' ||
+        eventType === 'PASSWORD_RESET' ||
+        eventType === 'SESSION_EXPIRED') &&
       typeof details.motivo === 'string'
     ) {
       safeDetails.motivo = details.motivo.slice(0, 64);
