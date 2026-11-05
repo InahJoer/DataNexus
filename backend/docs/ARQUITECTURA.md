@@ -76,6 +76,12 @@ graph TD
 ### 4.1 Autenticación (`/auth`)
 - `POST /auth/register`: Registro inicial de empresa, workspace y usuario administrador.
 - `POST /auth/login`: Autenticación con email/contraseña y emisión de token JWT.
+- `POST /auth/forgot-password`: Envía por correo un enlace de recuperación (RF-03). Responde siempre igual, exista o no
+  el correo, para no revelar cuentas.
+- `POST /auth/reset-password`: Guarda la nueva contraseña con el token del enlace. El token es aleatorio (256 bits),
+  solo se almacena su hash SHA-256, vence a los 30 minutos (`PASSWORD_RESET_TTL_MINUTES`), es de un solo uso y pedir
+  uno nuevo invalida el anterior. Ambos endpoints están limitados a 5 solicitudes cada 15 minutos por IP y se auditan
+  como `PASSWORD_RESET_REQUESTED` y `PASSWORD_RESET`.
 
 ### 4.2 Conexiones de Datos (`/connections`)
 - `POST /connections`: Alta de conexión externa cifrando credenciales con AES-256 (ADMIN).
