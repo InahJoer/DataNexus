@@ -14,9 +14,11 @@ import { AuditService } from '../audit/audit.service.js';
 import { CreateConnectionDto } from './dto/create-connection.dto.js';
 import { UpdateConnectionDto } from './dto/update-connection.dto.js';
 import { hasPermission } from '../auth/interfaces/user-role.js';
+import type { TipoMotor } from '../common/tipo-motor.js';
 
 const SAFE_CONNECTION_SELECT = {
   id: true,
+  nombre: true,
   tipoMotor: true,
   host: true,
   dbName: true,
@@ -46,6 +48,7 @@ export class ConnectionsService {
 
       const connection = await tx.conexionDB.create({
         data: {
+          nombre: input.nombre ?? null,
           tipoMotor: input.tipoMotor,
           host: input.host,
           dbName: input.dbName,
@@ -119,11 +122,13 @@ export class ConnectionsService {
       if (!current) throw new NotFoundException(`Conexión con ID ${id} no encontrada`);
 
       const data: {
-        tipoMotor?: string;
+        nombre?: string;
+        tipoMotor?: TipoMotor;
         host?: string;
         dbName?: string;
         connectionStringEncriptada?: string;
       } = {};
+      if (input.nombre !== undefined) data.nombre = input.nombre;
       if (input.tipoMotor !== undefined) data.tipoMotor = input.tipoMotor;
       if (input.host !== undefined) data.host = input.host;
       if (input.dbName !== undefined) data.dbName = input.dbName;

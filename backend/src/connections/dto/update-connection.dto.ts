@@ -1,14 +1,32 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  normalizeTipoMotor,
+  TIPO_MOTOR_MESSAGE,
+  TIPOS_MOTOR,
+  type TipoMotor,
+} from '../../common/tipo-motor.js';
 
 export class UpdateConnectionDto {
   @ApiPropertyOptional({
-    example: 'SQLServer',
-    description: 'Tipo de motor de base de datos',
+    example: 'Ventas producción',
+    description: 'Nombre descriptivo de la conexión',
   })
   @IsOptional()
-  @IsString({ message: 'El tipo de motor debe ser un texto' })
-  tipoMotor?: string;
+  @IsString({ message: 'El nombre debe ser un texto' })
+  @MaxLength(120, { message: 'El nombre no puede superar 120 caracteres' })
+  nombre?: string;
+
+  @ApiPropertyOptional({
+    enum: [...TIPOS_MOTOR],
+    example: 'SQLSERVER',
+    description: 'Tipo de motor de base de datos (acepta alias que se normalizan)',
+  })
+  @IsOptional()
+  @Transform(({ value }) => normalizeTipoMotor(value))
+  @IsIn([...TIPOS_MOTOR], { message: TIPO_MOTOR_MESSAGE })
+  tipoMotor?: TipoMotor;
 
   @ApiPropertyOptional({
     example: 'sqlserver.datanexus.internal',

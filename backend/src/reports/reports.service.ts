@@ -149,12 +149,12 @@ export class ReportsService {
 
     // 3. Auditoría de la acción
     await this.auditService.record({
-      eventType: 'REPORT_GENERATED_AND_SENT' as any,
+      eventType: 'REPORT_GENERATED_AND_SENT',
       outcome: 'SUCCESS',
       actorUserId: actor.id,
       actorEmail: actor.email,
       workspaceId: actor.workspaceId,
-      targetType: 'REPORT' as any,
+      targetType: 'REPORT',
       targetId: exportResult.filename,
       details: {
         title: dto.reportTitle,

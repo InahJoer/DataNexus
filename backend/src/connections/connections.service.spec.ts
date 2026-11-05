@@ -15,7 +15,7 @@ const admin = {
 
 const connection = {
   id: 'connection-1',
-  tipoMotor: 'PostgreSQL',
+  tipoMotor: 'POSTGRESQL',
   host: 'db.internal',
   dbName: 'analytics',
   connectionStringEncriptada: 'ciphertext-do-not-return',
@@ -69,6 +69,7 @@ describe('ConnectionsService', () => {
       where: { workspaceId: 'workspace-1' },
       select: {
         id: true,
+        nombre: true,
         tipoMotor: true,
         host: true,
         dbName: true,
@@ -99,7 +100,7 @@ describe('ConnectionsService', () => {
     const result = await service.create(
       admin,
       {
-        tipoMotor: 'PostgreSQL',
+        tipoMotor: 'POSTGRESQL',
         host: 'db.internal',
         dbName: 'analytics',
         connectionString: 'postgres://admin:secret@db.internal/analytics',
@@ -109,7 +110,8 @@ describe('ConnectionsService', () => {
 
     expect(tx.conexionDB.create).toHaveBeenCalledWith({
       data: {
-        tipoMotor: 'PostgreSQL',
+        nombre: null,
+        tipoMotor: 'POSTGRESQL',
         host: 'db.internal',
         dbName: 'analytics',
         connectionStringEncriptada:
@@ -118,6 +120,7 @@ describe('ConnectionsService', () => {
       },
       select: {
         id: true,
+        nombre: true,
         tipoMotor: true,
         host: true,
         dbName: true,
@@ -133,7 +136,7 @@ describe('ConnectionsService', () => {
         workspaceId: 'workspace-1',
         targetType: 'CONNECTION',
         targetId: 'connection-1',
-        details: { tipoMotor: 'PostgreSQL', dbName: 'analytics' },
+        details: { tipoMotor: 'POSTGRESQL', dbName: 'analytics' },
         ipAddress: '192.0.2.10',
         userAgent: 'phase3-test',
       }),
@@ -147,7 +150,7 @@ describe('ConnectionsService', () => {
       service.create(
         { ...admin, role: 'LECTOR' },
         {
-          tipoMotor: 'PostgreSQL',
+          tipoMotor: 'POSTGRESQL',
           host: 'db.internal',
           dbName: 'analytics',
           connectionString: 'postgres://secret',
@@ -203,6 +206,7 @@ describe('ConnectionsService', () => {
       },
       select: {
         id: true,
+        nombre: true,
         tipoMotor: true,
         host: true,
         dbName: true,
@@ -244,6 +248,7 @@ describe('ConnectionsService', () => {
       where: { id: 'connection-1' },
       select: {
         id: true,
+        nombre: true,
         tipoMotor: true,
         host: true,
         dbName: true,
@@ -255,7 +260,7 @@ describe('ConnectionsService', () => {
       expect.objectContaining({
         eventType: 'CONNECTION_DELETED',
         targetId: 'connection-1',
-        details: { tipoMotor: 'PostgreSQL', dbName: 'analytics' },
+        details: { tipoMotor: 'POSTGRESQL', dbName: 'analytics' },
       }),
       tx,
     );
@@ -272,6 +277,7 @@ describe('ConnectionsService', () => {
       where: { id: 'connection-from-another-workspace', workspaceId: 'workspace-1' },
       select: {
         id: true,
+        nombre: true,
         tipoMotor: true,
         host: true,
         dbName: true,
@@ -299,7 +305,7 @@ describe('ConnectionsService', () => {
     });
     expect(result).toEqual({
       id: 'connection-1',
-      tipoMotor: 'PostgreSQL',
+      tipoMotor: 'POSTGRESQL',
       dbName: 'analytics',
       connectionString: 'ciphertext-do-not-return',
     });

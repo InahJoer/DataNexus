@@ -76,7 +76,7 @@ export class UsersService {
     });
 
     await this.auditService.record({
-      eventType: 'USER_ROLE_CHANGED' as any,
+      eventType: 'USER_INVITED',
       outcome: 'SUCCESS',
       actorUserId: actor.id,
       actorEmail: actor.email,

@@ -212,7 +212,7 @@ describe('UsersService', () => {
       });
       expect(auditService.record).toHaveBeenCalledWith(
         expect.objectContaining({
-          eventType: 'USER_ROLE_CHANGED',
+          eventType: 'USER_INVITED',
           outcome: 'SUCCESS',
           actorUserId: 'u1',
         }),

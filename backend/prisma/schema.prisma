@@ -1,13 +1,42 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// Esquema de persistencia interna de DataNexus (Dossier Técnico, sección 4).
+// Motor: PostgreSQL en todos los entornos (local vía docker-compose, staging y producción).
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
+}
+
+/// Matriz RBAC de 4 roles. Debe coincidir con USER_ROLES en src/auth/interfaces/user-role.ts.
+enum Role {
+  ADMIN
+  OPERADOR
+  LECTOR
+  AUDITOR
+}
+
+/// Motores de bases de datos externas soportados. Debe coincidir con TIPOS_MOTOR en src/common/tipo-motor.ts.
+enum TipoMotor {
+  POSTGRESQL
+  MYSQL
+  SQLSERVER
+  FIRESTORE
+  MONGODB
+}
+
+/// Eventos de la bitácora. Debe coincidir con AUDIT_EVENT_TYPES en src/audit/audit.types.ts.
+enum AuditEventType {
+  LOGIN_SUCCESS
+  LOGIN_FAILURE
+  USER_ROLE_CHANGED
+  USER_INVITED
+  CONNECTION_CREATED
+  CONNECTION_UPDATED
+  CONNECTION_DELETED
+  REPORT_GENERATED_AND_SENT
 }
 
 model Workspace {
@@ -23,24 +52,29 @@ model User {
   email       String    @unique
   name        String
   password    String
-  role        String    @default("LECTOR")
+  role        Role      @default(LECTOR)
   workspaceId String
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
 }
 
 model ConexionDB {
   id                         String    @id @default(uuid())
-  tipoMotor                  String
+  nombre                     String?
+  tipoMotor                  TipoMotor
   host                       String
   dbName                     String
   connectionStringEncriptada String
   workspaceId                String
   workspace                  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
 }
 
 model RegistroAuditoria {
-  id          String   @id @default(uuid())
-  eventType   String
+  id          String         @id @default(uuid())
+  eventType   AuditEventType
   outcome     String
   actorUserId String?
   actorEmail  String?
@@ -50,7 +84,7 @@ model RegistroAuditoria {
   detailsJson String?
   ipAddress   String?
   userAgent   String?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime       @default(now())
 
   @@index([workspaceId, createdAt])
   @@index([actorUserId, createdAt])
