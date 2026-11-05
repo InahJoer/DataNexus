@@ -11,6 +11,7 @@ import {
   Max,
   Min,
   MinLength,
+  ValidateIf,
   validateSync,
 } from 'class-validator';
 
@@ -61,6 +62,27 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsUrl({ require_tld: false })
   FRONTEND_URL?: string;
+
+  @IsOptional()
+  @IsIn(['local', 'gcs'])
+  REPORT_STORAGE_PROVIDER: 'local' | 'gcs' = 'local';
+
+  @ValidateIf((env: EnvironmentVariables) => env.REPORT_STORAGE_PROVIDER === 'gcs')
+  @IsString()
+  @IsNotEmpty()
+  REPORTS_GCS_BUCKET?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  REPORTS_LOCAL_DIRECTORY?: string;
+
+  @ValidateIf(
+    (env: EnvironmentVariables) =>
+      env.REPORT_STORAGE_PROVIDER === 'local' && env.NODE_ENV === 'production',
+  )
+  @IsUrl({ require_tld: false, protocols: ['https'], require_protocol: true })
+  REPORTS_PUBLIC_BASE_URL?: string;
 
   @IsOptional()
   @IsString()

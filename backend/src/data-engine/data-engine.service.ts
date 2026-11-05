@@ -7,6 +7,7 @@ import {
   Inject,
   Injectable,
 } from '@nestjs/common';
+import type { Writable } from 'node:stream';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface.js';
 import { ConnectionsService } from '../connections/connections.service.js';
 import {
@@ -48,6 +49,12 @@ export interface ExportResult {
   contentType: string;
   filename: string;
   /** Filas incluidas en el archivo (para la bitácora). */
+  totalRows: number;
+}
+
+export interface StreamExportResult {
+  contentType: string;
+  filename: string;
   totalRows: number;
 }
 
@@ -299,6 +306,40 @@ export class DataEngineService {
         };
       }
     }
+  }
+
+  async executeCrossJoinToStream(
+    payload: ExportCrossJoinDto,
+    user: AuthenticatedUser,
+    destination: Writable,
+  ): Promise<StreamExportResult> {
+    if (payload.format !== 'excel' && payload.format !== 'pdf') {
+      throw new BadRequestException('Los reportes solo admiten formato Excel o PDF');
+    }
+
+    const combinedData = await this.performJoin(payload, user);
+    const securedData = this.maskingService.maskDataset(combinedData, user.role);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+
+    if (payload.format === 'excel') {
+      await this.exportService.writeExcel(securedData, destination);
+      return {
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        filename: `datanexus_export_${timestamp}.xlsx`,
+        totalRows: securedData.length,
+      };
+    }
+
+    await this.exportService.writePdf(
+      securedData,
+      `DataNexus - Join ${payload.tablaSql} x ${payload.coleccionNoSql}`,
+      destination,
+    );
+    return {
+      contentType: 'application/pdf',
+      filename: `datanexus_export_${timestamp}.pdf`,
+      totalRows: securedData.length,
+    };
   }
 
   /**
