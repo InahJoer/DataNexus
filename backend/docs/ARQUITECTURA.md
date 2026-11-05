@@ -97,22 +97,33 @@ graph TD
 
 ### 4.6 Gestión de Miembros (`/users`)
 - `GET /users`: Listado de todos los miembros del Workspace.
-- `POST /users/invite`: Invitación o alta de un nuevo miembro con rol `ADMIN` o `LECTOR` (ADMIN).
+- `POST /users/invite`: Invitación o alta de un nuevo miembro con rol `ADMIN`, `OPERADOR`, `LECTOR` o `AUDITOR` (ADMIN).
 - `PATCH /users/:id/role`: Modificación de permisos de usuario (ADMIN).
 
 ---
 
 ## 5. Matriz de Roles y Seguridad (RBAC)
 
-| Funcionalidad | Rol ADMIN | Rol LECTOR |
-| :--- | :---: | :---: |
-| Crear / Editar / Borrar Conexiones | ✅ Permitido | ❌ Denegado (`403 Forbidden`) |
-| Explorar Esquemas Externos | ✅ Permitido | ✅ Permitido |
-| Ejecutar Cross-Joins | ✅ Datos completos | ⚠️ Datos enmascarados (`***@...`, `***`) |
-| Exportar a Excel y PDF | ✅ Datos completos | ⚠️ Datos enmascarados |
-| Consultar Logs de Auditoría | ✅ Permitido | ❌ Denegado (`403 Forbidden`) |
-| Disparar / Automatizar Reportes | ✅ Permitido | ❌ Denegado (`403 Forbidden`) |
-| Invitar Miembros y Cambiar Roles | ✅ Permitido | ❌ Denegado (`403 Forbidden`) |
+DataNexus aplica la segregación de funciones de 4 roles definida en el Dossier Técnico. La matriz vive en código en
+`src/auth/interfaces/user-role.ts` (`ROLE_PERMISSIONS`) y se aplica en dos capas: `@RequirePermission()` + `RolesGuard`
+en los controladores y `hasPermission()` en los servicios (defensa en profundidad).
+
+| Permiso (`ROLE_PERMISSIONS`) | ADMIN | OPERADOR (Analista BI) | LECTOR | AUDITOR de TI |
+| :--- | :---: | :---: | :---: | :---: |
+| `MANAGE_CONNECTIONS` · Crear / editar / borrar conexiones | ✅ | ❌ | ❌ | ❌ |
+| `VIEW_CONNECTIONS` · Listar conexiones y su salud | ✅ | ✅ | ❌ | ❌ |
+| `EXPLORE_DATA` · Explorar esquemas y campos externos | ✅ | ✅ | ❌ | ❌ |
+| `RUN_JOINS` · Ejecutar Cross-Joins | ✅ | ✅ | ❌ | ❌ |
+| `EXPORT_DATA` · Exportar a Excel / PDF / JSON | ✅ | ✅ | ❌ | ❌ |
+| `MANAGE_REPORTS` · Disparar / programar reportes | ✅ | ✅ | ❌ | ❌ |
+| `READ_AUDIT` · Consultar la bitácora de auditoría | ✅ | ❌ | ❌ | ✅ |
+| `MANAGE_MEMBERS` · Invitar miembros y cambiar roles | ✅ | ❌ | ❌ | ❌ |
+| `VIEW_UNMASKED_DATA` · Ver datos sin enmascarar | ✅ | ✅ | ❌ | ❌ |
+
+- El `MaskingService` es *fail-closed*: cualquier rol sin `VIEW_UNMASKED_DATA` (LECTOR, AUDITOR o un rol desconocido)
+  recibe correos, teléfonos y secretos enmascarados.
+- El LECTOR consumirá consultas predefinidas (Consultas Guardadas, Sprint 3) siempre con datos enmascarados.
+- Los endpoints protegidos responden `403 Forbidden` cuando el rol no tiene el permiso.
 
 ---
 

@@ -17,7 +17,7 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
-import { Roles } from '../auth/decorators/roles.decorator.js';
+import { RequirePermission } from '../auth/decorators/roles.decorator.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-user.interface.js';
 import { ReportsService } from './reports.service.js';
 import { TriggerReportDto } from './dto/trigger-report.dto.js';
@@ -30,7 +30,7 @@ export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
 
   @Post('trigger')
-  @Roles('ADMIN', 'OPERADOR')
+  @RequirePermission('MANAGE_REPORTS')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Disparar ejecución y envío de reporte por correo',

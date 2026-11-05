@@ -25,7 +25,7 @@ function DashboardView() {
   const health = useConnectionHealth();
   if (!session) return null;
   const canMonitorConnections = session.user.role === 'ADMIN' || session.user.role === 'OPERADOR';
-  const canReviewAudit = session.user.role === 'ADMIN';
+  const canReviewAudit = session.user.role === 'ADMIN' || session.user.role === 'AUDITOR';
   const firstName = session.user.name.split(' ')[0] ?? session.user.name;
   const checkedAt = health.report
     ? new Intl.DateTimeFormat('es', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(health.report.checkedAt))
