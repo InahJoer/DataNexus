@@ -124,7 +124,10 @@ Nunca se guardan valores de filtros, filas ni credenciales.
    SQL directo o clientes externos como psql.
 
 ### 4.5 Reportes Programados (`/reports`)
-- `POST /reports/trigger`: Disparo manual de consulta, generación de adjunto y envío por correo electrónico (ADMIN).
+- `POST /reports/trigger`: Disparo manual de consulta, generación en streaming y envío por correo electrónico con un enlace seguro de 24 horas (ADMIN u OPERADOR).
+- `GET /reports/download/:id`: Descarga transmitida con firma HMAC en modo local; en GCS el correo usa una URL firmada V4 de 24 horas.
+- El backend usa GCS cuando `REPORT_STORAGE_PROVIDER=gcs`; en desarrollo usa almacenamiento local configurable con `REPORTS_LOCAL_DIRECTORY`.
+- Los enlaces de descarga son bearer: cualquier persona que tenga el enlace puede usarlo hasta su vencimiento; el bucket GCS debe permanecer privado.
 - *Cron Job automático:* Ejecución programada diaria a la medianoche (UTC).
 
 ### 4.6 Gestión de Miembros (`/users`)
