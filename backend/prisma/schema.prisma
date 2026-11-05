@@ -43,6 +43,9 @@ enum AuditEventType {
   AUDIT_LOG_EXPORTED
   PASSWORD_RESET_REQUESTED
   PASSWORD_RESET
+  LOGOUT
+  SESSION_EXPIRED
+  REFRESH_TOKEN_REUSED
 }
 
 model Workspace {
@@ -62,6 +65,7 @@ model User {
   workspaceId         String
   workspace           Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   passwordResetTokens PasswordResetToken[]
+  sessions            UserSession[]
 
   @@index([workspaceId])
 }
@@ -110,4 +114,35 @@ model PasswordResetToken {
   createdAt DateTime  @default(now())
 
   @@index([userId])
+}
+
+/// Sesión de usuario (RF-04). El access token JWT lleva su id (sid) y cada petición verifica que siga activa.
+model UserSession {
+  id             String         @id @default(uuid())
+  userId         String
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime       @default(now())
+  /// Última petición autenticada o renovación. Más de SESSION_IDLE_TIMEOUT_MINUTES sin actividad cierra la sesión.
+  lastActivityAt DateTime
+  /// Vencimiento absoluto (REFRESH_TOKEN_TTL_DAYS), aunque haya actividad.
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  revokedReason  String?
+  ipAddress      String?
+  userAgent      String?
+  refreshTokens  RefreshToken[]
+
+  @@index([userId])
+}
+
+/// Refresh token rotativo. Solo se guarda el hash SHA-256; reutilizar uno ya rotado revoca toda la sesión.
+model RefreshToken {
+  id        String      @id @default(uuid())
+  tokenHash String      @unique
+  sessionId String
+  session   UserSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  createdAt DateTime    @default(now())
+  rotatedAt DateTime?
+
+  @@index([sessionId])
 }

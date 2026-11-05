@@ -7,6 +7,7 @@ import { AuditService } from '../audit/audit.service.js';
 import { MailService } from '../mailer/mail.service.js';
 import { renderPasswordResetEmail } from '../mailer/templates/password-reset.template.js';
 import type { RequestAuditContext } from './interfaces/authenticated-user.interface.js';
+import { SessionsService } from './sessions.service.js';
 
 export const DEFAULT_RESET_TTL_MINUTES = 30;
 
@@ -26,6 +27,7 @@ export function hashResetToken(token: string): string {
  * - El token es aleatorio (256 bits) y en la base solo se guarda su hash SHA-256.
  * - Vence a los PASSWORD_RESET_TTL_MINUTES (30 por defecto) y es de un solo uso.
  * - Pedir un enlace nuevo invalida los anteriores del mismo usuario.
+ * - Restablecer la contraseña cierra todas las sesiones abiertas del usuario.
  */
 @Injectable()
 export class PasswordResetService {
@@ -36,6 +38,7 @@ export class PasswordResetService {
     private readonly auditService: AuditService,
     private readonly mailService: MailService,
     private readonly configService: ConfigService,
+    private readonly sessionsService: SessionsService,
   ) {}
 
   private get ttlMinutes(): number {
@@ -133,6 +136,8 @@ export class PasswordResetService {
         select: { id: true, email: true, workspaceId: true },
       });
       await tx.passwordResetToken.deleteMany({ where: { userId: record.userId, usedAt: null } });
+      // Cambiar la contraseña cierra todas las sesiones abiertas del usuario.
+      await this.sessionsService.revokeAllForUser(record.userId, 'cambio_contrasena', tx);
 
       await this.auditService.record(
         {

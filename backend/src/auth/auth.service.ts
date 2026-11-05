@@ -1,12 +1,11 @@
 import { Injectable, UnauthorizedException, ConflictException, NotFoundException } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { RequestAuditContext } from './interfaces/authenticated-user.interface.js';
 import { LoginDto } from './dto/login.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
-import type { JwtPayload } from './interfaces/jwt-payload.interface.js';
+import { SessionsService } from './sessions.service.js';
 import { isUserRole } from './interfaces/user-role.js';
 import type { AuthResponseDto } from './dto/auth-response.dto.js';
 
@@ -14,12 +13,12 @@ import type { AuthResponseDto } from './dto/auth-response.dto.js';
 export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly jwtService: JwtService,
+    private readonly sessionsService: SessionsService,
     private readonly auditService: AuditService,
   ) {}
 
   /**
-   * Valida las credenciales de un usuario y genera un token JWT.
+   * Valida las credenciales, abre una sesión y emite access token (15 min) y refresh token.
    * @param loginDto Datos de autenticación (email y contraseña)
    * @returns Token JWT de acceso y datos públicos del usuario
    */
@@ -55,15 +54,14 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
-    const payload: JwtPayload = {
-      sub: user.id,
+    const authenticatedUser = {
+      id: user.id,
       email: user.email,
       name: user.name,
       role: user.role,
       workspaceId: user.workspaceId,
     };
-
-    const token = this.jwtService.sign(payload);
+    const tokens = await this.sessionsService.startSession(authenticatedUser, requestContext);
 
     await this.auditService.record({
       eventType: 'LOGIN_SUCCESS',
@@ -74,16 +72,7 @@ export class AuthService {
       ...requestContext,
     });
 
-    return {
-      access_token: token,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        workspaceId: user.workspaceId,
-      },
-    };
+    return { ...tokens, user: authenticatedUser };
   }
 
   /**

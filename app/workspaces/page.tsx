@@ -60,7 +60,7 @@ function WorkspaceSelection() {
           </Link>
 
           <div className="workspace-hint"><span className="hint-icon"><Icon name="help" size={16} /></span><p>La API actual asocia una cuenta a un solo workspace; la gestión de varios espacios aún no está disponible.</p></div>
-          <Link className="back-to-login" href="/login" onClick={logout}><Icon name="arrow-left" size={15} /> Cerrar sesión</Link>
+          <Link className="back-to-login" href="/login" onClick={() => logout('manual')}><Icon name="arrow-left" size={15} /> Cerrar sesión</Link>
         </div>
         <footer className="page-footnote"><span>© 2026 DataNexus</span><span>Privacidad <i /> Seguridad <i /> Estado del sistema</span></footer>
       </section>
