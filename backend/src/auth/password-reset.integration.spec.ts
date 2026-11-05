@@ -6,6 +6,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type { MailService } from '../mailer/mail.service.js';
 import { PasswordResetService } from './password-reset.service.js';
+import type { SessionsService } from './sessions.service.js';
 
 /** Flujo completo contra PostgreSQL real (requiere DATABASE_URL con migraciones aplicadas). */
 describe.skipIf(!process.env.DATABASE_URL)('Recuperación de contraseña en PostgreSQL', () => {
@@ -16,6 +17,7 @@ describe.skipIf(!process.env.DATABASE_URL)('Recuperación de contraseña en Post
     new AuditService(prisma),
     { sendMail } as unknown as MailService,
     { get: () => undefined } as unknown as ConfigService,
+    { revokeAllForUser: vi.fn().mockResolvedValue(0) } as unknown as SessionsService,
   );
   const email = `reset-${Date.now()}@datanexus.test`;
   let userId = '';

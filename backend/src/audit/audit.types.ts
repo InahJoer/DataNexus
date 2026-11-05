@@ -17,6 +17,9 @@ export const AUDIT_EVENT_TYPES = [
   'AUDIT_LOG_EXPORTED',
   'PASSWORD_RESET_REQUESTED',
   'PASSWORD_RESET',
+  'LOGOUT',
+  'SESSION_EXPIRED',
+  'REFRESH_TOKEN_REUSED',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
@@ -27,7 +30,7 @@ export interface AuditEventInput {
   actorUserId?: string;
   actorEmail?: string;
   workspaceId?: string;
-  targetType?: 'USER' | 'CONNECTION' | 'REPORT' | 'CROSS_JOIN' | 'AUDIT_LOG' | 'RECORD';
+  targetType?: 'USER' | 'CONNECTION' | 'REPORT' | 'CROSS_JOIN' | 'AUDIT_LOG' | 'RECORD' | 'SESSION';
   targetId?: string;
   details?: Record<string, unknown>;
   ipAddress?: string;

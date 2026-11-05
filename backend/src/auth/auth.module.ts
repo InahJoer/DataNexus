@@ -5,6 +5,7 @@ import { PassportModule } from '@nestjs/passport';
 import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import { PasswordResetService } from './password-reset.service.js';
+import { SessionsService } from './sessions.service.js';
 import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
 import { JwtStrategy } from './strategies/jwt.strategy.js';
 import { RolesGuard } from './guards/roles.guard.js';
@@ -21,13 +22,13 @@ import { AuditModule } from '../audit/audit.module.js';
       useFactory: (configService: ConfigService) => ({
         secret: getJwtSecret(configService),
         signOptions: {
-          expiresIn: (configService.get<string>('JWT_EXPIRES_IN') ?? '1d') as any,
+          expiresIn: (configService.get<string>('JWT_EXPIRES_IN') ?? '15m') as any,
         },
       }),
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, PasswordResetService, JwtStrategy, JwtAuthGuard, RolesGuard],
-  exports: [AuthService, JwtAuthGuard, RolesGuard, PassportModule, JwtModule],
+  providers: [AuthService, SessionsService, PasswordResetService, JwtStrategy, JwtAuthGuard, RolesGuard],
+  exports: [AuthService, SessionsService, JwtAuthGuard, RolesGuard, PassportModule, JwtModule],
 })
 export class AuthModule {}

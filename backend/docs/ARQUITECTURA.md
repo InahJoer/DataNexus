@@ -75,7 +75,21 @@ graph TD
 
 ### 4.1 Autenticación (`/auth`)
 - `POST /auth/register`: Registro inicial de empresa, workspace y usuario administrador.
-- `POST /auth/login`: Autenticación con email/contraseña y emisión de token JWT.
+- `POST /auth/login`: Autenticación con email/contraseña. Abre una sesión y devuelve `access_token` (JWT de 15 min),
+  `refresh_token` y `expires_in`.
+- `POST /auth/refresh`: Rota el refresh token y emite un access token nuevo.
+- `POST /auth/logout`: Cierra la sesión del refresh token (idempotente, 204).
+
+**Sesiones (RF-04):** cada login crea una `UserSession` y el access token lleva su id (`sid`). `JwtStrategy` verifica
+en cada petición que la sesión siga activa, así que el logout, la inactividad o una revocación invalidan también los
+access tokens ya emitidos. Reglas:
+- Más de 30 minutos sin peticiones ni renovaciones (`SESSION_IDLE_TIMEOUT_MINUTES`) cierran la sesión.
+- Una sesión dura como máximo 7 días (`REFRESH_TOKEN_TTL_DAYS`) aunque haya actividad.
+- El refresh token es de un solo uso. Presentar uno ya rotado se trata como robo: se revoca la sesión completa y se
+  audita `REFRESH_TOKEN_REUSED`. Por eso el cliente debe hacer **una sola renovación a la vez**.
+- Restablecer la contraseña cierra todas las sesiones del usuario.
+- El frontend renueva el access token un minuto antes de que venza, solo si hubo interacción del usuario, y cierra la
+  sesión tras 30 minutos sin interacción.
 - `POST /auth/forgot-password`: Envía por correo un enlace de recuperación (RF-03). Responde siempre igual, exista o no
   el correo, para no revelar cuentas.
 - `POST /auth/reset-password`: Guarda la nueva contraseña con el token del enlace. El token es aleatorio (256 bits),
