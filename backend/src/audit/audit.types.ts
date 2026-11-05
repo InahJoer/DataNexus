@@ -15,6 +15,8 @@ export const AUDIT_EVENT_TYPES = [
   /** Reservado para la edición de celdas (RF-18/RF-19). */
   'MODIFY_RECORD',
   'AUDIT_LOG_EXPORTED',
+  'PASSWORD_RESET_REQUESTED',
+  'PASSWORD_RESET',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];

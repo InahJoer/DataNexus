@@ -279,6 +279,13 @@ export class AuditService {
       }
     }
 
+    if (
+      (eventType === 'PASSWORD_RESET_REQUESTED' || eventType === 'PASSWORD_RESET') &&
+      typeof details.motivo === 'string'
+    ) {
+      safeDetails.motivo = details.motivo.slice(0, 64);
+    }
+
     if (eventType === 'AUDIT_LOG_EXPORTED') {
       for (const key of ['formato', 'tipoAccion', 'fechaInicio', 'fechaFin']) {
         if (typeof details[key] === 'string') safeDetails[key] = details[key];

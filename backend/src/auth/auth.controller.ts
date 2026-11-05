@@ -7,11 +7,54 @@ import { RegisterDto } from './dto/register.dto.js';
 import { AuthResponseDto, AuthUserResponseDto } from './dto/auth-response.dto.js';
 import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
 import type { AuthenticatedRequest } from './interfaces/authenticated-user.interface.js';
+import { Throttle } from '@nestjs/throttler';
+import { PasswordResetService } from './password-reset.service.js';
+import { ForgotPasswordDto, MessageResponseDto, ResetPasswordDto } from './dto/password-reset.dto.js';
+
+/** 5 solicitudes cada 15 minutos por IP en los endpoints de recuperación. */
+const PASSWORD_RESET_THROTTLE = { default: { limit: 5, ttl: 15 * 60_000 } };
 
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly passwordResetService: PasswordResetService,
+  ) {}
+
+  @Throttle(PASSWORD_RESET_THROTTLE)
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Solicitar enlace de recuperación de contraseña (RF-03)',
+    description:
+      'Envía un enlace de un solo uso que vence en 30 minutos. La respuesta es la misma exista o no el correo.',
+  })
+  @ApiOkResponse({ type: MessageResponseDto })
+  @ApiResponse({ status: 429, description: 'Demasiadas solicitudes. Intenta más tarde.' })
+  forgotPassword(@Body() dto: ForgotPasswordDto, @Req() request: Request): Promise<MessageResponseDto> {
+    return this.passwordResetService.requestReset(dto.email, {
+      ipAddress: request.ip,
+      userAgent: request.get('user-agent') ?? undefined,
+    });
+  }
+
+  @Throttle(PASSWORD_RESET_THROTTLE)
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Restablecer la contraseña con el token del correo',
+    description: 'Consume el token (un solo uso) y guarda la nueva contraseña con bcrypt.',
+  })
+  @ApiOkResponse({ type: MessageResponseDto })
+  @ApiResponse({ status: 400, description: 'Token inválido, usado o expirado, o contraseña inválida.' })
+  @ApiResponse({ status: 429, description: 'Demasiadas solicitudes. Intenta más tarde.' })
+  resetPassword(@Body() dto: ResetPasswordDto, @Req() request: Request): Promise<MessageResponseDto> {
+    return this.passwordResetService.resetPassword(dto.token, dto.newPassword, {
+      ipAddress: request.ip,
+      userAgent: request.get('user-agent') ?? undefined,
+    });
+  }
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
