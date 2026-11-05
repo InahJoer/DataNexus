@@ -47,6 +47,8 @@ export interface ExportResult {
   buffer: Buffer;
   contentType: string;
   filename: string;
+  /** Filas incluidas en el archivo (para la bitácora). */
+  totalRows: number;
 }
 
 interface AggregateMetricState {
@@ -271,6 +273,7 @@ export class DataEngineService {
           contentType:
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
           filename: `datanexus_export_${timestamp}.xlsx`,
+          totalRows: securedData.length,
         };
       }
       case 'pdf': {
@@ -282,6 +285,7 @@ export class DataEngineService {
           buffer,
           contentType: 'application/pdf',
           filename: `datanexus_export_${timestamp}.pdf`,
+          totalRows: securedData.length,
         };
       }
       case 'json':
@@ -291,6 +295,7 @@ export class DataEngineService {
           buffer,
           contentType: 'application/json',
           filename: `datanexus_export_${timestamp}.json`,
+          totalRows: securedData.length,
         };
       }
     }
