@@ -5,15 +5,17 @@ import { useRouter } from 'next/navigation';
 import { Icon } from '@/components/icons';
 import { createApiClient } from '@/lib/api/client';
 import { useAuth } from '@/lib/auth-context';
-import type { components } from '@/lib/api/schema';
+import type { components, paths } from '@/lib/api/schema';
 
 type AuditPage = components['schemas']['PaginatedAuditLogsResponseDto'];
 type AuditEntry = components['schemas']['AuditLogEntryResponseDto'];
 
+type AuditEventType = NonNullable<NonNullable<paths['/audit/logs']['get']['parameters']['query']>['tipoAccion']>;
+
 type AuditFilters = {
   startDate: string;
   endDate: string;
-  eventType: string;
+  eventType: AuditEventType | '';
 };
 
 const EMPTY_FILTERS: AuditFilters = { startDate: '', endDate: '', eventType: '' };
@@ -185,7 +187,7 @@ export function AuditTable() {
         </label>
         <label className="audit-filter-field audit-filter-field--event">
           <span>Tipo de evento</span>
-          <select value={draftFilters.eventType} onChange={(event) => setDraftFilters((current) => ({ ...current, eventType: event.target.value }))}>
+          <select value={draftFilters.eventType} onChange={(event) => setDraftFilters((current) => ({ ...current, eventType: event.target.value as AuditEventType | '' }))}>
             <option value="">Todos los eventos</option>
             {EVENT_TYPES.map((eventType) => <option key={eventType.value} value={eventType.value}>{eventType.label}</option>)}
           </select>

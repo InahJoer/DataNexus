@@ -3,7 +3,12 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icon } from '@/components/icons';
-import { useAuth } from '@/lib/auth-context';
+import { takeLogoutReason, useAuth } from '@/lib/auth-context';
+
+const LOGOUT_NOTICES = {
+  inactividad: 'Tu sesión se cerró tras 30 minutos sin actividad. Inicia sesión de nuevo.',
+  expirada: 'Tu sesión expiró. Inicia sesión de nuevo.',
+} as const;
 
 export function LoginForm() {
   const router = useRouter();
@@ -11,6 +16,12 @@ export function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    const reason = takeLogoutReason();
+    if (reason && reason !== 'manual') setNotice(LOGOUT_NOTICES[reason]);
+  }, []);
 
   useEffect(() => {
     if (session) router.replace('/workspaces');
@@ -77,6 +88,7 @@ export function LoginForm() {
         </button>
       </div>
 
+      {notice && !errorMessage && <p className="form-notice" role="status">{notice}</p>}
       {errorMessage && <p className="form-error" id="login-error" role="alert">{errorMessage}</p>}
       <button className="button button--primary login-submit" type="submit" disabled={isSubmitting}>
         {isSubmitting ? 'Verificando…' : 'Continuar'} {!isSubmitting && <Icon name="arrow-right" size={17} />}

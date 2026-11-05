@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { UnauthorizedException } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
+import type { SessionsService } from './sessions.service.js';
 import bcrypt from 'bcrypt';
 import { AuthService } from './auth.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -10,7 +10,7 @@ import type { RegisterDto } from './dto/register.dto.js';
 describe('AuthService', () => {
   let authService: AuthService;
   let prismaService: any;
-  let jwtService: any;
+  let sessionsService: any;
   let auditService: any;
 
   beforeEach(() => {
@@ -24,8 +24,12 @@ describe('AuthService', () => {
       },
     };
 
-    jwtService = {
-      sign: vi.fn().mockReturnValue('mocked.jwt.token'),
+    sessionsService = {
+      startSession: vi.fn().mockResolvedValue({
+        access_token: 'mocked.jwt.token',
+        refresh_token: 'mocked-refresh-token',
+        expires_in: 900,
+      }),
     };
 
     auditService = {
@@ -34,7 +38,7 @@ describe('AuthService', () => {
 
     authService = new AuthService(
       prismaService as unknown as PrismaService,
-      jwtService as unknown as JwtService,
+      sessionsService as unknown as SessionsService,
       auditService as unknown as AuditService,
     );
   });
@@ -72,7 +76,12 @@ describe('AuthService', () => {
       role: 'ADMIN',
       workspaceId: 'ws-uuid-1',
     });
-    expect(jwtService.sign).toHaveBeenCalled();
+    expect(sessionsService.startSession).toHaveBeenCalledWith(
+      expect.objectContaining({ id: expect.any(String), role: expect.any(String) }),
+      expect.any(Object),
+    );
+    expect(result).toHaveProperty('refresh_token', 'mocked-refresh-token');
+    expect(result).toHaveProperty('expires_in', 900);
     expect(auditService.record).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: 'LOGIN_SUCCESS',

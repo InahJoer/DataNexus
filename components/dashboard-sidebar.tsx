@@ -25,7 +25,7 @@ export function DashboardSidebar() {
   const visibleNavigation = navigation.filter((item) => !item.roles || item.roles.includes(user.role));
 
   function handleLogout() {
-    logout();
+    logout('manual');
     router.replace('/login');
   }
 

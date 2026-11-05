@@ -10,9 +10,16 @@ import type { AuthenticatedRequest } from './interfaces/authenticated-user.inter
 import { Throttle } from '@nestjs/throttler';
 import { PasswordResetService } from './password-reset.service.js';
 import { ForgotPasswordDto, MessageResponseDto, ResetPasswordDto } from './dto/password-reset.dto.js';
+import { SessionsService } from './sessions.service.js';
+import { RefreshTokenDto } from './dto/refresh-token.dto.js';
 
 /** 5 solicitudes cada 15 minutos por IP en los endpoints de recuperación. */
 const PASSWORD_RESET_THROTTLE = { default: { limit: 5, ttl: 15 * 60_000 } };
+
+const requestContext = (request: Request) => ({
+  ipAddress: request.ip,
+  userAgent: request.get('user-agent') ?? undefined,
+});
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -20,7 +27,33 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly passwordResetService: PasswordResetService,
+    private readonly sessionsService: SessionsService,
   ) {}
+
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Renovar el access token con el refresh token (rotación)',
+    description:
+      'Devuelve un access token nuevo y un refresh token nuevo; el anterior deja de servir. Si la sesión lleva más de 30 minutos sin actividad, venció o el refresh token ya se había usado, responde 401 y la sesión queda cerrada.',
+  })
+  @ApiOkResponse({ type: AuthResponseDto })
+  @ApiResponse({ status: 401, description: 'Sesión expirada, cerrada o refresh token inválido.' })
+  refresh(@Body() dto: RefreshTokenDto, @Req() request: Request): Promise<AuthResponseDto> {
+    return this.sessionsService.refresh(dto.refresh_token, requestContext(request));
+  }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Cerrar sesión',
+    description:
+      'Revoca la sesión del refresh token: tanto el refresh token como los access tokens emitidos dejan de funcionar de inmediato. Es idempotente.',
+  })
+  @ApiResponse({ status: 204, description: 'Sesión cerrada (o ya estaba cerrada).' })
+  async logout(@Body() dto: RefreshTokenDto, @Req() request: Request): Promise<void> {
+    await this.sessionsService.logout(dto.refresh_token, requestContext(request));
+  }
 
   @Throttle(PASSWORD_RESET_THROTTLE)
   @Post('forgot-password')
