@@ -1,0 +1,637 @@
+openapi: 3.0.3
+info:
+  title: DataNexus API
+  version: 1.2.0
+  description: >-
+    Contrato HTTP versionado del backend DataNexus para consumo desde los demás
+    repositorios del Polyrepo. Autorización por JWT y aislamiento por workspace.
+servers:
+  - url: /
+    description: Host configurado para el backend
+security:
+  - bearerAuth: []
+paths:
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Iniciar sesión
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: JWT y perfil público.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Credenciales inválidas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Registrar usuario como LECTOR
+      description: >-
+        Ruta pública. El rol lo asigna el servidor como LECTOR; role no forma
+        parte del cuerpo aceptado. La admisión al workspace continúa pendiente
+        de política de producto.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Usuario creado sin contraseña.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisteredUser'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: El correo ya está registrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /auth/profile:
+    get:
+      tags: [Auth]
+      summary: Consultar el perfil autenticado
+      responses:
+        '200':
+          description: Perfil público y workspace del usuario.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicUser'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /connections:
+    get:
+      tags: [Connections]
+      summary: Listar conexiones del workspace autenticado
+      responses:
+        '200':
+          description: Conexiones sin credenciales.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Connection'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Connections]
+      summary: Crear una conexión para el workspace autenticado
+      description: Solo ADMIN. connectionString se acepta al crear, pero nunca se devuelve.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateConnectionRequest'
+      responses:
+        '201':
+          description: Conexión creada sin credenciales.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Connection'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /connections/{id}:
+    parameters:
+      - $ref: '#/components/parameters/UuidPath'
+    get:
+      tags: [Connections]
+      summary: Obtener una conexión del workspace autenticado
+      responses:
+        '200':
+          description: Conexión sin credenciales.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Connection'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Connections]
+      summary: Actualizar una conexión del workspace autenticado
+      description: Solo ADMIN. workspaceId no se puede cambiar.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateConnectionRequest'
+      responses:
+        '200':
+          description: Conexión actualizada sin credenciales.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Connection'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Connections]
+      summary: Eliminar una conexión del workspace autenticado
+      description: Solo ADMIN.
+      responses:
+        '200':
+          description: Conexión eliminada sin credenciales.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Connection'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /users/{id}/role:
+    parameters:
+      - $ref: '#/components/parameters/UuidPath'
+    patch:
+      tags: [Users]
+      summary: Cambiar rol de otro usuario del workspace
+      description: Solo ADMIN. El cambio y el evento de auditoría son atómicos.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRoleRequest'
+      responses:
+        '200':
+          description: Usuario actualizado sin contraseña.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserRoleResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /data-engine/join:
+    post:
+      tags: [Data Engine]
+      summary: Ejecutar un join real entre SQL Server y Firestore
+      description: >-
+        Lee hasta DATA_ENGINE_MAX_SOURCE_ROWS filas y DATA_ENGINE_MAX_SOURCE_BYTES
+        serializados por origen. El join limita las filas y los bytes resultantes
+        con DATA_ENGINE_MAX_JOIN_ROWS y DATA_ENGINE_MAX_JOIN_BYTES. Las columnas
+        duplicadas reciben prefijos sql. y nosql. Los motores sin extractor real
+        se rechazan.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrossJoinRequest'
+      responses:
+        '200':
+          description: Resultado combinado y enmascarado según el rol.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CrossJoinResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '502':
+          description: Falló una conexión o consulta externa.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '504':
+          description: Una consulta externa excedió su timeout.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /data-engine/export:
+    post:
+      tags: [Data Engine]
+      summary: Exportar el resultado real del join
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CrossJoinExportRequest'
+      responses:
+        '200':
+          description: Archivo generado en el formato solicitado.
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            application/json:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '502':
+          description: Falló una conexión o consulta externa.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '504':
+          description: Una consulta externa excedió su timeout.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /data-engine/connections/{connectionId}/schema:
+    parameters:
+      - name: connectionId
+        in: path
+        required: true
+        description: UUID v4 de una conexión perteneciente al workspace autenticado.
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Data Engine]
+      summary: Explorar tablas, vistas o colecciones externas
+      description: >-
+        Motores para explorar el catálogo: SQLServer, PostgreSQL, MySQL y Firebase/Cloud Firestore.
+        Firestore lista colecciones de nivel raíz. Solo devuelve catálogo; no lee
+        filas ni documentos. Tiempo máximo de 10 segundos.
+      responses:
+        '200':
+          description: Catálogo de objetos externos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SchemaExplorationResult'
+        '400':
+          description: Motor no soportado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '502':
+          description: Falló la conexión o consulta del catálogo.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '504':
+          description: La exploración excedió 10 segundos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    UuidPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 6
+          writeOnly: true
+    RegisterRequest:
+      type: object
+      required: [email, name, password, workspaceId]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        password:
+          type: string
+          minLength: 6
+          writeOnly: true
+        workspaceId:
+          type: string
+          description: ID del workspace existente.
+    AuthResult:
+      type: object
+      required: [access_token, user]
+      properties:
+        access_token:
+          type: string
+        user:
+          $ref: '#/components/schemas/PublicUser'
+    PublicUser:
+      type: object
+      required: [id, email, name, role, workspaceId]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        role:
+          type: string
+          enum: [ADMIN, OPERADOR, LECTOR]
+        workspaceId:
+          type: string
+          description: ID del workspace.
+    RegisteredUser:
+      type: object
+      required: [id, email, name, role, workspaceId]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        role:
+          type: string
+          enum: [LECTOR]
+        workspaceId:
+          type: string
+          description: ID del workspace.
+    Connection:
+      type: object
+      required: [id, tipoMotor, host, dbName, workspaceId]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tipoMotor:
+          type: string
+          example: PostgreSQL
+        host:
+          type: string
+          example: db.example.internal
+        dbName:
+          type: string
+          example: analytics
+        workspaceId:
+          type: string
+          format: uuid
+    CreateConnectionRequest:
+      type: object
+      required: [tipoMotor, host, dbName, connectionString]
+      properties:
+        tipoMotor:
+          type: string
+          description: Motor; la exploración soporta SQLServer, PostgreSQL, MySQL y Firebase/Firestore.
+        host:
+          type: string
+        dbName:
+          type: string
+        connectionString:
+          type: string
+          writeOnly: true
+          description: >-
+            Credenciales para el motor. Firestore espera JSON de cuenta de servicio
+            con project_id, client_email y private_key. No se devuelve ni se audita.
+    UpdateConnectionRequest:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        tipoMotor:
+          type: string
+          description: Motor; la exploración soporta SQLServer, PostgreSQL, MySQL y Firebase/Firestore.
+        host:
+          type: string
+        dbName:
+          type: string
+        connectionString:
+          type: string
+          writeOnly: true
+          description: Nueva credencial; nunca se devuelve ni se audita.
+    UpdateUserRoleRequest:
+      type: object
+      required: [role]
+      additionalProperties: false
+      properties:
+        role:
+          type: string
+          enum: [ADMIN, OPERADOR, LECTOR]
+    UserRoleResult:
+      type: object
+      required: [id, email, name, role, workspaceId]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        role:
+          type: string
+          enum: [ADMIN, OPERADOR, LECTOR]
+        workspaceId:
+          type: string
+          format: uuid
+    SchemaExplorationResult:
+      type: object
+      required: [connectionId, tipoMotor, objects]
+      properties:
+        connectionId:
+          type: string
+          format: uuid
+        tipoMotor:
+          type: string
+          example: PostgreSQL
+        objects:
+          type: array
+          items:
+            $ref: '#/components/schemas/CatalogObject'
+    CatalogObject:
+      type: object
+      required: [name, type]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [TABLE, VIEW, COLLECTION]
+        schema:
+          type: string
+    CrossJoinRequest:
+      type: object
+      required:
+        - conexionSqlId
+        - conexionNoSqlId
+        - tablaSql
+        - coleccionNoSql
+        - llaveSql
+        - llaveNoSql
+      properties:
+        conexionSqlId:
+          type: string
+          format: uuid
+        conexionNoSqlId:
+          type: string
+          format: uuid
+        tablaSql:
+          type: string
+          maxLength: 128
+        esquemaSql:
+          type: string
+          maxLength: 128
+        coleccionNoSql:
+          type: string
+          maxLength: 150
+        llaveSql:
+          type: string
+          maxLength: 128
+        llaveNoSql:
+          type: string
+          maxLength: 150
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 50
+        offset:
+          type: integer
+          minimum: 0
+          default: 0
+    CrossJoinExportRequest:
+      allOf:
+        - $ref: '#/components/schemas/CrossJoinRequest'
+        - type: object
+          required: [format]
+          properties:
+            format:
+              type: string
+              enum: [excel, pdf, json]
+    CrossJoinResult:
+      type: object
+      required: [total, limit, offset, data]
+      properties:
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+        data:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    ApiError:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+        message:
+          type: string
+        error:
+          type: string
+  responses:
+    BadRequest:
+      description: Solicitud inválida.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Unauthorized:
+      description: Token JWT inválido o ausente.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Forbidden:
+      description: El actor no tiene permisos para esta operación.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    NotFound:
+      description: Recurso no encontrado en el workspace autenticado.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    PayloadTooLarge:
+      description: El origen o resultado supera los límites de filas configurados.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
