@@ -1,12 +1,18 @@
 import type { Prisma } from '@prisma/client';
 
-export type AuditEventType =
-  | 'LOGIN_SUCCESS'
-  | 'LOGIN_FAILURE'
-  | 'USER_ROLE_CHANGED'
-  | 'CONNECTION_CREATED'
-  | 'CONNECTION_UPDATED'
-  | 'CONNECTION_DELETED';
+/** Eventos de la bitácora. Debe coincidir con el enum AuditEventType de prisma/schema.prisma. */
+export const AUDIT_EVENT_TYPES = [
+  'LOGIN_SUCCESS',
+  'LOGIN_FAILURE',
+  'USER_ROLE_CHANGED',
+  'USER_INVITED',
+  'CONNECTION_CREATED',
+  'CONNECTION_UPDATED',
+  'CONNECTION_DELETED',
+  'REPORT_GENERATED_AND_SENT',
+] as const;
+
+export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
 
 export interface AuditEventInput {
   eventType: AuditEventType;
@@ -14,7 +20,7 @@ export interface AuditEventInput {
   actorUserId?: string;
   actorEmail?: string;
   workspaceId?: string;
-  targetType?: 'USER' | 'CONNECTION';
+  targetType?: 'USER' | 'CONNECTION' | 'REPORT';
   targetId?: string;
   details?: Record<string, unknown>;
   ipAddress?: string;

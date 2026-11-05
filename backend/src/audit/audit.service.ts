@@ -7,7 +7,7 @@ import { hasPermission } from '../auth/interfaces/user-role.js';
 import type { AuditEventInput, AuditEventType, AuditTransactionClient } from './audit.types.js';
 import { QueryAuditLogsDto } from './dto/query-audit-logs.dto.js';
 
-const CONNECTION_FIELDS = new Set(['tipoMotor', 'host', 'dbName', 'connectionString']);
+const CONNECTION_FIELDS = new Set(['nombre', 'tipoMotor', 'host', 'dbName', 'connectionString']);
 
 export interface PaginatedAuditLogsResult {
   total: number;
@@ -42,7 +42,7 @@ export class AuditService {
         "id", "eventType", "outcome", "actorUserId", "actorEmail", "workspaceId",
         "targetType", "targetId", "detailsJson", "ipAddress", "userAgent"
       ) VALUES (
-        ${randomUUID()}, ${input.eventType}, ${input.outcome}, ${input.actorUserId ?? null},
+        ${randomUUID()}, ${input.eventType}::"AuditEventType", ${input.outcome}, ${input.actorUserId ?? null},
         ${input.actorEmail ?? null}, ${input.workspaceId ?? null}, ${input.targetType ?? null},
         ${input.targetId ?? null}, ${this.serializeSafeDetails(input.eventType, input.details)},
         ${input.ipAddress?.slice(0, 128) ?? null}, ${input.userAgent?.slice(0, 512) ?? null}
@@ -112,6 +112,10 @@ export class AuditService {
       for (const key of ['previousRole', 'newRole']) {
         if (typeof details[key] === 'string') safeDetails[key] = details[key];
       }
+    }
+
+    if (eventType === 'USER_INVITED' && typeof details.role === 'string') {
+      safeDetails.role = details.role;
     }
 
     if (eventType === 'CONNECTION_CREATED' || eventType === 'CONNECTION_DELETED') {

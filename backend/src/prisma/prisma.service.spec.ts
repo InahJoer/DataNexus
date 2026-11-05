@@ -21,7 +21,7 @@ describe('PrismaService', () => {
     expect(service).toBeDefined();
   });
 
-  it('should connect to database and query models', async () => {
+  it.skipIf(!process.env.DATABASE_URL)('should connect to database and query models', async () => {
     await service.$connect();
     const workspacesCount = await service.workspace.count();
     const usersCount = await service.user.count();
