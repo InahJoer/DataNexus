@@ -12,7 +12,7 @@ const navigation: { label: string; icon: IconName; href: string; active?: boolea
   { label: 'Explorador de datos', icon: 'database', href: '#query-trend' },
   { label: 'Cruces de datos', icon: 'join', href: '#joins', roles: ['ADMIN', 'OPERADOR'] },
   { label: 'Reportes', icon: 'layers', href: '#reports', roles: ['ADMIN', 'OPERADOR'] },
-  { label: 'Auditoría', icon: 'shield', href: '#activity', roles: ['ADMIN'] },
+  { label: 'Auditoría', icon: 'shield', href: '#activity', roles: ['ADMIN', 'AUDITOR'] },
 ];
 
 export function DashboardSidebar() {

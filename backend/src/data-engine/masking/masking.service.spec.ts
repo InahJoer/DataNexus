@@ -37,8 +37,14 @@ describe('MaskingService', () => {
     expect(unmasked[0].password_hash).toBe('secret_hash_123');
   });
 
+  it('preserves data for OPERADOR and masks it for AUDITOR or unknown roles (fail-closed)', () => {
+    expect(service.maskDataset(sampleData, 'OPERADOR')[0].email).toBe('juan.perez@empresa.com');
+    expect(service.maskDataset(sampleData, 'AUDITOR')[0].email).not.toBe('juan.perez@empresa.com');
+    expect(service.maskDataset(sampleData, 'admin')[0].email).not.toBe('juan.perez@empresa.com');
+  });
+
   it('handles empty datasets or invalid inputs gracefully', () => {
     expect(service.maskDataset([], 'LECTOR')).toEqual([]);
-    expect(service.maskDataset(sampleData, undefined)).toEqual(sampleData);
+    expect(service.maskDataset(sampleData, undefined)).not.toEqual(sampleData);
   });
 });

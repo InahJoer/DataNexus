@@ -24,7 +24,7 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
-import { Roles } from '../auth/decorators/roles.decorator.js';
+import { RequirePermission } from '../auth/decorators/roles.decorator.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-user.interface.js';
 import { UpdateUserRoleDto } from './dto/update-user-role.dto.js';
 import { InviteUserDto } from './dto/invite-user.dto.js';
@@ -37,7 +37,7 @@ import { UsersService } from './users.service.js';
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  @Roles('ADMIN')
+  @RequirePermission('MANAGE_MEMBERS')
   @Get()
   @ApiOperation({
     summary: 'Listar miembros del workspace (ADMIN)',
@@ -50,7 +50,7 @@ export class UsersController {
     return this.usersService.findAll(request.user);
   }
 
-  @Roles('ADMIN')
+  @RequirePermission('MANAGE_MEMBERS')
   @Post('invite')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
@@ -70,7 +70,7 @@ export class UsersController {
     });
   }
 
-  @Roles('ADMIN')
+  @RequirePermission('MANAGE_MEMBERS')
   @Patch(':id/role')
   @ApiOperation({ summary: 'Cambiar el rol de un usuario del workspace' })
   @ApiResponse({ status: 200, description: 'Rol actualizado.' })
