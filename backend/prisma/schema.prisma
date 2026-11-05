@@ -37,6 +37,10 @@ enum AuditEventType {
   CONNECTION_UPDATED
   CONNECTION_DELETED
   REPORT_GENERATED_AND_SENT
+  EXECUTE_JOIN
+  EXPORT
+  MODIFY_RECORD
+  AUDIT_LOG_EXPORTED
 }
 
 model Workspace {
@@ -72,6 +76,7 @@ model ConexionDB {
   @@index([workspaceId])
 }
 
+/// Bitácora inmutable: un trigger de PostgreSQL y PrismaService bloquean UPDATE, DELETE y TRUNCATE.
 model RegistroAuditoria {
   id          String         @id @default(uuid())
   eventType   AuditEventType

@@ -10,6 +10,11 @@ export const AUDIT_EVENT_TYPES = [
   'CONNECTION_UPDATED',
   'CONNECTION_DELETED',
   'REPORT_GENERATED_AND_SENT',
+  'EXECUTE_JOIN',
+  'EXPORT',
+  /** Reservado para la edición de celdas (RF-18/RF-19). */
+  'MODIFY_RECORD',
+  'AUDIT_LOG_EXPORTED',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
@@ -20,7 +25,7 @@ export interface AuditEventInput {
   actorUserId?: string;
   actorEmail?: string;
   workspaceId?: string;
-  targetType?: 'USER' | 'CONNECTION' | 'REPORT';
+  targetType?: 'USER' | 'CONNECTION' | 'REPORT' | 'CROSS_JOIN' | 'AUDIT_LOG' | 'RECORD';
   targetId?: string;
   details?: Record<string, unknown>;
   ipAddress?: string;
