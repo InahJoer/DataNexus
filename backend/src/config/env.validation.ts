@@ -90,6 +90,14 @@ export class EnvironmentVariables {
   @IsEmail()
   SEED_ADMIN_EMAIL?: string;
 
+  /** Minutos de validez del enlace de recuperación de contraseña (por defecto 30). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(5)
+  @Max(1440)
+  PASSWORD_RESET_TTL_MINUTES?: number;
+
   @IsOptional()
   @Type(() => Number)
   @IsInt()
