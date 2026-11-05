@@ -32,7 +32,9 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
 import { RequirePermission } from '../auth/decorators/roles.decorator.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-user.interface.js';
+import { AuditService } from '../audit/audit.service.js';
 import { DataEngineService } from './data-engine.service.js';
+import { buildDataAccessAuditEvent } from './data-access-audit.js';
 import { CrossJoinDto, ExportCrossJoinDto } from './dto/cross-join.dto.js';
 import { ConnectionHealthResponseDto } from './dto/connection-health.dto.js';
 import { ConnectionFieldsResponseDto, ConnectionSchemaResponseDto } from './dto/connection-schema.dto.js';
@@ -44,7 +46,10 @@ import { ExploreFieldsQueryDto } from './dto/explore-fields.dto.js';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller(['engine', 'data-engine'])
 export class DataEngineController {
-  constructor(private readonly dataEngineService: DataEngineService) {}
+  constructor(
+    private readonly dataEngineService: DataEngineService,
+    private readonly auditService: AuditService,
+  ) {}
 
   @Get('connections/health')
   @RequirePermission('VIEW_CONNECTIONS')
@@ -144,7 +149,16 @@ export class DataEngineController {
     @Req() request: AuthenticatedRequest,
     @Body() payload: CrossJoinDto,
   ) {
-    return this.dataEngineService.executeCrossJoin(payload, request.user);
+    try {
+      const result = await this.dataEngineService.executeCrossJoin(payload, request.user);
+      await this.auditService.record(
+        buildDataAccessAuditEvent('EXECUTE_JOIN', request, payload, { totalFilas: result.total }),
+      );
+      return result;
+    } catch (error) {
+      await this.recordFailure('EXECUTE_JOIN', request, payload, error);
+      throw error;
+    }
   }
 
   @Throttle({ export: { limit: 20, ttl: 60000 } })
@@ -177,11 +191,17 @@ export class DataEngineController {
     @Body() payload: ExportCrossJoinDto,
     @Res() res: Response,
   ) {
-    const { buffer, contentType, filename } =
-      await this.dataEngineService.executeCrossJoinForExport(
-        payload,
-        request.user,
-      );
+    let exportResult: Awaited<ReturnType<DataEngineService['executeCrossJoinForExport']>>;
+    try {
+      exportResult = await this.dataEngineService.executeCrossJoinForExport(payload, request.user);
+    } catch (error) {
+      await this.recordFailure('EXPORT', request, payload, error);
+      throw error;
+    }
+    const { buffer, contentType, filename } = exportResult;
+    await this.auditService.record(
+      buildDataAccessAuditEvent('EXPORT', request, payload, { totalFilas: exportResult.totalRows }),
+    );
 
     res.set({
       'Content-Type': contentType,
@@ -190,5 +210,19 @@ export class DataEngineController {
     });
 
     res.end(buffer);
+  }
+
+  /** Registra el intento fallido sin ocultar el error original si la bitácora también falla. */
+  private async recordFailure(
+    eventType: 'EXECUTE_JOIN' | 'EXPORT',
+    request: AuthenticatedRequest,
+    payload: CrossJoinDto | ExportCrossJoinDto,
+    error: unknown,
+  ): Promise<void> {
+    try {
+      await this.auditService.record(buildDataAccessAuditEvent(eventType, request, payload, { error }));
+    } catch {
+      // El error de negocio original es el que debe llegar al cliente.
+    }
   }
 }
