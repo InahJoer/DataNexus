@@ -20,6 +20,7 @@ export const AUDIT_EVENT_TYPES = [
   'LOGOUT',
   'SESSION_EXPIRED',
   'REFRESH_TOKEN_REUSED',
+  'ACCOUNT_LOCKED',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
