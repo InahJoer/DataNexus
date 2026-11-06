@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -13,6 +14,7 @@ import type {
 } from '../auth/interfaces/authenticated-user.interface.js';
 import { hasPermission, type UserRole } from '../auth/interfaces/user-role.js';
 import { InviteUserDto } from './dto/invite-user.dto.js';
+import { isEmailDomainAllowed } from '../workspaces/workspace-settings.js';
 
 const SAFE_USER_SELECT = {
   id: true,
@@ -51,6 +53,17 @@ export class UsersService {
   ) {
     if (!hasPermission(actor.role, 'MANAGE_MEMBERS')) {
       throw new ForbiddenException('Se requiere rol ADMIN para invitar miembros');
+    }
+
+    const workspace = await this.prisma.workspace.findUnique({
+      where: { id: actor.workspaceId },
+      select: { dominiosPermitidos: true },
+    });
+    const allowedDomains = workspace?.dominiosPermitidos ?? [];
+    if (!isEmailDomainAllowed(dto.email, allowedDomains)) {
+      throw new BadRequestException(
+        `El correo debe pertenecer a un dominio permitido del workspace: ${allowedDomains.join(', ')}`,
+      );
     }
 
     const existingUser = await this.prisma.user.findUnique({

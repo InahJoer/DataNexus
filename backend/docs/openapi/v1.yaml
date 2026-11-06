@@ -207,6 +207,63 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /workspaces/me:
+    get:
+      tags: [Workspaces]
+      summary: Obtener el workspace del usuario autenticado
+      description: >-
+        Cualquier rol. El workspace se toma del JWT. La configuración solo se incluye para ADMIN.
+      responses:
+        '200':
+          description: Workspace propio.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspace'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Workspaces]
+      summary: Actualizar el workspace
+      description: >-
+        Solo ADMIN. Cambio parcial; registra WORKSPACE_UPDATED con antes/después en la misma transacción.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateWorkspaceRequest'
+      responses:
+        '200':
+          description: Workspace actualizado con su configuración.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspace'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /workspaces/me/stats:
+    get:
+      tags: [Workspaces]
+      summary: Estadísticas del workspace
+      description: Cualquier rol. Miembros por rol, conexiones por motor y reportes enviados.
+      responses:
+        '200':
+          description: Estadísticas del workspace propio.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /data-engine/join:
     post:
       tags: [Data Engine]
@@ -506,6 +563,108 @@ components:
         workspaceId:
           type: string
           format: uuid
+    Workspace:
+      type: object
+      required: [id, nombreEmpresa, logoUrl, zonaHoraria, fechaCreacion, fechaActualizacion]
+      properties:
+        id:
+          type: string
+          format: uuid
+        nombreEmpresa:
+          type: string
+        logoUrl:
+          type: string
+          format: uri
+          nullable: true
+        zonaHoraria:
+          type: string
+          example: America/Managua
+        fechaCreacion:
+          type: string
+          format: date-time
+        fechaActualizacion:
+          type: string
+          format: date-time
+        configuracion:
+          description: Solo para ADMIN.
+          type: object
+          required: [dominiosPermitidos, camposSensibles]
+          properties:
+            dominiosPermitidos:
+              type: array
+              items:
+                type: string
+            camposSensibles:
+              type: array
+              items:
+                type: string
+    UpdateWorkspaceRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        nombreEmpresa:
+          type: string
+          minLength: 2
+          maxLength: 120
+        logoUrl:
+          type: string
+          format: uri
+          pattern: '^https://'
+          maxLength: 2048
+          nullable: true
+          description: null elimina el logo.
+        zonaHoraria:
+          type: string
+          description: Identificador IANA.
+          example: America/Managua
+        dominiosPermitidos:
+          type: array
+          maxItems: 50
+          description: Lista vacía = sin restricción. No admite proveedores de correo personal.
+          items:
+            type: string
+            example: empresa.com
+        camposSensibles:
+          type: array
+          maxItems: 200
+          items:
+            type: string
+            example: cliente.email
+    WorkspaceStats:
+      type: object
+      required: [miembros, conexiones, reportes]
+      properties:
+        miembros:
+          type: object
+          required: [total, porRol]
+          properties:
+            total:
+              type: integer
+            porRol:
+              type: object
+              additionalProperties:
+                type: integer
+        conexiones:
+          type: object
+          required: [total, porMotor]
+          properties:
+            total:
+              type: integer
+            porMotor:
+              type: object
+              additionalProperties:
+                type: integer
+        reportes:
+          type: object
+          required: [enviados, ultimoEnvio]
+          properties:
+            enviados:
+              type: integer
+            ultimoEnvio:
+              type: string
+              format: date-time
+              nullable: true
     SchemaExplorationResult:
       type: object
       required: [connectionId, tipoMotor, objects]

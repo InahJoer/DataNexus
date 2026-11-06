@@ -70,6 +70,37 @@ describe('AuditService', () => {
     expect(queryValues).not.toContain('do-not-store');
   });
 
+  it('persists workspace changes (before/after) and drops unknown fields', async () => {
+    await service.record({
+      eventType: 'WORKSPACE_UPDATED',
+      outcome: 'SUCCESS',
+      workspaceId: 'workspace-1',
+      targetType: 'WORKSPACE',
+      targetId: 'workspace-1',
+      details: {
+        campos: ['nombreEmpresa', 'dominiosPermitidos', 'password'],
+        cambios: {
+          nombreEmpresa: { antes: 'Acme', despues: 'Acme BI' },
+          dominiosPermitidos: { antes: [], despues: ['acme.com'] },
+          password: { antes: 'x', despues: 'do-not-store' },
+        },
+        secreto: 'do-not-store',
+      },
+    });
+
+    const [, ...queryValues] = prismaService.$executeRaw.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
+    expect(queryValues).toContain(
+      JSON.stringify({
+        campos: ['nombreEmpresa', 'dominiosPermitidos'],
+        cambios: {
+          nombreEmpresa: { antes: 'Acme', despues: 'Acme BI' },
+          dominiosPermitidos: { antes: [], despues: ['acme.com'] },
+        },
+      }),
+    );
+    expect(queryValues.some((value) => typeof value === 'string' && value.includes('do-not-store'))).toBe(false);
+  });
+
   it('writes through the supplied transaction client', async () => {
     const transactionExecute = vi.fn().mockResolvedValue(1);
     const transaction = {
