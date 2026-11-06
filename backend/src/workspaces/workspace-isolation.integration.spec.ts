@@ -8,6 +8,9 @@ import type { EncryptionService } from '../common/encryption/encryption.service.
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface.js';
 import type { UserRole } from '../auth/interfaces/user-role.js';
 import { WorkspacesService } from './workspaces.service.js';
+import { InvitationsService } from '../users/invitations.service.js';
+import type { MailService } from '../mailer/mail.service.js';
+import type { ConfigService } from '@nestjs/config';
 
 /**
  * Aislamiento multi-tenant (RF-05) contra PostgreSQL real: un usuario nunca ve ni modifica datos de
@@ -19,6 +22,12 @@ describe.skipIf(!process.env.DATABASE_URL)('Aislamiento entre workspaces', () =>
   const workspaces = new WorkspacesService(prisma, audit);
   const users = new UsersService(prisma, audit);
   const connections = new ConnectionsService(prisma, {} as EncryptionService, audit);
+  const invitations = new InvitationsService(
+    prisma,
+    audit,
+    { sendMail: () => Promise.resolve({}) } as unknown as MailService,
+    { get: () => undefined } as unknown as ConfigService,
+  );
 
   const marker = `aislamiento-${Date.now()}`;
   const tenants = {} as Record<'a' | 'b', { workspaceId: string; admin: AuthenticatedUser; connectionId: string }>;
@@ -118,7 +127,7 @@ describe.skipIf(!process.env.DATABASE_URL)('Aislamiento entre workspaces', () =>
 
   it('no se puede invitar con un correo fuera de los dominios permitidos del workspace', async () => {
     await expect(
-      users.inviteMember(tenants.a.admin, { email: `nuevo@b.${marker}.test`, name: 'Nuevo', role: 'LECTOR' }),
+      invitations.invite(tenants.a.admin, { email: `nuevo@b.${marker}.test`, name: 'Nuevo', role: 'LECTOR' }),
     ).rejects.toThrow(/dominio permitido/);
   });
 
