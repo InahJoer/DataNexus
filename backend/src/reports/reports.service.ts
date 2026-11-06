@@ -218,7 +218,7 @@ export class ReportsService {
       ]);
     } catch (error) {
       if (!writeTarget.writable.destroyed) {
-        writeTarget.writable.destroy(error instanceof Error ? error : new Error(String(error)));
+        writeTarget.writable.destroy();
       }
       await writeTarget.completed.catch(() => undefined);
       throw error;
