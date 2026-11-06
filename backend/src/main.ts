@@ -20,6 +20,8 @@ async function bootstrap() {
     'http://localhost:3000',
     'http://localhost:3001',
     process.env.FRONTEND_URL,
+    // URL pública de la propia API: permite usar Swagger UI (/api/docs) en producción
+    process.env.API_PUBLIC_URL,
   ].filter((origin): origin is string => Boolean(origin));
 
   app.enableCors({
