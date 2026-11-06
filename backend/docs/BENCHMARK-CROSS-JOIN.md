@@ -11,7 +11,7 @@ cd backend
 npm run bench:join
 ```
 
-El código está en `src/data-engine/join/join-plan.benchmark.spec.ts`. Solo corre con `npm run bench:join`, que activa `--expose-gc`: en `npm test` se omite para no competir por CPU con las pruebas que miden tiempos.
+El código está en `src/data-engine/join/join-plan.benchmark.spec.ts`. Solo corre con `npm run bench:join` (`--mode benchmark`): en `npm test` se omite para no competir por CPU con las pruebas que miden tiempos.
 
 ## Datos de prueba
 

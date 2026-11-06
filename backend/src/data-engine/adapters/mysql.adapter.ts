@@ -16,6 +16,13 @@ import type {
   IDataSourceAdapter,
 } from './data-source-adapter.interface.js';
 import { buildSqlFilterClauses, uniqueColumnName } from './sql-filters.js';
+import {
+  NO_PRIMARY_KEY_MESSAGE,
+  buildKeysetCondition,
+  toDataPage,
+  type DataPage,
+  type DataPageOptions,
+} from '../pagination/keyset.js';
 
 const MAX_IDENTIFIER_LENGTH = 64;
 const SOURCE_ALIAS = '`__dn_src`';
@@ -158,6 +165,49 @@ export class MysqlAdapter implements IDataSourceAdapter {
         else pooled.destroy();
       }
     });
+  }
+
+  /** Página con keyset pagination sobre la llave primaria (RNF-06), sin OFFSET. */
+  async readPage(connection: DataSourceConnection, tableName: string, options: DataPageOptions): Promise<DataPage> {
+    quoteMysqlIdentifier(tableName, 'tabla');
+    if (options.schema !== undefined) quoteMysqlIdentifier(options.schema, 'esquema');
+    const columns = await this.listFields(connection, tableName, options.schema);
+    if (columns.length === 0) throw new BadRequestException('La tabla no existe o no tiene columnas visibles');
+
+    const keys = (
+      await this.query<{ COLUMN_NAME: string }>(
+        connection,
+        `SELECT /*+ MAX_EXECUTION_TIME(${EXTERNAL_QUERY_TIMEOUT_MS}) */ COLUMN_NAME
+         FROM information_schema.KEY_COLUMN_USAGE
+         WHERE TABLE_SCHEMA = COALESCE(?, DATABASE()) AND TABLE_NAME = ? AND CONSTRAINT_NAME = 'PRIMARY'
+         ORDER BY ORDINAL_POSITION`,
+        [options.schema ?? null, tableName],
+      )
+    ).map((row) => row.COLUMN_NAME);
+    if (keys.length === 0) throw new BadRequestException(NO_PRIMARY_KEY_MESSAGE);
+
+    const params: unknown[] = [];
+    const parameter = (value: unknown) => {
+      params.push(value);
+      return '?';
+    };
+    const quote = (name: string) => `${SOURCE_ALIAS}.${quoteMysqlIdentifier(name, 'columna')}`;
+    const where = buildSqlFilterClauses(columns, options.filters ?? [], {
+      column: quote,
+      text: (column) => `CAST(${column} AS CHAR)`,
+      parameter,
+    });
+    if (options.after) where.push(buildKeysetCondition(keys.map(quote), options.after, parameter));
+    const table = options.schema
+      ? `${quoteMysqlIdentifier(options.schema, 'esquema')}.${quoteMysqlIdentifier(tableName, 'tabla')}`
+      : quoteMysqlIdentifier(tableName, 'tabla');
+
+    const sql =
+      `SELECT /*+ MAX_EXECUTION_TIME(${EXTERNAL_QUERY_TIMEOUT_MS}) */ ${columns.map(quote).join(', ')} FROM ${table} AS ${SOURCE_ALIAS}` +
+      (where.length ? ` WHERE ${where.join(' AND ')}` : '') +
+      ` ORDER BY ${keys.map(quote).join(', ')} LIMIT ${options.pageSize + 1}`;
+    const raw = await this.query<Record<string, unknown>>(connection, sql, params);
+    return toDataPage(raw, keys, options.pageSize, (row) => this.normalizeRow(row, ''));
   }
 
   private async streamRows(

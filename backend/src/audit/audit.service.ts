@@ -291,6 +291,16 @@ export class AuditService {
       Object.assign(safeDetails, this.safeWorkspaceChanges(details));
     }
 
+    if (eventType === 'BROWSE_DATA') {
+      for (const key of ['entidad', 'esquema', 'tipoMotor', 'error']) {
+        if (typeof details[key] === 'string') safeDetails[key] = (details[key] as string).slice(0, 300);
+      }
+      for (const key of ['limite', 'filas', 'filtros']) {
+        if (typeof details[key] === 'number' && Number.isFinite(details[key])) safeDetails[key] = details[key];
+      }
+      if (typeof details.enmascarado === 'boolean') safeDetails.enmascarado = details.enmascarado;
+    }
+
     if (eventType === 'EXECUTE_JOIN' || eventType === 'EXPORT') {
       for (const key of DATA_ACCESS_STRING_FIELDS) {
         if (typeof details[key] === 'string') safeDetails[key] = (details[key] as string).slice(0, 300);

@@ -274,3 +274,16 @@ export function escapeLikePattern(value: string): string {
 export function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 }
+
+/** Lee los filtros enviados como JSON en la query string (`?filtros=[...]`) y los valida. */
+export function parseFilterQuery(raw: string | undefined): FilterNode[] | undefined {
+  if (raw === undefined || raw.trim() === '') return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new BadRequestException('Filtro no válido: filtros debe ser una lista en JSON');
+  }
+  assertValidFilters(parsed);
+  return parsed;
+}

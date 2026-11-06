@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, PayloadTooLargeException } from '@nestjs/common';
-import { Firestore, type Query, type WhereFilterOp } from '@google-cloud/firestore';
+import { FieldPath, Firestore, type Query, type WhereFilterOp } from '@google-cloud/firestore';
+import { toDataPage, type DataPage, type DataPageOptions } from '../pagination/keyset.js';
 import { DataSourceClientPool } from '../pool/data-source-client-pool.js';
 import {
   EXTERNAL_QUERY_TIMEOUT_MS,
@@ -114,6 +115,38 @@ export class FirestoreAdapter implements IDataSourceAdapter {
         clearTimeout(timeout);
         stream.destroy();
       }
+    });
+  }
+
+  /**
+   * Página con cursor nativo de Firestore (RNF-06): orden por id de documento y `startAfter(último id)`.
+   * Solo las igualdades (eq, in, isNull: true) se envían con la consulta, porque combinarlas con el orden por id no
+   * requiere índices compuestos; el resto de filtros se aplica a los documentos leídos. Una página puede traer menos
+   * filas que las pedidas y seguir teniendo `nextCursor`.
+   */
+  async readPage(connection: DataSourceConnection, collectionName: string, options: DataPageOptions): Promise<DataPage> {
+    this.validateCollectionName(collectionName);
+    const filters = this.validateFilters(options.filters);
+    const server = filters.filter(
+      (filter) => filter.operador === 'eq' || filter.operador === 'in' || (filter.operador === 'isNull' && filter.valor === true),
+    );
+    if (options.after && (options.after.length !== 1 || typeof options.after[0] !== 'string')) {
+      throw new BadRequestException('El cursor no es válido para esta fuente');
+    }
+
+    return await this.withClient(connection, async (firestore) => {
+      let query: Query = firestore.collection(collectionName);
+      for (const filter of server) query = this.applyFilter(query, filter);
+      query = query.orderBy(FieldPath.documentId());
+      if (options.after) query = query.startAfter(options.after[0] as string);
+      const snapshot = await query.limit(options.pageSize + 1).get();
+      const raw = snapshot.docs.map((document) => {
+        const data = this.normalizeValue(document.data()) as Record<string, any>;
+        return { ...data, [this.uniqueMetadataKey(data, '__documentId')]: document.id };
+      });
+      const page = toDataPage(raw, ['__documentId'], options.pageSize, (row) => row);
+      // El cursor avanza por el último documento leído aunque los filtros en memoria lo descarten.
+      return { ...page, rows: page.rows.filter((row) => matchesFilters(row, filters)) };
     });
   }
 

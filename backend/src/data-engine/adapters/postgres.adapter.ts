@@ -14,6 +14,13 @@ import type {
   IDataSourceAdapter,
 } from './data-source-adapter.interface.js';
 import { buildSqlFilterClauses, uniqueColumnName } from './sql-filters.js';
+import {
+  NO_PRIMARY_KEY_MESSAGE,
+  buildKeysetCondition,
+  toDataPage,
+  type DataPage,
+  type DataPageOptions,
+} from '../pagination/keyset.js';
 
 const MAX_IDENTIFIER_LENGTH = 63;
 const SOURCE_ALIAS = '"__dn_src"';
@@ -157,6 +164,52 @@ export class PostgresAdapter implements IDataSourceAdapter {
         client.release(!healthy);
       }
     });
+  }
+
+  /**
+   * Página con keyset pagination sobre la llave primaria (RNF-06): `WHERE (llave) > (última) ORDER BY llave
+   * LIMIT n + 1`. Usa el índice de la llave, así que cualquier página cuesta lo mismo y nunca se carga la tabla.
+   */
+  async readPage(connection: DataSourceConnection, tableName: string, options: DataPageOptions): Promise<DataPage> {
+    quotePostgresIdentifier(tableName, 'tabla');
+    if (options.schema !== undefined) quotePostgresIdentifier(options.schema, 'esquema');
+    const schema = options.schema ?? (await this.resolveSchema(connection, tableName));
+    const columns = schema ? await this.listFields(connection, tableName, schema) : [];
+    if (!schema || columns.length === 0) throw new BadRequestException('La tabla no existe o no tiene columnas visibles');
+
+    const keys = (
+      await this.query<{ name: string }>(
+        connection,
+        `SELECT kcu.column_name AS name
+         FROM information_schema.table_constraints tc
+         JOIN information_schema.key_column_usage kcu
+           ON kcu.constraint_name = tc.constraint_name AND kcu.table_schema = tc.table_schema AND kcu.table_name = tc.table_name
+         WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = $1 AND tc.table_name = $2
+         ORDER BY kcu.ordinal_position`,
+        [schema, tableName],
+      )
+    ).map((row) => row.name);
+    if (keys.length === 0) throw new BadRequestException(NO_PRIMARY_KEY_MESSAGE);
+
+    const values: unknown[] = [];
+    const parameter = (value: unknown) => {
+      values.push(value);
+      return `$${values.length}`;
+    };
+    const quote = (name: string) => `${SOURCE_ALIAS}.${quotePostgresIdentifier(name, 'columna')}`;
+    const where = buildSqlFilterClauses(columns, options.filters ?? [], {
+      column: quote,
+      text: (column) => `CAST(${column} AS text)`,
+      parameter,
+    });
+    if (options.after) where.push(buildKeysetCondition(keys.map(quote), options.after, parameter));
+
+    const text =
+      `SELECT ${columns.map(quote).join(', ')} FROM ${quotePostgresIdentifier(schema, 'esquema')}.${quotePostgresIdentifier(tableName, 'tabla')} AS ${SOURCE_ALIAS}` +
+      (where.length ? ` WHERE ${where.join(' AND ')}` : '') +
+      ` ORDER BY ${keys.map(quote).join(', ')} LIMIT ${options.pageSize + 1}`;
+    const raw = await this.withPool(connection, async (pool) => (await pool.query(text, values)).rows as Record<string, unknown>[]);
+    return toDataPage(raw, keys, options.pageSize, (row) => this.normalizeRow(row, ''));
   }
 
   /**

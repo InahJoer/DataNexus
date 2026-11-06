@@ -38,7 +38,15 @@ import {
 } from './data-engine.constants.js';
 import { createRowFlattener, describeJoinPlan, executeJoinPlan } from './join/join-plan.js';
 import { resolveJoinPlan } from './join/resolve-join-plan.js';
-import { assertValidFilters, matchesFilters, splitFiltersForPushdown } from './filters/filter-tree.js';
+import { assertValidFilters, matchesFilters, parseFilterQuery, splitFiltersForPushdown } from './filters/filter-tree.js';
+import {
+  DEFAULT_PAGE_SIZE,
+  cursorBinding,
+  decodeCursor,
+  encodeCursor,
+  type DataPage,
+} from './pagination/keyset.js';
+import type { BrowseDataQueryDto, BrowseDataResponseDto } from './dto/browse-data.dto.js';
 
 const EXPLORATION_TIMEOUT_MS = 10_000;
 
@@ -205,6 +213,60 @@ export class DataEngineService {
       }
       throw new BadGatewayException('No fue posible explorar los campos de la fuente');
     }
+  }
+
+  /**
+   * Exploración paginada de una tabla o colección con cursores nativos (RNF-06, issue #32). Cada página lee como
+   * mucho `limite + 1` filas en el motor (keyset en SQL, `_id` en MongoDB, `startAfter` en Firestore), así que se
+   * puede recorrer una tabla de millones de filas con memoria constante. El cursor es opaco y solo vale para la
+   * misma conexión, esquema y entidad.
+   */
+  async browseData(actor: AuthenticatedUser, connectionId: string, query: BrowseDataQueryDto): Promise<BrowseDataResponseDto> {
+    const filters = parseFilterQuery(query.filtros);
+    const binding = cursorBinding(connectionId, query.entidad, query.esquema);
+    const after = query.cursor ? decodeCursor(query.cursor, binding) : undefined;
+    const pageSize = query.limite ?? DEFAULT_PAGE_SIZE;
+
+    const connection = await this.connectionsService.getConnectionForExploration(connectionId, actor.workspaceId);
+    const adapter = this.adapters.get(connection.tipoMotor);
+    if (!adapter?.readPage) {
+      throw new BadRequestException('La exploración paginada no está disponible para este motor');
+    }
+    const { pushed, residual } = splitFiltersForPushdown(
+      filters,
+      (filter) => adapter.canPushDown?.(filter) ?? true,
+      adapter.pushesFilterGroups ?? true,
+    );
+
+    let page: DataPage;
+    try {
+      page = await this.runWithDeadline(connection, Date.now() + EXPLORATION_TIMEOUT_MS, () =>
+        adapter.readPage!(connection, query.entidad, {
+          ...(query.esquema ? { schema: query.esquema } : {}),
+          ...(pushed.length ? { filters: pushed } : {}),
+          pageSize,
+          ...(after ? { after } : {}),
+        }),
+      );
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      if (this.isTimeoutError(error)) throw new GatewayTimeoutException('La lectura de la página excedió el tiempo permitido');
+      this.logger.warn(`Falló la lectura paginada en la conexión ${connection.id} (${adapter.tipoMotor})`);
+      throw new BadGatewayException('No fue posible leer datos de la fuente externa');
+    }
+
+    // Lo que el motor no pudo filtrar se aplica a la página; el cursor sigue avanzando por la última fila leída.
+    const rows = residual.length ? page.rows.filter((row) => matchesFilters(row, residual)) : page.rows;
+    const data = this.maskingService.maskDataset(rows, actor.role);
+    return {
+      entidad: query.entidad,
+      ...(query.esquema ? { esquema: query.esquema } : {}),
+      limite: pageSize,
+      orden: page.orderBy,
+      filas: data.length,
+      data,
+      nextCursor: page.lastKey ? encodeCursor(binding, page.lastKey) : null,
+    };
   }
 
   /**

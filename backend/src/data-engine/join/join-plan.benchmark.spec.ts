@@ -7,7 +7,8 @@ import { createRowFlattener, executeJoinPlan, validateJoinPlan, type JoinType } 
  * aplanado (la extracción depende de cada motor). Resultados documentados en docs/BENCHMARK-CROSS-JOIN.md.
  * Ejecutar con: npm run bench:join. No corre en npm test: competiría por CPU con las pruebas que miden tiempos.
  */
-const runBenchmark = typeof globalThis.gc === 'function';
+// Vitest expone el --mode del CLI en import.meta.env.MODE.
+const runBenchmark = (import.meta as ImportMeta & { env?: { MODE?: string } }).env?.MODE === 'benchmark';
 const ROWS = 100_000;
 const source = (alias: string) => ({ alias, conexionId: alias, entidad: alias });
 

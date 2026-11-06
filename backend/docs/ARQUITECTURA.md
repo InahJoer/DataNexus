@@ -143,6 +143,7 @@ access tokens ya emitidos. Reglas:
 ### 4.3 Motor de Datos & Federación (`/engine` o `/data-engine`)
 - `GET /engine/connections/:id/schema`: Introspección de tablas, vistas o colecciones disponibles.
 - `GET /engine/connections/:id/schema/fields`: Campos de una tabla o colección.
+- `GET /engine/connections/:id/data?entidad=&esquema=&limite=&cursor=&filtros=`: Exploración paginada de una tabla o colección (issue #32, RNF-06). Devuelve la página y `nextCursor` (opaco, atado a la conexión, esquema y entidad). Cada motor usa su cursor nativo, sin `OFFSET` ni cargar la fuente: **keyset sobre la llave primaria** en PostgreSQL, MySQL y SQL Server (`(a > ?) OR (a = ? AND b > ?)`, también con llave compuesta), **`_id`** en MongoDB y **`startAfter`** por id de documento en Firestore. Cualquier página cuesta lo mismo: recorrer 1.000.000 de filas de PostgreSQL en páginas de 1.000 retiene ~1 MB de memoria (test de integración). Las tablas SQL sin llave primaria responden 400. `filtros` usa el formato del cross-join en JSON; aplica enmascaramiento para LECTOR y registra `BROWSE_DATA` al iniciar cada recorrido.
 - `POST /engine/join`: Cross-join en memoria con paginación (`limit`, `offset`) y enmascaramiento dinámico para rol `LECTOR`. Acepta dos formatos (issue #30):
   - **N fuentes** (`fuentes` + `relaciones`): de 2 a 5 tablas o colecciones de cualquier motor; cada relación es `INNER`, `LEFT`, `RIGHT` o `FULL` con 1 a 3 pares de llaves (llave compuesta). La primera relación une dos fuentes y cada una de las siguientes añade una fuente nueva a una ya unida (sin ciclos). Las columnas repetidas entre fuentes se califican con el alias (`clientes.email`).
   - **Original** (`conexionSqlId`, `tablaSql`, `conexionNoSqlId`, `coleccionNoSql`, `llaveSql`, `llaveNoSql`): sigue igual (columnas repetidas como `sql.campo` / `nosql.campo`) y admite `tipoJoin`.
@@ -187,7 +188,7 @@ access tokens ya emitidos. Reglas:
 - `GET /audit/logs/export?format=csv|json`: Descarga la bitácora con los mismos filtros (máximo 10 000 registros por archivo). La exportación queda registrada como `AUDIT_LOG_EXPORTED`.
 
 **Eventos registrados:** `LOGIN_SUCCESS`, `LOGIN_FAILURE`, `USER_ROLE_CHANGED`, `USER_INVITED`, `CONNECTION_CREATED`,
-`CONNECTION_UPDATED`, `CONNECTION_DELETED`, `REPORT_GENERATED_AND_SENT`, `EXECUTE_JOIN`, `EXPORT`, `AUDIT_LOG_EXPORTED`
+`CONNECTION_UPDATED`, `CONNECTION_DELETED`, `REPORT_GENERATED_AND_SENT`, `EXECUTE_JOIN`, `EXPORT`, `BROWSE_DATA`, `AUDIT_LOG_EXPORTED`
 y `MODIFY_RECORD` (reservado para la edición de celdas). Cada evento guarda usuario, fecha UTC, IP, user agent, resultado
 (`SUCCESS`/`FAILURE`) y la entidad afectada (`targetType`/`targetId`, p. ej. `dbo.clientes x pedidos` en un Cross-Join).
 Nunca se guardan valores de filtros, filas ni credenciales.

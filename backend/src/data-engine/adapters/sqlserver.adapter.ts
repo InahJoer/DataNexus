@@ -15,6 +15,13 @@ import type {
   IDataSourceAdapter,
 } from './data-source-adapter.interface.js';
 import { buildSqlFilterClauses, uniqueColumnName } from './sql-filters.js';
+import {
+  NO_PRIMARY_KEY_MESSAGE,
+  buildKeysetCondition,
+  toDataPage,
+  type DataPage,
+  type DataPageOptions,
+} from '../pagination/keyset.js';
 
 interface SqlServerCatalogRow {
   schema: string;
@@ -136,6 +143,54 @@ export class SqlServerAdapter implements IDataSourceAdapter {
         } catch (error) {
           rejectOnce(error);
         }
+      });
+    });
+  }
+
+  /** Página con keyset pagination sobre la llave primaria (RNF-06): TOP (n + 1) ... ORDER BY llave, sin OFFSET. */
+  async readPage(connection: DataSourceConnection, tableName: string, options: DataPageOptions): Promise<DataPage> {
+    const qualifiedTable = this.qualifyTable(tableName, options.schema);
+    return await this.withPool(connection, async (pool) => {
+      const columns = await this.listColumns(pool, qualifiedTable);
+      if (columns.length === 0) throw new BadRequestException('La tabla no existe o no tiene columnas visibles');
+      const objectName = qualifiedTable.replace(/'/g, "''");
+      const keyResult = await pool.request().query<{ name: string }>(
+        `SELECT c.[name] AS [name]
+         FROM sys.indexes i
+         JOIN sys.index_columns ic ON ic.[object_id] = i.[object_id] AND ic.index_id = i.index_id
+         JOIN sys.columns c ON c.[object_id] = ic.[object_id] AND c.column_id = ic.column_id
+         WHERE i.[object_id] = OBJECT_ID(N'${objectName}') AND i.is_primary_key = 1
+         ORDER BY ic.key_ordinal`,
+      );
+      const keys = keyResult.recordset.map((row) => String(row.name));
+      if (keys.length === 0) throw new BadRequestException(NO_PRIMARY_KEY_MESSAGE);
+
+      const request = pool.request();
+      let index = 0;
+      const parameter = (value: unknown) => {
+        const name = `p_${index++}`;
+        request.input(name, value);
+        return `@${name}`;
+      };
+      const quote = (name: string) => `${SOURCE_ALIAS}.${this.quoteIdentifier(name, 'columna')}`;
+      const where = buildSqlFilterClauses(columns, options.filters ?? [], {
+        column: quote,
+        text: (column) => `CAST(${column} AS NVARCHAR(4000))`,
+        parameter,
+      });
+      if (options.after) where.push(buildKeysetCondition(keys.map(quote), options.after, parameter));
+
+      const result = await request.query<Record<string, unknown>>(
+        `SELECT TOP (${options.pageSize + 1}) ${columns.map(quote).join(', ')} FROM ${qualifiedTable} AS ${SOURCE_ALIAS}` +
+          (where.length ? ` WHERE ${where.join(' AND ')}` : '') +
+          ` ORDER BY ${keys.map(quote).join(', ')}`,
+      );
+      return toDataPage(result.recordset, keys, options.pageSize, (row) => {
+        const normalized: Record<string, any> = {};
+        for (const [key, value] of Object.entries(row)) {
+          normalized[key] = Buffer.isBuffer(value) ? value.toString('base64') : value instanceof Date ? value.toISOString() : value;
+        }
+        return normalized;
       });
     });
   }
