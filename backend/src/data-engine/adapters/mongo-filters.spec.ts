@@ -26,9 +26,10 @@ describe('buildMongoFilter (filter pushdown a MongoDB)', () => {
       $and: [
         { total: { $gte: 10 } },
         { total: { $lt: 100 } },
-        { canal: { $ne: 'web' } },
+        // Como en SQL, neq y not-in no incluyen documentos con el campo en null o sin el campo.
+        { canal: { $nin: ['web', null] } },
         { pais: { $in: ['NI', 'CR'] } },
-        { tipo: { $nin: ['prueba'] } },
+        { tipo: { $nin: ['prueba', null] } },
         { activo: { $gt: false } },
         { stock: { $lte: 0 } },
       ],

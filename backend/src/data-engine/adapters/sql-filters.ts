@@ -1,68 +1,87 @@
 import { BadRequestException } from '@nestjs/common';
-import { FILTER_OPERATORS, type DataFilter } from '../dto/cross-join.dto.js';
+import {
+  assertValidFilters,
+  escapeLikePattern,
+  isFilterGroup,
+  type DataFilter,
+  type FilterNode,
+  type FilterScalar,
+} from '../filters/filter-tree.js';
+
+export { isScalarFilterValue } from '../filters/filter-tree.js';
 
 const COMPARISON_OPERATORS = { eq: '=', neq: '<>', gt: '>', gte: '>=', lt: '<', lte: '<=' } as const;
-const MAX_LIST_VALUES = 10;
 
 export interface SqlDialect {
   /** Identificador ya escapado y calificado (p. ej. `src`.`campo`). */
   column(name: string): string;
-  /** Marcador del parámetro (`@p` en SQL Server, `?` en MySQL) y registro del valor. */
+  /** Marcador del parámetro (`@p` en SQL Server, `?` en MySQL, `$n` en PostgreSQL) y registro del valor. */
   parameter(value: string | number | boolean): string;
-}
-
-export function isScalarFilterValue(value: unknown): value is string | number | boolean {
-  return typeof value === 'string' || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value));
+  /** Convierte la columna a texto para contains/startsWith. Por defecto CAST(... AS VARCHAR(4000)). */
+  text?(column: string): string;
 }
 
 /**
- * Traduce los filtros del cross-join a cláusulas WHERE parametrizadas (filter pushdown).
- * Solo admite campos que existen en la tabla y valores escalares; los valores nunca se concatenan al SQL.
+ * Traduce los filtros del cross-join a cláusulas WHERE parametrizadas (filter pushdown). Devuelve una cláusula
+ * por filtro de primer nivel (se combinan con AND); los grupos AND/OR van entre paréntesis.
+ * - Solo admite campos que existen en la tabla; los identificadores los escapa el dialecto.
+ * - Los valores siempre van como parámetros, nunca concatenados al SQL.
+ * - contains/startsWith usan LOWER(...) LIKE con los comodines escapados (`!`), así que un valor con `%` o `_`
+ *   se busca literalmente.
  */
-export function buildSqlFilterClauses(columns: readonly string[], filters: readonly DataFilter[], dialect: SqlDialect): string[] {
+export function buildSqlFilterClauses(
+  columns: readonly string[],
+  filters: readonly FilterNode[],
+  dialect: SqlDialect,
+): string[] {
+  assertValidFilters(filters);
   const columnSet = new Set(columns);
-  const supported = new Set<string>(FILTER_OPERATORS);
-  const clauses: string[] = [];
+  const text = (column: string) => (dialect.text ? dialect.text(column) : `CAST(${column} AS VARCHAR(4000))`);
 
-  for (const filter of filters) {
-    if (!filter || typeof filter.campo !== 'string' || !columnSet.has(filter.campo)) {
-      throw new BadRequestException('El campo de filtro no existe en la tabla');
-    }
-    if (!supported.has(filter.operador)) {
-      throw new BadRequestException('El operador de filtro no está soportado');
-    }
-
+  const leaf = (filter: DataFilter): string => {
+    if (!columnSet.has(filter.campo)) throw new BadRequestException('El campo de filtro no existe en la tabla');
     const column = dialect.column(filter.campo);
-    if (filter.operador === 'eq' && filter.valor === null) {
-      clauses.push(`${column} IS NULL`);
-      continue;
-    }
-    if (filter.operador === 'neq' && filter.valor === null) {
-      clauses.push(`${column} IS NOT NULL`);
-      continue;
-    }
+    const value = filter.valor;
 
-    if (filter.operador === 'in' || filter.operador === 'not-in') {
-      if (
-        !Array.isArray(filter.valor) ||
-        filter.valor.length === 0 ||
-        filter.valor.length > MAX_LIST_VALUES ||
-        filter.valor.some((value) => value === null || !isScalarFilterValue(value))
-      ) {
-        throw new BadRequestException('El valor del filtro de lista no es válido');
+    switch (filter.operador) {
+      case 'isNull':
+        return value === true ? `${column} IS NULL` : `${column} IS NOT NULL`;
+      case 'in':
+      case 'not-in': {
+        const placeholders = (value as FilterScalar[]).map((entry) => dialect.parameter(entry as string | number | boolean));
+        return `${column} ${filter.operador === 'in' ? 'IN' : 'NOT IN'} (${placeholders.join(', ')})`;
       }
-      const placeholders = filter.valor.map((value) => dialect.parameter(value as string | number | boolean));
-      clauses.push(`${column} ${filter.operador === 'in' ? 'IN' : 'NOT IN'} (${placeholders.join(', ')})`);
-      continue;
+      case 'between': {
+        const [min, max] = value as [string | number, string | number];
+        return `${column} BETWEEN ${dialect.parameter(min)} AND ${dialect.parameter(max)}`;
+      }
+      case 'contains':
+      case 'startsWith': {
+        const pattern = escapeLikePattern(String(value).toLowerCase());
+        const parameter = dialect.parameter(filter.operador === 'contains' ? `%${pattern}%` : `${pattern}%`);
+        return `LOWER(${text(column)}) LIKE ${parameter} ESCAPE '!'`;
+      }
+      case 'eq':
+        if (value === null) return `${column} IS NULL`;
+        return `${column} = ${dialect.parameter(value as string | number | boolean)}`;
+      case 'neq':
+        if (value === null) return `${column} IS NOT NULL`;
+        return `${column} <> ${dialect.parameter(value as string | number | boolean)}`;
+      default: {
+        const operator = COMPARISON_OPERATORS[filter.operador as keyof typeof COMPARISON_OPERATORS];
+        if (!operator) throw new BadRequestException('El operador de filtro no está soportado');
+        return `${column} ${operator} ${dialect.parameter(value as string | number | boolean)}`;
+      }
     }
+  };
 
-    const operator = COMPARISON_OPERATORS[filter.operador as keyof typeof COMPARISON_OPERATORS];
-    if (!operator) throw new BadRequestException('El operador de filtro no está soportado');
-    if (!isScalarFilterValue(filter.valor)) throw new BadRequestException('El valor del filtro no es válido');
-    clauses.push(`${column} ${operator} ${dialect.parameter(filter.valor)}`);
-  }
+  const node = (filter: FilterNode): string => {
+    if (!isFilterGroup(filter)) return leaf(filter);
+    const parts = filter.filtros.map(node);
+    return parts.length === 1 ? parts[0] : `(${parts.join(filter.logica === 'OR' ? ' OR ' : ' AND ')})`;
+  };
 
-  return clauses;
+  return filters.map(node);
 }
 
 /** Nombre de columna auxiliar que no choque con las columnas reales (sin distinguir mayúsculas). */

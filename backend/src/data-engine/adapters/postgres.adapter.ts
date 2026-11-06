@@ -64,6 +64,7 @@ export function buildPostgresSelect(
   const values: Array<string | number | boolean> = [];
   const where = buildSqlFilterClauses(columns, filters ?? [], {
     column: (name) => `${SOURCE_ALIAS}.${quotePostgresIdentifier(name, 'filtro')}`,
+    text: (column) => `CAST(${column} AS text)`,
     parameter: (value) => {
       values.push(value);
       return `$${values.length}`;

@@ -1,5 +1,5 @@
 import { BadRequestException, PayloadTooLargeException } from '@nestjs/common';
-import type { DataFilter } from '../dto/cross-join.dto.js';
+import type { FilterNode } from '../filters/filter-tree.js';
 
 export const JOIN_TYPES = ['INNER', 'LEFT', 'RIGHT', 'FULL'] as const;
 export type JoinType = (typeof JOIN_TYPES)[number];
@@ -14,7 +14,7 @@ export interface JoinSourceSpec {
   conexionId: string;
   entidad: string;
   esquema?: string;
-  filtros?: DataFilter[];
+  filtros?: FilterNode[];
 }
 
 export interface JoinKeyPair {

@@ -1,4 +1,5 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { applyDecorators } from '@nestjs/common';
+import { ApiExtraModels, ApiProperty, ApiPropertyOptional, getSchemaPath } from '@nestjs/swagger';
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -30,81 +31,95 @@ import {
   MIN_JOIN_SOURCES,
   type JoinType,
 } from '../join/join-plan.js';
+import {
+  FILTER_LOGIC,
+  FILTER_OPERATORS,
+  MAX_FILTER_CONDITIONS,
+  MAX_FILTER_FIELD_LENGTH,
+  ROW_LIMIT_OPTIONS,
+  describeFilterError,
+  type FilterLogic,
+  type FilterNode,
+  type FilterOperator,
+  type FilterValue,
+  type RowLimitOption,
+} from '../filters/filter-tree.js';
 
-export const FILTER_OPERATORS = [
-  'eq',
-  'neq',
-  'gt',
-  'gte',
-  'lt',
-  'lte',
-  'in',
-  'not-in',
-] as const;
-export type FilterOperator = (typeof FILTER_OPERATORS)[number];
-export type FilterScalar = string | number | boolean | null;
-export type FilterValue = FilterScalar | FilterScalar[];
+// Los operadores y tipos de filtro viven en filters/filter-tree.ts; se reexportan para no romper importaciones.
+export {
+  FILTER_OPERATORS,
+  FILTER_LOGIC,
+  ROW_LIMIT_OPTIONS,
+  type DataFilter,
+  type FilterGroup,
+  type FilterNode,
+  type FilterOperator,
+  type FilterScalar,
+  type FilterValue,
+} from '../filters/filter-tree.js';
 
-const isFilterScalar = (value: unknown): value is FilterScalar =>
-  value === null ||
-  typeof value === 'string' ||
-  typeof value === 'boolean' ||
-  (typeof value === 'number' && Number.isFinite(value));
-
-@ValidatorConstraint({ name: 'filterValue', async: false })
-class FilterValueConstraint implements ValidatorConstraintInterface {
-  validate(value: unknown, args: ValidationArguments): boolean {
-    const filter = args.object as DataFilterDto;
-    if (value === undefined) return false;
-
-    if (filter.operador === 'in' || filter.operador === 'not-in') {
-      return (
-        Array.isArray(value) &&
-        value.length > 0 &&
-        value.length <= 10 &&
-        value.every((entry) => entry !== null && isFilterScalar(entry))
-      );
-    }
-
-    if (value === null) {
-      return filter.operador === 'eq' || filter.operador === 'neq';
-    }
-    return isFilterScalar(value);
+/** Valida una lista de filtros con grupos AND/OR anidados y devuelve un mensaje claro en español. */
+@ValidatorConstraint({ name: 'filterList', async: false })
+class FilterListConstraint implements ValidatorConstraintInterface {
+  validate(value: unknown): boolean {
+    return describeFilterError(value) === null;
   }
 
   defaultMessage(args: ValidationArguments): string {
-    const filter = args.object as DataFilterDto;
-    if (filter.operador === 'in' || filter.operador === 'not-in') {
-      return 'valor debe ser una lista de 1 a 10 valores escalares no nulos';
-    }
-    return 'valor debe ser un valor escalar';
+    return `${args.property}: ${describeFilterError(args.value) ?? 'filtros no válidos'}`;
   }
 }
 
+/** Condición sobre un campo (solo documenta el esquema; la validación la hace FilterListConstraint). */
 export class DataFilterDto {
-  @ApiProperty({
-    description: 'Campo de origen que se filtrará',
-    example: 'status',
-  })
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(128)
+  @ApiProperty({ description: 'Campo de origen que se filtrará', example: 'status', maxLength: MAX_FILTER_FIELD_LENGTH })
   campo: string;
 
   @ApiProperty({ enum: FILTER_OPERATORS, example: 'eq' })
-  @IsIn(FILTER_OPERATORS)
   operador: FilterOperator;
 
   @ApiProperty({
     description:
-      'Valor escalar; para in y not-in, lista de hasta 10 valores escalares',
+      'eq/neq: escalar o null · gt/gte/lt/lte: escalar · in/not-in: lista de 1 a 10 escalares · ' +
+      'between: [mínimo, máximo] (números o textos, p. ej. fechas ISO) · contains/startsWith: texto (sin distinguir ' +
+      'mayúsculas) · isNull: true (es nulo) o false (no es nulo)',
     example: 'active',
   })
-  @Validate(FilterValueConstraint)
   valor: FilterValue;
 }
 
-export type DataFilter = Pick<DataFilterDto, 'campo' | 'operador' | 'valor'>;
+/** Grupo de filtros combinados con AND u OR; se puede anidar hasta 3 niveles. */
+export class FilterGroupDto {
+  @ApiProperty({ enum: FILTER_LOGIC, example: 'OR' })
+  logica: FilterLogic;
+
+  @ApiProperty({
+    description: 'Condiciones o grupos del grupo',
+    type: 'array',
+    items: { oneOf: [{ $ref: getSchemaPath(DataFilterDto) }, { $ref: getSchemaPath(FilterGroupDto) }] },
+  })
+  filtros: FilterNode[];
+}
+
+/** Documentación OpenAPI de una lista de filtros: condiciones y grupos, combinados con AND. */
+const FILTER_LIST_SCHEMA = {
+  type: 'array' as const,
+  items: { oneOf: [{ $ref: getSchemaPath(DataFilterDto) }, { $ref: getSchemaPath(FilterGroupDto) }] },
+};
+
+/** Decoradores comunes de una lista de filtros de una fuente. */
+function FilterList(description: string): PropertyDecorator {
+  return applyDecorators(
+    ApiPropertyOptional({
+      description: `${description}. Se combinan con AND; usa grupos { logica: 'OR', filtros: [...] } para OR. Máximo ${MAX_FILTER_CONDITIONS} condiciones.`,
+      ...FILTER_LIST_SCHEMA,
+    }),
+    IsOptional(),
+    IsArray(),
+    ArrayMaxSize(MAX_FILTER_CONDITIONS),
+    Validate(FilterListConstraint),
+  );
+}
 
 export const AGGREGATION_OPERATIONS = ['COUNT', 'SUM', 'AVG'] as const;
 export type AggregationOperation = (typeof AGGREGATION_OPERATIONS)[number];
@@ -161,13 +176,8 @@ export class JoinSourceDto {
   @MaxLength(128)
   esquema?: string;
 
-  @ApiPropertyOptional({ description: 'Filtros AND aplicados en el origen (filter pushdown)', type: [DataFilterDto] })
-  @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(20)
-  @ValidateNested({ each: true })
-  @Type(() => DataFilterDto)
-  filtros?: DataFilterDto[];
+  @FilterList('Filtros aplicados en el origen (filter pushdown cuando el motor lo admite)')
+  filtros?: FilterNode[];
 }
 
 export class JoinKeyPairDto {
@@ -219,6 +229,7 @@ const usesLegacyFormat = (dto: CrossJoinDto) => dto.fuentes === undefined;
  * - **Original** (`conexionSqlId`, `tablaSql`, `conexionNoSqlId`, `coleccionNoSql`, `llaveSql`, `llaveNoSql`):
  *   se sigue aceptando igual que antes y ahora admite `tipoJoin`.
  */
+@ApiExtraModels(DataFilterDto, FilterGroupDto)
 export class CrossJoinDto {
   @ApiPropertyOptional({
     description: `Formato de N fuentes: de ${MIN_JOIN_SOURCES} a ${MAX_JOIN_SOURCES} tablas o colecciones`,
@@ -324,27 +335,11 @@ export class CrossJoinDto {
   @MaxLength(150)
   llaveNoSql?: string;
 
-  @ApiPropertyOptional({
-    description: 'Filtros SQL AND aplicados en la consulta del origen',
-    type: [DataFilterDto],
-  })
-  @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(20)
-  @ValidateNested({ each: true })
-  @Type(() => DataFilterDto)
-  filtrosSql?: DataFilterDto[];
+  @FilterList('Formato original: filtros de la tabla SQL')
+  filtrosSql?: FilterNode[];
 
-  @ApiPropertyOptional({
-    description: 'Filtros NoSQL AND aplicados en la consulta del origen',
-    type: [DataFilterDto],
-  })
-  @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(20)
-  @ValidateNested({ each: true })
-  @Type(() => DataFilterDto)
-  filtrosNoSql?: DataFilterDto[];
+  @FilterList('Formato original: filtros de la colección NoSQL')
+  filtrosNoSql?: FilterNode[];
 
   @ApiPropertyOptional({
     description:
@@ -395,6 +390,18 @@ export class CrossJoinDto {
   @IsInt()
   @Min(0)
   offset?: number = 0;
+
+  @ApiPropertyOptional({
+    description:
+      'Máximo de filas del resultado (RF-16). Se aplica después del join y de los filtros; `total` cuenta las filas ' +
+      'conservadas y `truncado` indica si había más.',
+    enum: ROW_LIMIT_OPTIONS,
+    example: 100,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsIn(ROW_LIMIT_OPTIONS, { message: `limiteFilas debe ser uno de: ${ROW_LIMIT_OPTIONS.join(', ')}` })
+  limiteFilas?: RowLimitOption;
 }
 
 export const EXPORT_FORMATS = ['excel', 'pdf', 'json'] as const;
