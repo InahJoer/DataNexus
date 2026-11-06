@@ -5,6 +5,7 @@ import { MailerModule } from '../mailer/mailer.module.js';
 import { AuditModule } from '../audit/audit.module.js';
 import { PrismaModule } from '../prisma/prisma.module.js';
 import { AuthModule } from '../auth/auth.module.js';
+import { ReportStorageModule } from './storage/report-storage.module.js';
 import { ReportsController } from './reports.controller.js';
 import { ReportsService } from './reports.service.js';
 
@@ -16,6 +17,7 @@ import { ReportsService } from './reports.service.js';
     AuditModule,
     PrismaModule,
     AuthModule,
+    ReportStorageModule,
   ],
   controllers: [ReportsController],
   providers: [ReportsService],
