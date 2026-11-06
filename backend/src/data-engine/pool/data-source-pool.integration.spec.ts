@@ -48,13 +48,17 @@ describe.skipIf(!process.env.DATABASE_URL)('DataSourceClientPool con PostgreSQL 
     // Cinco exploraciones secuenciales usan una sola conexión física del pool.
     expect(await openConnections()).toBe(1);
 
+    // pool.end() resuelve al cerrar el socket, pero PostgreSQL retira el proceso de pg_stat_activity unos
+    // milisegundos después; en CI (más rápido) la consulta inmediata aún lo ve. Se espera a que desaparezca.
+    const waitUntilClosed = { timeout: 5_000, interval: 50 };
+
     await pool.invalidate('pool-it');
-    expect(await openConnections()).toBe(0);
+    await expect.poll(openConnections, waitUntilClosed).toBe(0);
 
     await Promise.all(Array.from({ length: 3 }, () => adapter.listObjects(connection)));
     expect(await openConnections()).toBeGreaterThan(0);
 
     await pool.onModuleDestroy();
-    expect(await openConnections()).toBe(0);
+    await expect.poll(openConnections, waitUntilClosed).toBe(0);
   });
 });
