@@ -14,6 +14,7 @@ import { DataEngineModule } from './data-engine/data-engine.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { MailerModule } from './mailer/mailer.module.js';
 import { ReportsModule } from './reports/reports.module.js';
+import { WorkspacesModule } from './workspaces/workspaces.module.js';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { ReportsModule } from './reports/reports.module.js';
     AuditModule,
     MailerModule,
     ReportsModule,
+    WorkspacesModule,
   ],
   controllers: [AppController],
   providers: [

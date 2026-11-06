@@ -12,6 +12,13 @@ import { QueryAuditLogsDto } from './dto/query-audit-logs.dto.js';
 import type { AuditExportFormat, ExportAuditLogsDto } from './dto/export-audit-logs.dto.js';
 
 const CONNECTION_FIELDS = new Set(['nombre', 'tipoMotor', 'host', 'dbName', 'connectionString']);
+const WORKSPACE_FIELDS = new Set([
+  'nombreEmpresa',
+  'logoUrl',
+  'zonaHoraria',
+  'dominiosPermitidos',
+  'camposSensibles',
+]);
 
 /** Datos de un Cross-Join que se guardan en la bitácora. Nunca se guardan filtros ni valores de filas. */
 const DATA_ACCESS_STRING_FIELDS = [
@@ -267,6 +274,10 @@ export class AuditService {
       if (changedFields.length > 0) safeDetails.changedFields = [...new Set(changedFields)];
     }
 
+    if (eventType === 'WORKSPACE_UPDATED') {
+      Object.assign(safeDetails, this.safeWorkspaceChanges(details));
+    }
+
     if (eventType === 'EXECUTE_JOIN' || eventType === 'EXPORT') {
       for (const key of DATA_ACCESS_STRING_FIELDS) {
         if (typeof details[key] === 'string') safeDetails[key] = (details[key] as string).slice(0, 300);
@@ -304,5 +315,35 @@ export class AuditService {
     }
 
     return Object.keys(safeDetails).length > 0 ? JSON.stringify(safeDetails) : null;
+  }
+
+  /** Antes/después de los campos editables del workspace: solo textos, null o listas de textos acotadas. */
+  private safeWorkspaceChanges(details: Record<string, unknown>): Record<string, unknown> {
+    const safeValue = (value: unknown): unknown => {
+      if (value === null || typeof value === 'string') return value?.slice(0, 2048) ?? null;
+      if (Array.isArray(value)) {
+        return value
+          .filter((item): item is string => typeof item === 'string')
+          .slice(0, 200)
+          .map((item) => item.slice(0, 253));
+      }
+      return undefined;
+    };
+
+    const campos = Array.isArray(details.campos)
+      ? [...new Set(details.campos.filter((f): f is string => typeof f === 'string' && WORKSPACE_FIELDS.has(f)))]
+      : [];
+    if (campos.length === 0) return {};
+
+    const cambiosInput = (details.cambios ?? {}) as Record<string, { antes?: unknown; despues?: unknown } | undefined>;
+    const cambios: Record<string, { antes: unknown; despues: unknown }> = {};
+    for (const field of campos) {
+      const change = cambiosInput[field];
+      const antes = safeValue(change?.antes);
+      const despues = safeValue(change?.despues);
+      if (antes !== undefined && despues !== undefined) cambios[field] = { antes, despues };
+    }
+
+    return { campos, cambios };
   }
 }
