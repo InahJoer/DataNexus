@@ -1,0 +1,37 @@
+/* Onboarding: layout de dos columnas (panel verde + tarjeta) compartido por Login y Workspaces. */
+/* Access and workspace selection */
+.onboarding-shell { display: grid; grid-template-columns: minmax(390px, 0.91fr) minmax(520px, 1.09fr); min-height: 100vh; background: #fbfcfb; }
+.onboarding-aside { position: relative; display: flex; min-height: 100vh; overflow: hidden; padding: clamp(36px, 5.2vw, 76px); color: #f7fbf9; background: radial-gradient(circle at 18% 87%, rgba(21, 122, 101, .27), transparent 34%), linear-gradient(148deg, #142522 0%, #1c332e 58%, #19302b 100%); }
+.onboarding-aside--workspace { background: radial-gradient(circle at 85% 20%, rgba(68, 117, 104, .28), transparent 34%), linear-gradient(150deg, #162623 0%, #203b35 62%, #19312c 100%); }
+.onboarding-pattern { position: absolute; inset: 0; opacity: .18; background-image: linear-gradient(rgba(221, 244, 237, .12) 1px, transparent 1px), linear-gradient(90deg, rgba(221, 244, 237, .12) 1px, transparent 1px); background-size: 43px 43px; mask-image: linear-gradient(125deg, #000 0%, transparent 74%); pointer-events: none; }
+.onboarding-aside-inner { position: relative; z-index: 1; display: flex; flex: 1; flex-direction: column; align-items: flex-start; }
+.onboarding-copy { width: min(100%, 505px); margin-top: clamp(76px, 12vh, 132px); }
+.onboarding-copy h1 { max-width: 490px; margin: 20px 0 16px; color: #f7fbf9; font-size: clamp(34px, 4vw, 52px); line-height: 1.08; font-weight: 570; letter-spacing: -2.6px; }
+.onboarding-lede { max-width: 420px; margin: 0; color: #b6c7c1; font-size: 15px; line-height: 1.75; }
+.onboarding-preview { width: min(100%, 470px); margin-top: clamp(42px, 7vh, 74px); padding: 18px 19px 15px; border: 1px solid rgba(214, 239, 230, .15); border-radius: 15px; background: rgba(242, 250, 247, .075); box-shadow: 0 22px 56px rgba(3, 18, 15, .17); backdrop-filter: blur(12px); }
+.preview-heading { display: flex; align-items: center; gap: 11px; }
+.preview-orb { display: grid; width: 34px; height: 34px; place-items: center; color: #95e2cf; border-radius: 11px; background: rgba(130, 226, 202, .13); }
+.preview-heading strong, .preview-heading span { display: block; }
+.preview-heading strong { color: #f4faf7; font-size: 12px; font-weight: 640; }
+.preview-heading div > span { margin-top: 3px; color: #9cb0a9; font-size: 10px; }
+.preview-live { display: inline-flex !important; align-items: center; gap: 6px; margin-left: auto; color: #a6ddd0; font-size: 10px; }
+.preview-live i, .plan-pill i { width: 6px; height: 6px; border-radius: 50%; background: #48c7a5; box-shadow: 0 0 0 3px rgba(72, 199, 165, .12); }
+.preview-graph { position: relative; height: 103px; margin: 16px 0 8px; }
+.preview-graph > svg { position: absolute; inset: 7px 0; width: 100%; height: 86px; }
+.preview-graph > svg path { fill: none; stroke: rgba(118, 203, 179, .48); stroke-width: 1.4; stroke-dasharray: 4 4; }
+.preview-node { position: absolute; z-index: 1; display: flex; align-items: center; gap: 7px; width: 105px; height: 33px; padding: 0 9px; color: #d9e8e2; border: 1px solid rgba(225, 241, 235, .15); border-radius: 9px; background: #263b36; font-size: 9px; }
+.preview-node svg { color: #95daca; }
+.preview-node--one { top: 12px; left: 0; }
+.preview-node--two { top: 56px; left: 0; }
+.preview-node--three { top: 34px; right: 0; }
+.preview-center { position: absolute; z-index: 2; top: 38px; left: 50%; display: grid; width: 29px; height: 29px; place-items: center; color: #b1efdd; border: 1px solid rgba(176, 238, 219, .25); border-radius: 9px; background: #28634f; transform: translateX(-50%); }
+.preview-footer { display: flex; justify-content: space-between; gap: 12px; padding-top: 11px; color: #a9bbb4; border-top: 1px solid rgba(222, 240, 233, .12); font-size: 10px; }
+.preview-footer span:last-child { display: inline-flex; align-items: center; gap: 4px; color: #9bd8c8; }
+.aside-footnote { display: inline-flex; align-items: center; gap: 8px; margin: auto 0 0; padding-top: 28px; color: #9db2aa; font-size: 11px; }
+.aside-footnote svg { color: #7fcfba; }
+.onboarding-main { position: relative; display: flex; min-height: 100vh; flex-direction: column; align-items: center; justify-content: center; padding: 72px 48px 88px; }
+.onboarding-mobile-brand { display: none; }
+.auth-card { width: min(100%, 410px); }
+.auth-heading { margin-bottom: 30px; }
+.auth-heading h2 { margin: 12px 0 9px; color: #182722; font-size: 30px; line-height: 1.2; font-weight: 630; letter-spacing: -1.25px; }
+.auth-heading > p:last-child { margin: 0; color: #78837f; font-size: 13px; line-height: 1.65; }

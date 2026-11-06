@@ -1,0 +1,37 @@
+/* Workspaces: selección del espacio de trabajo después del login (app/workspaces). */
+.workspace-card-wrap { width: min(100%, 540px); }
+.workspace-topline { display: flex; align-items: center; gap: 10px; margin-bottom: 32px; }
+.step-indicator { display: inline-flex; align-items: center; gap: 7px; color: #c0c9c5; }
+.step-indicator span { display: grid; width: 23px; height: 23px; place-items: center; border: 1px solid #d7dfdb; border-radius: 50%; font-size: 10px; }
+.step-indicator span:first-child { color: #168b78; border-color: #95cfc1; background: #edf8f4; }
+.step-indicator span.step-current { color: #fff; border-color: #168b78; background: #168b78; }
+.step-indicator i { width: 23px; height: 1px; background: #dfe5e2; }
+.step-copy { color: #9aa6a1; font-size: 9px; font-weight: 730; letter-spacing: 1px; }
+.workspace-heading { margin-bottom: 25px; }
+.workspace-choice { display: block; padding: 20px 20px 16px; border: 1px solid #dce7e1; border-radius: 13px; background: #fff; box-shadow: 0 11px 32px rgba(31, 66, 53, .055); transition: border-color 150ms ease-out, box-shadow 150ms ease-out, transform 150ms var(--ease-out); }
+.workspace-choice:hover, .workspace-choice:focus-visible { border-color: #88c9b8; box-shadow: 0 14px 34px rgba(31, 86, 66, .1); outline: none; transform: translateY(-1px); }
+.workspace-choice-head { display: flex; align-items: center; gap: 12px; }
+.workspace-avatar { display: grid; width: 44px; height: 44px; flex: 0 0 auto; place-items: center; color: #237665; border: 1px solid #cae8de; border-radius: 12px; background: linear-gradient(145deg, #e7f6f0, #d9f0e8); font-size: 13px; font-weight: 760; letter-spacing: -.4px; }
+.workspace-choice-title { min-width: 0; }
+.workspace-choice-title strong, .workspace-choice-title span { display: block; }
+.workspace-choice-title strong { overflow: hidden; color: #24352f; font-size: 14px; font-weight: 680; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-choice-title span { margin-top: 4px; color: #8d9993; font-size: 11px; }
+.workspace-check { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; margin-left: auto; color: #148875; border-radius: 50%; background: #e7f6f1; }
+.workspace-choice-meta { display: flex; flex-wrap: wrap; gap: 10px 17px; margin: 18px 0 17px 56px; color: #77847e; font-size: 10px; }
+.workspace-choice-meta > span { display: inline-flex; align-items: center; gap: 6px; }
+.workspace-choice-meta svg { color: #8b9992; }
+.plan-pill { padding: 5px 8px; color: #217865; border-radius: 99px; background: #e9f6f1; font-size: 9px; font-weight: 700; }
+.plan-pill i { width: 5px; height: 5px; box-shadow: none; }
+.workspace-choice-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 14px; color: #98a29e; border-top: 1px solid #edf0ee; font-size: 10px; }
+.workspace-open { display: inline-flex; align-items: center; gap: 7px; color: #147d6c; font-weight: 680; white-space: nowrap; }
+.workspace-hint { display: flex; align-items: flex-start; gap: 11px; margin-top: 22px; padding: 13px 14px; border: 1px solid #e8eeeb; border-radius: 10px; background: #f7faf8; }
+.hint-icon { display: grid; width: 26px; height: 26px; flex: 0 0 auto; place-items: center; color: #548a7e; border-radius: 8px; background: #e9f4ef; }
+.workspace-hint p { margin: 2px 0 0; color: #75817b; font-size: 11px; line-height: 1.55; }
+.back-to-login { display: inline-flex; align-items: center; gap: 7px; margin-top: 24px; color: #74817b; font-size: 11px; transition: color 150ms ease-out; }
+.back-to-login:hover { color: #147d6c; }
+.workspace-side-note { display: flex; align-items: flex-start; gap: 12px; max-width: 370px; margin-top: clamp(54px, 10vh, 100px); padding: 17px; border: 1px solid rgba(214, 239, 230, .14); border-radius: 12px; background: rgba(242, 250, 247, .06); }
+.workspace-note-icon { display: grid; width: 33px; height: 33px; flex: 0 0 auto; place-items: center; color: #9ce3d1; border-radius: 9px; background: rgba(130, 226, 202, .12); }
+.workspace-side-note strong, .workspace-side-note span { display: block; }
+.workspace-side-note strong { color: #e8f4ef; font-size: 12px; font-weight: 640; }
+.workspace-side-note div > span { margin-top: 5px; color: #a6bbb2; font-size: 10px; line-height: 1.55; }
+
