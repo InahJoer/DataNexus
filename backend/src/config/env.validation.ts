@@ -136,6 +136,32 @@ export class EnvironmentVariables {
   @Max(90)
   REFRESH_TOKEN_TTL_DAYS?: number;
 
+  /** Intentos de login fallidos antes de bloquear la cuenta (por defecto 5). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(3)
+  @Max(20)
+  LOGIN_MAX_ATTEMPTS?: number;
+
+  /** Minutos de bloqueo tras superar los intentos (por defecto 15). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(1440)
+  LOGIN_LOCK_MINUTES?: number;
+
+  /** Dominios de correo personal bloqueados, separados por comas. Vacío = lista por defecto. */
+  @IsOptional()
+  @IsString()
+  BLOCKED_EMAIL_DOMAINS?: string;
+
+  /** true desactiva la exigencia de correo corporativo (solo para demos). */
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  ALLOW_PERSONAL_EMAILS?: 'true' | 'false';
+
   @IsOptional()
   @Type(() => Number)
   @IsInt()

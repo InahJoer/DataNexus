@@ -282,10 +282,18 @@ export class AuditService {
     if (
       (eventType === 'PASSWORD_RESET_REQUESTED' ||
         eventType === 'PASSWORD_RESET' ||
-        eventType === 'SESSION_EXPIRED') &&
+        eventType === 'SESSION_EXPIRED' ||
+        eventType === 'LOGIN_FAILURE') &&
       typeof details.motivo === 'string'
     ) {
       safeDetails.motivo = details.motivo.slice(0, 64);
+    }
+
+    if (eventType === 'LOGIN_FAILURE' || eventType === 'ACCOUNT_LOCKED') {
+      for (const key of ['intentos', 'bloqueoMinutos']) {
+        if (typeof details[key] === 'number' && Number.isFinite(details[key])) safeDetails[key] = details[key];
+      }
+      if (typeof details.bloqueadoHasta === 'string') safeDetails.bloqueadoHasta = details.bloqueadoHasta;
     }
 
     if (eventType === 'AUDIT_LOG_EXPORTED') {
