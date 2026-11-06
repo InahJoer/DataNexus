@@ -73,3 +73,39 @@ function describeError(error: unknown): string {
   if (error instanceof Error) return error.name;
   return 'Error';
 }
+
+/** Evento BROWSE_DATA de la exploración paginada (issue #32): qué tabla o colección, nunca filtros ni filas. */
+export function buildBrowseAuditEvent(
+  request: AuthenticatedRequest,
+  connectionId: string,
+  query: { entidad: string; esquema?: string; limite?: number; filtros?: string },
+  result: { filas?: number; error?: unknown },
+): AuditEventInput {
+  const user: AuthenticatedUser = request.user;
+  const failed = result.error !== undefined;
+  let filtros = 0;
+  try {
+    filtros = query.filtros ? countConditions(JSON.parse(query.filtros) as never) : 0;
+  } catch {
+    filtros = 0;
+  }
+  return {
+    eventType: 'BROWSE_DATA',
+    outcome: failed ? 'FAILURE' : 'SUCCESS',
+    actorUserId: user.id,
+    actorEmail: user.email,
+    workspaceId: user.workspaceId,
+    targetType: 'CONNECTION',
+    targetId: connectionId,
+    details: {
+      entidad: query.esquema ? `${query.esquema}.${query.entidad}` : query.entidad,
+      limite: query.limite,
+      filtros,
+      enmascarado: !hasPermission(user.role, 'VIEW_UNMASKED_DATA'),
+      ...(result.filas !== undefined ? { filas: result.filas } : {}),
+      ...(failed ? { error: describeError(result.error) } : {}),
+    },
+    ipAddress: request.ip,
+    userAgent: request.get?.('user-agent') ?? undefined,
+  };
+}

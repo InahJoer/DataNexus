@@ -52,6 +52,7 @@ enum AuditEventType {
   INVITATION_REVOKED
   INVITATION_ACCEPTED
   USER_REMOVED
+  BROWSE_DATA
 }
 
 /// Estado persistido de una invitación. La expiración se calcula con expiresAt (PENDIENTE vencida = EXPIRADA).

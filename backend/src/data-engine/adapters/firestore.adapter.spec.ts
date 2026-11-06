@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   filterCalls: [] as Array<[string, string, unknown]>,
   limit: vi.fn(),
   documents: [] as Array<{ id: string; data: Record<string, unknown> }>,
+  pageCalls: [] as Array<[string, unknown]>,
 }));
 
 vi.mock('@google-cloud/firestore', () => ({
@@ -17,6 +18,7 @@ vi.mock('@google-cloud/firestore', () => ({
     mocks.options.push(options);
     return { collection: mocks.collection, listCollections: mocks.listCollections, terminate: mocks.terminate };
   }),
+  FieldPath: { documentId: () => '__name__' },
 }));
 
 import { FirestoreAdapter } from './firestore.adapter.js';
@@ -51,6 +53,9 @@ describe('FirestoreAdapter', () => {
       return query;
     });
     query.limit = mocks.limit.mockReset().mockImplementation(() => query);
+    mocks.pageCalls.length = 0;
+    query.orderBy = vi.fn((field: unknown) => (mocks.pageCalls.push(['orderBy', field]), query));
+    query.startAfter = vi.fn((value: unknown) => (mocks.pageCalls.push(['startAfter', value]), query));
     query.stream = () =>
       Readable.from(
         mocks.documents.map((doc) => ({ id: doc.id, data: () => doc.data })),
@@ -58,7 +63,7 @@ describe('FirestoreAdapter', () => {
       );
     query.get = vi.fn(async () => ({
       empty: mocks.documents.length === 0,
-      docs: mocks.documents.map((doc) => ({ data: () => doc.data })),
+      docs: mocks.documents.map((doc) => ({ id: doc.id, data: () => doc.data })),
     }));
     mocks.collection.mockReset().mockReturnValue(query);
     mocks.listCollections.mockReset().mockResolvedValue([{ id: 'orders' }, { id: 'clients' }]);
@@ -131,6 +136,36 @@ describe('FirestoreAdapter', () => {
       ['deletedAt', '==', null],
       ['paidAt', '!=', null],
     ]);
+  });
+
+  it('pagina por id de documento con startAfter; solo las igualdades van al servidor (issue #32)', async () => {
+    mocks.documents = [
+      { id: 'a1', data: { estado: 'pagado', total: 5 } },
+      { id: 'a2', data: { estado: 'pagado', total: 50 } },
+      { id: 'a3', data: { estado: 'pagado', total: 70 } },
+    ];
+    const page = await adapter.readPage(connection, 'orders', {
+      pageSize: 2,
+      after: ['a0'],
+      filters: [
+        { campo: 'estado', operador: 'eq', valor: 'pagado' },
+        { campo: 'total', operador: 'gt', valor: 10 },
+      ],
+    });
+    expect(mocks.filterCalls).toEqual([['estado', '==', 'pagado']]);
+    expect(mocks.pageCalls).toEqual([
+      ['orderBy', '__name__'],
+      ['startAfter', 'a0'],
+    ]);
+    expect(mocks.limit).toHaveBeenCalledWith(3);
+    // total > 10 se aplica a la página; el cursor avanza por el último documento leído (a2).
+    expect(page.rows.map((row) => row.__documentId)).toEqual(['a2']);
+    expect(page.lastKey).toEqual(['a2']);
+    expect(page.orderBy).toEqual(['__documentId']);
+  });
+
+  it('rechaza un cursor de Firestore que no es un id de documento', async () => {
+    await expect(adapter.readPage(connection, 'orders', { pageSize: 2, after: [5] })).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('descarta los documentos con null en != y not-in, igual que SQL', async () => {

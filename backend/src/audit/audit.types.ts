@@ -26,6 +26,8 @@ export const AUDIT_EVENT_TYPES = [
   'INVITATION_REVOKED',
   'INVITATION_ACCEPTED',
   'USER_REMOVED',
+  /** Exploración paginada de una tabla o colección (issue #32). Se registra la primera página de cada recorrido. */
+  'BROWSE_DATA',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];

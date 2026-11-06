@@ -9,5 +9,7 @@ export default defineConfig({
     globals: true,
     root: './',
     include: ['**/*.spec.ts'],
+    // Permite que las pruebas de memoria (p. ej. la paginación de 1M filas) midan la memoria retenida con gc().
+    execArgv: ['--expose-gc'],
   },
 });

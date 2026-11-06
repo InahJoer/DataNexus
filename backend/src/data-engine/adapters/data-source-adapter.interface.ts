@@ -1,5 +1,6 @@
 import type { TipoMotor } from '../../common/tipo-motor.js';
 import type { DataFilter, FilterNode } from '../filters/filter-tree.js';
+import type { DataPage, DataPageOptions } from '../pagination/keyset.js';
 
 export type CatalogObjectType = 'TABLE' | 'VIEW' | 'COLLECTION';
 
@@ -54,6 +55,11 @@ export interface IDataSourceAdapter {
    * ejecutar en el motor lo evalúa DataEngineService en memoria tras la extracción.
    */
   canPushDown?(filter: DataFilter): boolean;
+  /**
+   * Lee una página con cursor nativo (keyset en SQL, _id en MongoDB, startAfter en Firestore) sin OFFSET ni
+   * cargar la tabla completa (RNF-06). Sin implementar = el motor no admite exploración paginada.
+   */
+  readPage?(connection: DataSourceConnection, entityName: string, options: DataPageOptions): Promise<DataPage>;
   /** Si el motor puede ejecutar grupos AND/OR anidados. Sin declarar = sí. */
   readonly pushesFilterGroups?: boolean;
 }

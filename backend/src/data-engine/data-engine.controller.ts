@@ -34,7 +34,8 @@ import { RequirePermission } from '../auth/decorators/roles.decorator.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-user.interface.js';
 import { AuditService } from '../audit/audit.service.js';
 import { DataEngineService } from './data-engine.service.js';
-import { buildDataAccessAuditEvent } from './data-access-audit.js';
+import { buildBrowseAuditEvent, buildDataAccessAuditEvent } from './data-access-audit.js';
+import { BrowseDataQueryDto, BrowseDataResponseDto } from './dto/browse-data.dto.js';
 import { CrossJoinDto, ExportCrossJoinDto } from './dto/cross-join.dto.js';
 import { ConnectionHealthResponseDto } from './dto/connection-health.dto.js';
 import { ConnectionFieldsResponseDto, ConnectionSchemaResponseDto } from './dto/connection-schema.dto.js';
@@ -119,6 +120,43 @@ export class DataEngineController {
       query.objectName,
       query.schema,
     );
+  }
+
+  @Get('connections/:connectionId/data')
+  @RequirePermission('EXPLORE_DATA')
+  @ApiOperation({
+    summary: 'Explorar los datos de una tabla o colección con paginación por cursor',
+    description:
+      'Devuelve una página y `nextCursor` para pedir la siguiente. Usa cursores nativos de cada motor (keyset sobre la ' +
+      'llave primaria en SQL, `_id` en MongoDB, `startAfter` en Firestore): cualquier página cuesta lo mismo y la ' +
+      'memoria es constante aunque la tabla tenga millones de filas (RNF-06). Las tablas SQL necesitan llave primaria.',
+  })
+  @ApiOkResponse({ type: BrowseDataResponseDto })
+  @ApiBadRequestResponse({ description: 'Parámetros, filtros o cursor no válidos; motor sin paginación o tabla sin llave primaria.' })
+  @ApiUnauthorizedResponse({ description: 'Token JWT inválido o ausente.' })
+  @ApiForbiddenResponse({ description: 'Se requiere rol ADMIN u OPERADOR para explorar datos.' })
+  @ApiNotFoundResponse({ description: 'Conexión fuera del workspace o inexistente.' })
+  @ApiBadGatewayResponse({ description: 'Falló la consulta en la fuente externa.' })
+  @ApiGatewayTimeoutResponse({ description: 'La lectura de la página superó el límite de 10 segundos.' })
+  @ApiPayloadTooLargeResponse({ description: 'La página supera el máximo de bytes configurado.' })
+  async browseData(
+    @Req() request: AuthenticatedRequest,
+    @Param('connectionId', new ParseUUIDPipe({ version: '4' })) connectionId: string,
+    @Query() query: BrowseDataQueryDto,
+  ) {
+    try {
+      const result = await this.dataEngineService.browseData(request.user, connectionId, query);
+      // Se registra el inicio de cada recorrido (primera página), no cada página siguiente.
+      if (!query.cursor) await this.auditService.record(buildBrowseAuditEvent(request, connectionId, query, { filas: result.filas }));
+      return result;
+    } catch (error) {
+      try {
+        await this.auditService.record(buildBrowseAuditEvent(request, connectionId, query, { error }));
+      } catch {
+        // El error de negocio original es el que debe llegar al cliente.
+      }
+      throw error;
+    }
   }
 
   @Post('join')

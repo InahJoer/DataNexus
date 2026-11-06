@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, PayloadTooLargeException } from '@nestjs/common';
-import { MongoClient, type Document } from 'mongodb';
+import { MongoClient, ObjectId, type Document, type Filter } from 'mongodb';
 import { DataSourceClientPool } from '../pool/data-source-client-pool.js';
 import {
   EXTERNAL_QUERY_TIMEOUT_MS,
@@ -14,6 +14,7 @@ import type {
   IDataSourceAdapter,
 } from './data-source-adapter.interface.js';
 import { assertMongoCollectionName, buildMongoFilter } from './mongo-filters.js';
+import { toDataPage, type CursorValue, type DataPage, type DataPageOptions } from '../pagination/keyset.js';
 
 /** Documentos que se leen para inferir los campos de una colección (MongoDB no tiene esquema). */
 export const MONGO_FIELD_SAMPLE_SIZE = 100;
@@ -68,6 +69,13 @@ export function normalizeBsonValue(value: unknown): unknown {
   }
   if (value instanceof Uint8Array) return Buffer.from(value).toString('base64');
   return Object.fromEntries(Object.entries(bson).map(([key, entry]) => [key, normalizeBsonValue(entry)]));
+}
+
+/** Valor de `_id` del cursor con su tipo original (ObjectId, fecha, texto o número). */
+function fromCursorValue(value: CursorValue): unknown {
+  if (typeof value !== 'object') return value;
+  if ('$oid' in value) return new ObjectId(value.$oid);
+  return new Date(value.$date);
 }
 
 /** MongoDB: colecciones y vistas de la base configurada, campos por muestreo y extracción con filter pushdown. */
@@ -148,6 +156,32 @@ export class MongoDbAdapter implements IDataSourceAdapter {
       } finally {
         await cursor.close().catch(() => undefined);
       }
+    });
+  }
+
+  /**
+   * Página con cursor nativo sobre `_id` (RNF-06): `{ _id: { $gt: último } }` ordenado por `_id` con el índice
+   * que MongoDB crea siempre, así que cualquier página cuesta lo mismo y nunca se recorre la colección entera.
+   */
+  async readPage(connection: DataSourceConnection, collectionName: string, options: DataPageOptions): Promise<DataPage> {
+    assertMongoCollectionName(collectionName);
+    const conditions: Filter<Document>[] = [];
+    const filter = buildMongoFilter(options.filters ?? []);
+    if (Object.keys(filter).length) conditions.push(filter);
+    if (options.after) {
+      if (options.after.length !== 1) throw new BadRequestException('El cursor no es válido para esta fuente');
+      // El _id puede ser ObjectId, texto, número o fecha: se compara con el mismo tipo que tenía.
+      conditions.push({ _id: { $gt: fromCursorValue(options.after[0]) as ObjectId } });
+    }
+    const query = conditions.length === 0 ? {} : conditions.length === 1 ? conditions[0] : { $and: conditions };
+
+    return await this.withClient(connection, async (client) => {
+      const raw = await client
+        .db(connection.dbName)
+        .collection(collectionName)
+        .find(query, { sort: { _id: 1 }, limit: options.pageSize + 1, maxTimeMS: EXTERNAL_QUERY_TIMEOUT_MS })
+        .toArray();
+      return toDataPage(raw, ['_id'], options.pageSize, (document) => normalizeBsonValue(document) as Record<string, any>);
     });
   }
 
