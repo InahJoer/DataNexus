@@ -210,8 +210,71 @@ export interface paths {
         /** Listar conexiones del workspace autenticado (ADMIN u OPERADOR) */
         get: operations["ConnectionsController_findAll"];
         put?: never;
-        /** Crear una conexión en el workspace autenticado */
+        /**
+         * Crear una conexión con credenciales estructuradas (RF-08)
+         * @description El formato de `credenciales` depende de `tipoMotor`. Todo el payload se cifra con AES-256; la respuesta solo trae metadatos.
+         */
         post: operations["ConnectionsController_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/connections/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Probar credenciales antes de guardar la conexión (RF-10)
+         * @description Conecta, autentica y consulta la versión del servidor midiendo la latencia. No persiste nada ni devuelve secretos. Un fallo de red o credenciales responde 200 con ok=false y un error normalizado por motor.
+         */
+        post: operations["ConnectionsController_testCredentials"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/connections/{id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Probar una conexión guardada y medir su latencia (RF-10)
+         * @description Usa las credenciales cifradas de la conexión sin exponerlas. Un fallo de red o credenciales responde 200 con ok=false.
+         */
+        post: operations["ConnectionsController_testSaved"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/connections/firestore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Crear una conexión Firestore subiendo el JSON de Service Account (RF-09)
+         * @description multipart/form-data con el archivo `serviceAccount`. Se valida (type, project_id, private_key, client_email), se cifra y nunca se escribe en disco.
+         */
+        post: operations["ConnectionsController_createFirestore"];
         delete?: never;
         options?: never;
         head?: never;
@@ -233,8 +296,31 @@ export interface paths {
         delete: operations["ConnectionsController_remove"];
         options?: never;
         head?: never;
-        /** Actualizar una conexión del workspace autenticado */
+        /**
+         * Actualizar una conexión del workspace autenticado
+         * @description Con el mismo motor, `credenciales` puede traer solo los campos que cambian (p. ej. rotar `password`). Cambiar `tipoMotor` exige credenciales completas.
+         */
         patch: operations["ConnectionsController_update"];
+        trace?: never;
+    };
+    "/connections/{id}/service-account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Reemplazar el Service Account de una conexión Firestore
+         * @description Rotación de claves: sube el nuevo JSON; el anterior deja de usarse. Se procesa en memoria.
+         */
+        put: operations["ConnectionsController_replaceServiceAccount"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/users": {
@@ -804,6 +890,119 @@ export interface components {
             totalPages: number;
             data: components["schemas"]["AuditLogEntryResponseDto"][];
         };
+        PostgresCredentialsDto: {
+            /**
+             * @description Servidor (nombre o IP), sin protocolo
+             * @example db.empresa.internal
+             */
+            host: string;
+            /**
+             * @description Puerto; si se omite se usa el del motor
+             * @example 5432
+             */
+            port?: number;
+            /**
+             * @description Base de datos
+             * @example analytics
+             */
+            database: string;
+            /** @example lector_bi */
+            username: string;
+            /**
+             * @description Se cifra con AES-256 y nunca se devuelve
+             * @example S3creta#2026
+             */
+            password: string;
+            /**
+             * @description Exigir TLS (sslmode=require)
+             * @default false
+             */
+            ssl: boolean;
+        };
+        MysqlCredentialsDto: {
+            /**
+             * @description Servidor (nombre o IP), sin protocolo
+             * @example db.empresa.internal
+             */
+            host: string;
+            /**
+             * @description Puerto; si se omite se usa el del motor
+             * @example 5432
+             */
+            port?: number;
+            /**
+             * @description Base de datos
+             * @example analytics
+             */
+            database: string;
+            /** @example lector_bi */
+            username: string;
+            /**
+             * @description Se cifra con AES-256 y nunca se devuelve
+             * @example S3creta#2026
+             */
+            password: string;
+            /**
+             * @description Conectar con TLS
+             * @default false
+             */
+            ssl: boolean;
+        };
+        SqlServerCredentialsDto: {
+            /**
+             * @description Servidor (nombre o IP), sin protocolo
+             * @example db.empresa.internal
+             */
+            host: string;
+            /**
+             * @description Puerto; si se omite se usa el del motor
+             * @example 5432
+             */
+            port?: number;
+            /**
+             * @description Base de datos
+             * @example analytics
+             */
+            database: string;
+            /** @example lector_bi */
+            username: string;
+            /**
+             * @description Se cifra con AES-256 y nunca se devuelve
+             * @example S3creta#2026
+             */
+            password: string;
+            /**
+             * @description Cifrar la conexión (Encrypt)
+             * @default true
+             */
+            encrypt: boolean;
+            /**
+             * @description Aceptar certificados no verificados (solo desarrollo)
+             * @default false
+             */
+            trustServerCertificate: boolean;
+        };
+        MongoCredentialsDto: {
+            /**
+             * @description URI de conexión mongodb:// o mongodb+srv://. Se cifra y nunca se devuelve.
+             * @example mongodb+srv://lector:S3creta@cluster0.mongodb.net/?retryWrites=true
+             */
+            uri: string;
+            /** @example ventas */
+            database: string;
+        };
+        FirestoreCredentialsDto: {
+            /** @description Contenido del JSON de Service Account de Firebase (type, project_id, private_key, client_email...). También puede subirse como archivo en POST /connections/firestore. */
+            serviceAccount: {
+                [key: string]: unknown;
+            };
+            /**
+             * @description Base de datos de Firestore
+             * @default (default)
+             * @example (default)
+             */
+            databaseId: string;
+        };
         CreateConnectionDto: {
             /**
              * @description Nombre descriptivo de la conexión
@@ -811,26 +1010,13 @@ export interface components {
              */
             nombre?: string;
             /**
-             * @description Tipo de motor. Se aceptan alias como "SQL Server", "Firebase" o "postgres", que se normalizan al valor canónico.
-             * @example SQLSERVER
+             * @description Tipo de motor; define el formato de `credenciales`. Se aceptan alias como "SQL Server", "Firebase" o "postgres".
+             * @example POSTGRESQL
              * @enum {string}
              */
             tipoMotor: "POSTGRESQL" | "MYSQL" | "SQLSERVER" | "FIRESTORE" | "MONGODB";
-            /**
-             * @description Dirección o nombre de host del servidor de base de datos
-             * @example sqlserver.datanexus.internal
-             */
-            host: string;
-            /**
-             * @description Nombre de la base de datos a conectar
-             * @example analytics_db
-             */
-            dbName: string;
-            /**
-             * @description Cadena de conexión o credenciales en texto plano (serán encriptadas con AES-256 antes de guardarse)
-             * @example Server=sqlserver.datanexus.internal;Database=analytics_db;User Id=sa;Password=P@ssw0rd2026;
-             */
-            connectionString: string;
+            /** @description Credenciales según el motor: POSTGRESQL/MYSQL (host, port, database, username, password, ssl), SQLSERVER (host, port, database, username, password, encrypt, trustServerCertificate), MONGODB (uri, database) o FIRESTORE (serviceAccount, databaseId). Se cifran con AES-256 y nunca se devuelven. */
+            credenciales: components["schemas"]["PostgresCredentialsDto"] | components["schemas"]["MysqlCredentialsDto"] | components["schemas"]["SqlServerCredentialsDto"] | components["schemas"]["MongoCredentialsDto"] | components["schemas"]["FirestoreCredentialsDto"];
         };
         ConnectionResponseDto: {
             /** Format: uuid */
@@ -848,6 +1034,66 @@ export interface components {
             dbName: string;
             /** Format: uuid */
             workspaceId: string;
+            /**
+             * @description LEGADO = cadena de conexión libre anterior a RF-08; conviene volver a guardar sus credenciales.
+             * @enum {string}
+             */
+            formatoCredenciales: "ESTRUCTURADO" | "LEGADO";
+            /**
+             * @description Metadatos no secretos (puerto, usuario, ssl, projectId, clientEmail...). Nunca incluye contraseñas ni claves.
+             * @example {
+             *       "puerto": 5432,
+             *       "usuario": "lector_bi",
+             *       "ssl": true
+             *     }
+             */
+            detalles: {
+                [key: string]: unknown;
+            } | null;
+        };
+        TestConnectionDto: {
+            /**
+             * @description Tiempo máximo de la prueba en milisegundos. Por defecto CONNECTION_TEST_TIMEOUT_MS (10000).
+             * @example 5000
+             */
+            timeoutMs?: number;
+            /**
+             * @description Tipo de motor; define el formato de `credenciales`. Acepta los mismos alias que el alta.
+             * @example POSTGRESQL
+             * @enum {string}
+             */
+            tipoMotor: "POSTGRESQL" | "MYSQL" | "SQLSERVER" | "FIRESTORE" | "MONGODB";
+            /** @description Las mismas credenciales que en POST /connections. Solo se usan para la prueba. */
+            credenciales: components["schemas"]["PostgresCredentialsDto"] | components["schemas"]["MysqlCredentialsDto"] | components["schemas"]["SqlServerCredentialsDto"] | components["schemas"]["MongoCredentialsDto"] | components["schemas"]["FirestoreCredentialsDto"];
+        };
+        ConnectionTestErrorDto: {
+            /**
+             * @example AUTH_FAILED
+             * @enum {string}
+             */
+            code: "TIMEOUT" | "HOST_NOT_FOUND" | "CONNECTION_REFUSED" | "NETWORK_ERROR" | "TLS_ERROR" | "AUTH_FAILED" | "DATABASE_NOT_FOUND" | "PERMISSION_DENIED" | "INVALID_CONFIGURATION" | "UNSUPPORTED_ENGINE" | "UNKNOWN";
+            /** @example Usuario o contraseña incorrectos. */
+            message: string;
+        };
+        ConnectionTestResultDto: {
+            /** @description true si el servidor respondió con las credenciales y la base indicadas. */
+            ok: boolean;
+            /**
+             * @description Milisegundos para conectar, autenticar y consultar la versión. null si la prueba falló.
+             * @example 42
+             */
+            latencyMs: number | null;
+            /** @example PostgreSQL 16.2 */
+            serverVersion: string | null;
+            /** @description Error normalizado por motor; nunca incluye el mensaje original del driver. */
+            error: components["schemas"]["ConnectionTestErrorDto"] | null;
+        };
+        ConnectionTestOptionsDto: {
+            /**
+             * @description Tiempo máximo de la prueba en milisegundos. Por defecto CONNECTION_TEST_TIMEOUT_MS (10000).
+             * @example 5000
+             */
+            timeoutMs?: number;
         };
         UpdateConnectionDto: {
             /**
@@ -856,26 +1102,13 @@ export interface components {
              */
             nombre?: string;
             /**
-             * @description Tipo de motor de base de datos (acepta alias que se normalizan)
+             * @description Nuevo motor (acepta alias). Requiere enviar `credenciales` completas.
              * @example SQLSERVER
              * @enum {string}
              */
             tipoMotor?: "POSTGRESQL" | "MYSQL" | "SQLSERVER" | "FIRESTORE" | "MONGODB";
-            /**
-             * @description Dirección o nombre de host del servidor de base de datos
-             * @example sqlserver.datanexus.internal
-             */
-            host?: string;
-            /**
-             * @description Nombre de la base de datos a conectar
-             * @example analytics_db_v2
-             */
-            dbName?: string;
-            /**
-             * @description Nueva cadena de conexión en texto plano (será re-encriptada con AES-256)
-             * @example Server=sqlserver.datanexus.internal;Database=analytics_db_v2;User Id=sa;Password=NewP@ssw0rd2026;
-             */
-            connectionString?: string;
+            /** @description Credenciales nuevas o solo los campos que cambian (mismo motor). Se vuelven a cifrar. */
+            credenciales?: components["schemas"]["PostgresCredentialsDto"] | components["schemas"]["MysqlCredentialsDto"] | components["schemas"]["SqlServerCredentialsDto"] | components["schemas"]["MongoCredentialsDto"] | components["schemas"]["FirestoreCredentialsDto"];
         };
         InviteUserDto: {
             /**
@@ -1675,10 +1908,155 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
+                content: {
+                    "application/json": components["schemas"]["ConnectionResponseDto"];
+                };
+            };
+            /** @description Credenciales incompletas, con campos de otro motor o inválidas. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
                 content?: never;
             };
             /** @description Solo ADMIN puede crear conexiones. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ConnectionsController_testCredentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestConnectionDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionTestResultDto"];
+                };
+            };
+            /** @description Datos de conexión inválidos. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Solo ADMIN puede probar credenciales nuevas. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Máximo 10 pruebas por minuto. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ConnectionsController_testSaved: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ConnectionTestOptionsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionTestResultDto"];
+                };
+            };
+            /** @description Se requiere rol ADMIN u OPERADOR. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Conexión no encontrada. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Máximo 10 pruebas por minuto. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ConnectionsController_createFirestore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description Archivo JSON de Service Account (máx. 64 KB). Se procesa en memoria y nunca se escribe en disco.
+                     */
+                    serviceAccount: string;
+                    nombre?: string;
+                    /** @default (default) */
+                    databaseId?: string;
+                };
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionResponseDto"];
+                };
+            };
+            /** @description Archivo ausente, no JSON o Service Account inválido. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description El archivo supera 64 KB. */
+            413: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1776,10 +2154,67 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
+                content: {
+                    "application/json": components["schemas"]["ConnectionResponseDto"];
+                };
+            };
+            /** @description Credenciales inválidas o cambio de motor sin credenciales. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
                 content?: never;
             };
             /** @description Solo ADMIN puede actualizar conexiones. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Conexión no encontrada. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ConnectionsController_replaceServiceAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description Archivo JSON de Service Account (máx. 64 KB). Se procesa en memoria y nunca se escribe en disco.
+                     */
+                    serviceAccount: string;
+                    nombre?: string;
+                    /** @default (default) */
+                    databaseId?: string;
+                };
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConnectionResponseDto"];
+                };
+            };
+            /** @description La conexión no es Firestore o el archivo no es válido. */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };

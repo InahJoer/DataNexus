@@ -1,12 +1,20 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiExtraModels, ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { IsIn, IsInt, IsObject, IsOptional, Max, Min } from 'class-validator';
 import {
   normalizeTipoMotor,
   TIPO_MOTOR_MESSAGE,
   TIPOS_MOTOR,
   type TipoMotor,
 } from '../../common/tipo-motor.js';
+import {
+  FirestoreCredentialsDto,
+  MongoCredentialsDto,
+  MysqlCredentialsDto,
+  PostgresCredentialsDto,
+  SqlServerCredentialsDto,
+} from '../credentials/credential-dtos.js';
+import { CREDENTIALS_SCHEMA } from './create-connection.dto.js';
 
 export const MIN_CONNECTION_TEST_TIMEOUT_MS = 1_000;
 export const MAX_CONNECTION_TEST_TIMEOUT_MS = 30_000;
@@ -26,34 +34,31 @@ export class ConnectionTestOptionsDto {
   timeoutMs?: number;
 }
 
-/** Credenciales sin guardar. No se persisten ni se registran. */
+/**
+ * Credenciales sin guardar, en el mismo formato estructurado que el alta (RF-08): el formulario puede
+ * probar exactamente lo que después guardará. No se persisten ni se registran.
+ */
+@ApiExtraModels(
+  PostgresCredentialsDto,
+  MysqlCredentialsDto,
+  SqlServerCredentialsDto,
+  MongoCredentialsDto,
+  FirestoreCredentialsDto,
+)
 export class TestConnectionDto extends ConnectionTestOptionsDto {
   @ApiProperty({
     enum: [...TIPOS_MOTOR],
     example: 'POSTGRESQL',
-    description: 'Tipo de motor. Acepta los mismos alias que el alta de conexiones.',
+    description: 'Tipo de motor; define el formato de `credenciales`. Acepta los mismos alias que el alta.',
   })
   @Transform(({ value }) => normalizeTipoMotor(value))
   @IsIn([...TIPOS_MOTOR], { message: TIPO_MOTOR_MESSAGE })
   tipoMotor: TipoMotor;
 
-  @ApiPropertyOptional({ example: 'db.internal', description: 'Informativo; la prueba usa la cadena de conexión.' })
-  @IsOptional()
-  @IsString({ message: 'El host debe ser un texto' })
-  @MaxLength(255, { message: 'El host no puede superar 255 caracteres' })
-  host?: string;
-
-  @ApiProperty({ example: 'analytics', description: 'Base de datos (o base de Firestore) a validar' })
-  @IsString({ message: 'El nombre de la base de datos debe ser un texto' })
-  @IsNotEmpty({ message: 'El nombre de la base de datos es requerido' })
-  dbName: string;
-
   @ApiProperty({
-    example: 'postgres://user:secret@db.internal:5432/analytics',
-    description:
-      'PostgreSQL/MySQL: URL; SQL Server: cadena ADO.NET; Firestore: JSON de la cuenta de servicio. Solo se usa para la prueba.',
+    ...CREDENTIALS_SCHEMA,
+    description: 'Las mismas credenciales que en POST /connections. Solo se usan para la prueba.',
   })
-  @IsString({ message: 'La cadena de conexión debe ser un texto' })
-  @IsNotEmpty({ message: 'La cadena de conexión es requerida' })
-  connectionString: string;
+  @IsObject({ message: 'credenciales debe ser un objeto con los datos de conexión del motor' })
+  credenciales: Record<string, unknown>;
 }

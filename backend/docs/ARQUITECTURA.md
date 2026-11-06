@@ -111,10 +111,34 @@ access tokens ya emitidos. Reglas:
   como `PASSWORD_RESET_REQUESTED` y `PASSWORD_RESET`.
 
 ### 4.2 Conexiones de Datos (`/connections`)
-- `POST /connections`: Alta de conexión externa cifrando credenciales con AES-256 (ADMIN).
-- `GET /connections`: Listado seguro de conexiones activas del Workspace (sin exponer secretos).
-- `PATCH /connections/:id`: Actualización auditada de parámetros de conexión (ADMIN).
-- `DELETE /connections/:id`: Baja lógica y física de conexión (ADMIN).
+- `POST /connections`: Alta con **credenciales estructuradas por motor** (RF-08, ADMIN). `credenciales` se valida
+  según `tipoMotor` (unión discriminada; campos de otro motor → 400):
+
+  | Motor | `credenciales` |
+  | :--- | :--- |
+  | `POSTGRESQL` / `MYSQL` | `host`, `port` (5432 / 3306), `database`, `username`, `password`, `ssl` (false) |
+  | `SQLSERVER` | `host`, `port` (1433), `database`, `username`, `password`, `encrypt` (true), `trustServerCertificate` (false) |
+  | `MONGODB` | `uri` (`mongodb://` o `mongodb+srv://`), `database` |
+  | `FIRESTORE` | `serviceAccount` (objeto JSON), `databaseId` (`(default)`) |
+
+- `POST /connections/firestore`: Alta de Firestore subiendo el **JSON de Service Account** (RF-09) en
+  `multipart/form-data` (campo `serviceAccount`, máx. 64 KB, solo `.json`). Multer usa almacenamiento en memoria:
+  el archivo **nunca se escribe en disco**. Se valida `type = service_account`, `project_id`, `client_email` y que
+  `private_key` sea PEM; del JSON solo se conservan los campos necesarios.
+- `POST /connections/test` (ADMIN) y `POST /connections/:id/test` (ADMIN u OPERADOR): prueban la conexión y miden la
+  latencia (RF-10, issue #25) devolviendo `{ ok, latencyMs, serverVersion, error }`. La prueba previa recibe el mismo
+  `tipoMotor` + `credenciales` que el alta, así que el formulario prueba exactamente lo que va a guardar; no persiste
+  nada. Máximo 10 pruebas por minuto.
+- `PUT /connections/:id/service-account`: Rotación del Service Account de una conexión Firestore (mismo formato).
+- `GET /connections` y `GET /connections/:id`: Solo metadatos. `detalles` trae datos no secretos (puerto, usuario,
+  ssl, projectId, clientEmail) y `formatoCredenciales` indica `ESTRUCTURADO` o `LEGADO`. Nunca se devuelven
+  contraseñas, URIs ni claves privadas.
+- `PATCH /connections/:id`: Con el mismo motor, `credenciales` puede traer solo lo que cambia (p. ej. rotar
+  `password`); cambiar `tipoMotor` exige credenciales completas. Auditado sin valores (`changedFields`).
+- `DELETE /connections/:id`: Baja física de la conexión (ADMIN).
+- **Cifrado:** todo el payload de credenciales se cifra con `EncryptionService` (versión 2 en `credencialesVersion`).
+  Las conexiones anteriores (versión 1, cadena libre) siguen funcionando y se migran al volver a guardar sus
+  credenciales. `toDriverConnectionString()` traduce ambas versiones al formato de cada driver.
 
 ### 4.3 Motor de Datos & Federación (`/engine` o `/data-engine`)
 - `GET /engine/connections/:id/schema`: Introspección de tablas, vistas o colecciones disponibles.
