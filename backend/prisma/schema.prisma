@@ -89,7 +89,7 @@ model Workspace {
   invitations           Invitation[]
   consultasGuardadas    SavedQuery[]
   reportesProgramados   ScheduledReport[]
-  ejecucionesReportesProgramados ScheduledReportRun[]
+  ejecucionesReportes            ReportExecution[]
 }
 
 model User {
@@ -267,15 +267,18 @@ enum ScheduledReportFormat {
   JSON
 }
 
-enum ScheduledReportRunStatus {
+/// Estado de una ejecución de reporte (issue #39). RUNNING incluye los reintentos en curso.
+enum ReportExecutionStatus {
   RUNNING
   SUCCEEDED
   FAILED
 }
 
-enum ScheduledReportTrigger {
+/// Origen de una ejecución: horario programado, "Ejecutar ahora" o POST /reports/trigger.
+enum ReportExecutionTrigger {
   SCHEDULED
   MANUAL
+  ON_DEMAND
 }
 
 /// Consulta guardada / vista unificada del Query Builder (UC4/UC7, issue #35).
@@ -339,31 +342,46 @@ model ScheduledReport {
   lastError     String?
   createdAt     DateTime                 @default(now())
   updatedAt     DateTime                 @default(now()) @updatedAt
-  runs          ScheduledReportRun[]
+  executions    ReportExecution[]
 
   @@index([workspaceId, estado])
   @@index([savedQueryId])
 }
 
-/// Registro de una ejecución programada o manual, sin guardar filas del reporte.
-model ScheduledReportRun {
-  id                String                   @id @default(uuid())
+/// Historial de cada ejecución de reporte (issue #39): programadas, manuales y bajo demanda.
+/// Nunca guarda filas ni contenido del reporte; los errores son mensajes seguros y breves.
+model ReportExecution {
+  id                String                 @id @default(uuid())
   workspaceId       String
-  workspace         Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  scheduledReportId String
-  scheduledReport   ScheduledReport          @relation(fields: [scheduledReportId], references: [id], onDelete: Cascade)
-  trigger           ScheduledReportTrigger
-  status            ScheduledReportRunStatus @default(RUNNING)
+  workspace         Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  /// null en reportes bajo demanda (POST /reports/trigger).
+  scheduledReportId String?
+  scheduledReport   ScheduledReport?       @relation(fields: [scheduledReportId], references: [id], onDelete: Cascade)
+  trigger           ReportExecutionTrigger
+  status            ReportExecutionStatus  @default(RUNNING)
+  /// Título del reporte en el momento de ejecutarse.
+  titulo            String?
+  /// excel, pdf, json o word.
+  formato           String?
+  /// Usuario con cuyo rol se generó el reporte. Sin FK: el historial sobrevive a la baja del usuario.
+  actorUserId       String?
   scheduledFor      DateTime?
-  idempotencyKey    String?                  @unique
-  startedAt         DateTime                 @default(now())
+  idempotencyKey    String?                @unique
+  startedAt         DateTime               @default(now())
   leaseExpiresAt    DateTime?
   finishedAt        DateTime?
+  /// Milisegundos entre el inicio y el fin, incluidos los reintentos.
+  durationMs        Int?
+  /// Intentos realizados (1 = sin reintentos).
+  attempts          Int                    @default(1)
   totalRows         Int?
+  fileSizeBytes     Int?
   error             String?
   downloadUrl       String?
   expiresAt         DateTime?
   messageId         String?
+  /// Cuándo se avisó al autor de que la ejecución falló.
+  authorNotifiedAt  DateTime?
 
   @@index([workspaceId, startedAt])
   @@index([scheduledReportId, startedAt])

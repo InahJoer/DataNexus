@@ -28,12 +28,36 @@ import { RolesGuard } from '../auth/guards/roles.guard.js';
 import { RequirePermission } from '../auth/decorators/roles.decorator.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-user.interface.js';
 import { ReportsService } from './reports.service.js';
+import { ReportExecutionsService } from './report-executions.service.js';
+import {
+  ListReportExecutionsQueryDto,
+  ReportExecutionResponseDto,
+} from './dto/scheduled-report.dto.js';
 import { TriggerReportDto } from './dto/trigger-report.dto.js';
 
 @ApiTags('Reports - Automation')
 @Controller('reports')
 export class ReportsController {
-  constructor(private readonly reportsService: ReportsService) {}
+  constructor(
+    private readonly reportsService: ReportsService,
+    private readonly executions: ReportExecutionsService,
+  ) {}
+
+  @Get('executions')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @RequirePermission('MANAGE_REPORTS')
+  @ApiOperation({
+    summary: 'Historial de todas las ejecuciones de reportes del workspace (issue #39)',
+    description:
+      'Incluye las programadas, las de "Ejecutar ahora" y las de POST /reports/trigger. Más recientes primero.',
+  })
+  @ApiOkResponse({ type: ReportExecutionResponseDto, isArray: true })
+  @ApiForbiddenResponse({ description: 'Se requiere rol ADMIN u OPERADOR.' })
+  @ApiUnauthorizedResponse({ description: 'Token JWT inválido o ausente.' })
+  listExecutions(@Req() request: AuthenticatedRequest, @Query() filters: ListReportExecutionsQueryDto) {
+    return this.executions.list(request.user.workspaceId, filters);
+  }
 
   @Post('trigger')
   @ApiBearerAuth()

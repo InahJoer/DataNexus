@@ -162,15 +162,33 @@ export class ScheduledReportsSummaryDto {
   nextExecutionAt: string | null;
 }
 
-export class ScheduledReportRunResponseDto {
+export const REPORT_EXECUTION_STATUSES = ['RUNNING', 'SUCCEEDED', 'FAILED'] as const;
+export const REPORT_EXECUTION_TRIGGERS = ['SCHEDULED', 'MANUAL', 'ON_DEMAND'] as const;
+export type ReportExecutionStatusDto = (typeof REPORT_EXECUTION_STATUSES)[number];
+export type ReportExecutionTriggerDto = (typeof REPORT_EXECUTION_TRIGGERS)[number];
+
+/** Una ejecución del historial de reportes (issue #39). Nunca incluye filas del reporte. */
+export class ReportExecutionResponseDto {
   @ApiProperty({ format: 'uuid' })
   id: string;
 
-  @ApiProperty({ enum: ['SCHEDULED', 'MANUAL'] })
-  trigger: 'SCHEDULED' | 'MANUAL';
+  @ApiPropertyOptional({ format: 'uuid', nullable: true, description: 'null en reportes bajo demanda.' })
+  scheduledReportId: string | null;
 
-  @ApiProperty({ enum: ['RUNNING', 'SUCCEEDED', 'FAILED'] })
-  status: 'RUNNING' | 'SUCCEEDED' | 'FAILED';
+  @ApiProperty({
+    enum: REPORT_EXECUTION_TRIGGERS,
+    description: 'SCHEDULED: horario; MANUAL: "Ejecutar ahora"; ON_DEMAND: POST /reports/trigger.',
+  })
+  trigger: ReportExecutionTriggerDto;
+
+  @ApiProperty({ enum: REPORT_EXECUTION_STATUSES, description: 'RUNNING incluye los reintentos en curso.' })
+  status: ReportExecutionStatusDto;
+
+  @ApiPropertyOptional({ nullable: true, example: 'Ventas diarias' })
+  titulo: string | null;
+
+  @ApiPropertyOptional({ nullable: true, example: 'pdf' })
+  formato: string | null;
 
   @ApiPropertyOptional({ format: 'date-time', nullable: true })
   scheduledFor: Date | null;
@@ -181,13 +199,22 @@ export class ScheduledReportRunResponseDto {
   @ApiPropertyOptional({ format: 'date-time', nullable: true })
   finishedAt: Date | null;
 
+  @ApiPropertyOptional({ nullable: true, example: 2350, description: 'Duración total en milisegundos, con reintentos.' })
+  durationMs: number | null;
+
+  @ApiProperty({ example: 1, description: 'Intentos realizados (1 = sin reintentos).' })
+  attempts: number;
+
   @ApiPropertyOptional({ nullable: true })
   totalRows: number | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ nullable: true, example: 48213, description: 'Tamaño del archivo en bytes.' })
+  fileSizeBytes: number | null;
+
+  @ApiPropertyOptional({ nullable: true, description: 'Mensaje seguro, sin datos de conexión.' })
   error: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
+  @ApiPropertyOptional({ nullable: true, description: 'Solo mientras el enlace no haya vencido.' })
   downloadUrl: string | null;
 
   @ApiPropertyOptional({ format: 'date-time', nullable: true })
@@ -195,4 +222,30 @@ export class ScheduledReportRunResponseDto {
 
   @ApiPropertyOptional({ nullable: true })
   messageId: string | null;
+
+  @ApiPropertyOptional({ format: 'date-time', nullable: true, description: 'Cuándo se avisó del fallo al autor.' })
+  authorNotifiedAt: Date | null;
+}
+
+/** @deprecated Usar ReportExecutionResponseDto. Se mantiene por compatibilidad con la issue #38. */
+export class ScheduledReportRunResponseDto extends ReportExecutionResponseDto {}
+
+export class ListReportExecutionsQueryDto {
+  @ApiPropertyOptional({ enum: REPORT_EXECUTION_STATUSES })
+  @IsOptional()
+  @IsIn(REPORT_EXECUTION_STATUSES, { message: 'status debe ser RUNNING, SUCCEEDED o FAILED' })
+  status?: ReportExecutionStatusDto;
+
+  @ApiPropertyOptional({ enum: REPORT_EXECUTION_TRIGGERS })
+  @IsOptional()
+  @IsIn(REPORT_EXECUTION_TRIGGERS, { message: 'trigger debe ser SCHEDULED, MANUAL u ON_DEMAND' })
+  trigger?: ReportExecutionTriggerDto;
+
+  @ApiPropertyOptional({ default: 50, minimum: 1, maximum: 100 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
 }

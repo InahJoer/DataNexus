@@ -192,6 +192,22 @@ export class EnvironmentVariables {
   @Max(1440)
   LOGIN_LOCK_MINUTES?: number;
 
+  /** Intentos totales de un reporte programado o de su envío por correo (issue #39, por defecto 3). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(10)
+  REPORT_RETRY_MAX_ATTEMPTS?: number;
+
+  /** Espera antes del primer reintento en milisegundos; se duplica en cada intento (por defecto 30000). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(100)
+  @Max(600000)
+  REPORT_RETRY_BASE_DELAY_MS?: number;
+
   /** Dominios de correo personal bloqueados, separados por comas. Vacío = lista por defecto. */
   @IsOptional()
   @IsString()

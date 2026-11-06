@@ -57,6 +57,11 @@ describe('ReportsService', () => {
       workspace: {
         findMany: vi.fn().mockResolvedValue([]),
       },
+      reportExecution: {
+        create: vi.fn().mockResolvedValue({ id: 'exec-1', startedAt: new Date(Date.now() - 1500) }),
+        update: vi.fn().mockResolvedValue({}),
+        updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+      },
     };
 
     reportStorage = {
@@ -78,6 +83,8 @@ describe('ReportsService', () => {
       prismaService as unknown as PrismaService,
       reportStorage,
     );
+    // Sin esperas reales entre reintentos.
+    service.sleep = async () => undefined;
   });
 
   it('rejects triggerReport if actor is not ADMIN', async () => {
@@ -165,5 +172,106 @@ describe('ReportsService', () => {
       expect.any(PassThrough),
     );
     expect(result).toMatchObject({ format: 'word', filename: 'datanexus_export_2026-11-06T18-30-00-000Z.docx' });
+  });
+
+  describe('historial de ejecuciones bajo demanda (issue #39)', () => {
+    const dto = {
+      reportTitle: 'Ventas del día',
+      recipients: ['analista@corp.com'],
+      format: 'pdf' as const,
+      crossJoinParams: {
+        conexionSqlId: 'sql-1',
+        conexionNoSqlId: 'nosql-1',
+        tablaSql: 'clientes',
+        coleccionNoSql: 'pedidos',
+        llaveSql: 'id',
+        llaveNoSql: 'cliente_id',
+      },
+    };
+
+    it('registra la ejecución con estado, duración, tamaño, filas y messageId', async () => {
+      const result = await service.triggerReport(adminUser, dto);
+
+      expect(prismaService.reportExecution.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          workspaceId: 'ws-1',
+          trigger: 'ON_DEMAND',
+          titulo: 'Ventas del día',
+          formato: 'pdf',
+          actorUserId: 'admin-1',
+        }),
+        select: { id: true, startedAt: true },
+      });
+      const update = prismaService.reportExecution.update.mock.calls[0][0];
+      expect(update.where).toEqual({ id: 'exec-1' });
+      expect(update.data).toMatchObject({
+        status: 'SUCCEEDED',
+        attempts: 1,
+        totalRows: 12,
+        fileSizeBytes: Buffer.byteLength('mock-excel-binary'),
+        messageId: 'email-id-999',
+        leaseExpiresAt: null,
+      });
+      expect(update.data.durationMs).toBeGreaterThanOrEqual(1500);
+      expect(result.executionId).toBe('exec-1');
+      expect(auditService.record).toHaveBeenCalledWith(
+        expect.objectContaining({ details: expect.objectContaining({ executionId: 'exec-1' }) }),
+      );
+    });
+
+    it('reintenta el envío del correo sin volver a generar el archivo', async () => {
+      mailService.sendReportEmail
+        .mockRejectedValueOnce(new Error('SMTP 421'))
+        .mockResolvedValueOnce({ messageId: 'm2', accepted: [], rejected: ['analista@corp.com'] })
+        .mockResolvedValueOnce({ messageId: 'm3', accepted: ['analista@corp.com'], rejected: [] });
+
+      const result = await service.triggerReport(adminUser, dto);
+
+      expect(mailService.sendReportEmail).toHaveBeenCalledTimes(3);
+      expect(dataEngineService.executeCrossJoinToStream).toHaveBeenCalledOnce();
+      expect(result).toMatchObject({ messageId: 'm3', deliveryAttempts: 3 });
+      expect(prismaService.reportExecution.update.mock.calls[0][0].data).toMatchObject({
+        status: 'SUCCEEDED',
+        attempts: 3,
+        messageId: 'm3',
+      });
+    });
+
+    it('registra el fallo de entrega tras agotar los reintentos y devuelve el error original', async () => {
+      const smtpError = new Error('SMTP caído: 10.0.0.5:587');
+      mailService.sendReportEmail.mockRejectedValue(smtpError);
+
+      await expect(service.triggerReport(adminUser, dto)).rejects.toBe(smtpError);
+
+      expect(mailService.sendReportEmail).toHaveBeenCalledTimes(3);
+      const update = prismaService.reportExecution.update.mock.calls[0][0];
+      expect(update.data).toMatchObject({
+        status: 'FAILED',
+        attempts: 3,
+        error: 'El reporte se generó, pero falló la entrega por correo.',
+      });
+      // El mensaje guardado nunca incluye el detalle del servidor SMTP.
+      expect(JSON.stringify(update.data)).not.toContain('10.0.0.5');
+    });
+
+    it('registra el fallo de generación con un mensaje seguro', async () => {
+      dataEngineService.executeCrossJoinToStream.mockRejectedValue(new Error('password=secreta en el driver'));
+
+      await expect(service.triggerReport(adminUser, dto)).rejects.toThrow('password=secreta');
+
+      const update = prismaService.reportExecution.update.mock.calls[0][0];
+      expect(update.data).toMatchObject({
+        status: 'FAILED',
+        attempts: 1,
+        error: 'No se pudo generar el reporte. Revise la consulta y las conexiones del workspace.',
+      });
+      expect(JSON.stringify(update.data)).not.toContain('secreta');
+      expect(mailService.sendReportEmail).not.toHaveBeenCalled();
+    });
+
+    it('no registra nada si el rol no puede generar reportes', async () => {
+      await expect(service.triggerReport(lectorUser, dto)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prismaService.reportExecution.create).not.toHaveBeenCalled();
+    });
   });
 });

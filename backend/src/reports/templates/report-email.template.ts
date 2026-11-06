@@ -1,5 +1,4 @@
-import { readFileSync } from 'node:fs';
-import Handlebars from 'handlebars';
+import { renderEmail } from '../../mailer/templates/email-layout.js';
 
 export interface ReportEmailTemplateData {
   reportTitle: string;
@@ -13,34 +12,24 @@ export interface ReportEmailTemplateData {
 }
 
 export interface RenderedReportEmail {
+  subject: string;
   text: string;
   html: string;
 }
 
-const renderHtml = Handlebars.compile(
-  readFileSync(new URL('./report-email.template.hbs', import.meta.url), 'utf8'),
-);
-
+/** Correo con el enlace temporal de descarga de un reporte (RF-22/RF-23). */
 export function renderReportEmail(data: ReportEmailTemplateData): RenderedReportEmail {
-  const downloadUrl = new URL(data.downloadUrl);
-  if (
-    !['https:', 'http:'].includes(downloadUrl.protocol) ||
-    downloadUrl.username.length > 0 ||
-    downloadUrl.password.length > 0
-  ) {
-    throw new Error('La URL de descarga del reporte no es válida');
-  }
-
-  const text = [
-    data.customMessage,
-    '',
-    `Reporte: ${data.reportTitle}`,
-    `Archivo: ${data.filename}`,
-    `Tamaño: ${data.fileSizeLabel} (${data.fileSizeBytes} bytes)`,
-    `Generado: ${data.generatedAt}`,
-    `Descargar: ${downloadUrl.toString()}`,
-    `El enlace vence: ${data.expiresAt}`,
-  ].join('\n');
-
-  return { text, html: renderHtml({ ...data, downloadUrl: downloadUrl.toString() }) };
+  return renderEmail(`[DataNexus] ${data.reportTitle}`, {
+    title: data.reportTitle,
+    eyebrow: 'Reporte ejecutivo',
+    preheader: `${data.filename} · ${data.fileSizeLabel}`,
+    paragraphs: [data.customMessage],
+    details: [
+      { label: 'Archivo', value: data.filename },
+      { label: 'Tamaño', value: `${data.fileSizeLabel} (${data.fileSizeBytes} bytes)` },
+      { label: 'Generado', value: data.generatedAt },
+    ],
+    action: { label: 'Descargar reporte', url: data.downloadUrl },
+    footnote: `Este enlace seguro vence el ${data.expiresAt}.`,
+  });
 }

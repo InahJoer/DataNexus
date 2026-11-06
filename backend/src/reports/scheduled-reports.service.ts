@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { Cron, SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
-import type { Prisma, ScheduledReportRun } from '@prisma/client';
+import type { Prisma, ReportExecution } from '@prisma/client';
 import type {
   AuthenticatedUser,
   RequestAuditContext,
@@ -17,15 +17,24 @@ import { hasPermission, isUserRole } from '../auth/interfaces/user-role.js';
 import { AuditService } from '../audit/audit.service.js';
 import { SavedQueriesService } from '../queries/saved-queries.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
-import { ReportsService } from './reports.service.js';
+import { ReportsService, type ReportExecutionResult } from './reports.service.js';
+import { MailService } from '../mailer/mail.service.js';
+import { ReportExecutionsService, toReportExecutionResponse } from './report-executions.service.js';
+import {
+  RetriesExhaustedError,
+  getReportRetryPolicy,
+  retryWithBackoff,
+} from './report-retry.js';
+import { renderReportFailureEmail } from './templates/report-failure-email.template.js';
 import type {
   CreateScheduledReportDto,
   ScheduledReportFrequencyDto,
   ScheduledReportFormatDto,
   ScheduledReportResponseDto,
-  ScheduledReportRunResponseDto,
+  ReportExecutionResponseDto,
   ScheduledReportsSummaryDto,
   UpdateScheduledReportDto,
+  ListReportExecutionsQueryDto,
 } from './dto/scheduled-report.dto.js';
 
 const SCHEDULE_INCLUDE = {
@@ -40,6 +49,13 @@ const SAFE_RUN_ERROR = 'No se pudo generar el reporte. Revise la consulta y las 
 const SAFE_EMAIL_ERROR = 'El reporte se generó, pero no se pudo enviar el correo.';
 const SAFE_INTERRUPTED_ERROR = 'La ejecución se interrumpió antes de terminar.';
 const RUNS_PAGE_SIZE = 100;
+
+/** Fallo final de una ejecución programada tras agotar los reintentos. */
+class ScheduledRunFailedError extends Error {
+  constructor(readonly attempts: number) {
+    super(SAFE_RUN_ERROR);
+  }
+}
 const RUN_LEASE_MS = 5 * 60_000;
 const RUN_LEASE_HEARTBEAT_MS = 60_000;
 const MINUTE_MS = 60_000;
@@ -103,6 +119,14 @@ function startOfLocalDay(date: Date, timeZone: string): Date {
   return new Date(high);
 }
 
+function formatInTimeZone(date: Date, timeZone: string): string {
+  try {
+    return new Intl.DateTimeFormat('es', { dateStyle: 'long', timeStyle: 'short', timeZone }).format(date);
+  } catch {
+    return date.toISOString();
+  }
+}
+
 @Injectable()
 export class ScheduledReportsService implements OnModuleInit {
   private readonly logger = new Logger(ScheduledReportsService.name);
@@ -115,6 +139,8 @@ export class ScheduledReportsService implements OnModuleInit {
     private readonly reports: ReportsService,
     private readonly audit: AuditService,
     private readonly schedulerRegistry: SchedulerRegistry,
+    private readonly mail: MailService,
+    private readonly executions: ReportExecutionsService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -314,30 +340,43 @@ export class ScheduledReportsService implements OnModuleInit {
     actor: AuthenticatedUser,
     id: string,
     context: RequestAuditContext = {},
-  ): Promise<ScheduledReportRunResponseDto> {
+  ): Promise<ReportExecutionResponseDto> {
     this.assertCanManage(actor);
     const schedule = await this.findSchedule(actor.workspaceId, id);
-    const run = await this.prisma.scheduledReportRun.create({
+    const run = await this.prisma.reportExecution.create({
       data: {
         workspaceId: actor.workspaceId,
         scheduledReportId: id,
         trigger: 'MANUAL',
+        titulo: schedule.nombre,
+        formato: dtoFormat(schedule.formato),
+        actorUserId: actor.id,
         leaseExpiresAt: new Date(Date.now() + RUN_LEASE_MS),
       },
     });
     const result = await this.executeRun(schedule, run.id, actor, 'MANUAL', context);
-    return this.toRunResponse(result);
+    return toReportExecutionResponse(result);
   }
 
-  async listRuns(actor: AuthenticatedUser, id: string): Promise<ScheduledReportRunResponseDto[]> {
+  /** Historial de ejecuciones de una programación (issue #39), más recientes primero. */
+  async listExecutions(
+    actor: AuthenticatedUser,
+    id: string,
+    filters: ListReportExecutionsQueryDto = {},
+  ): Promise<ReportExecutionResponseDto[]> {
     this.assertCanManage(actor);
     await this.findSchedule(actor.workspaceId, id);
-    const runs = await this.prisma.scheduledReportRun.findMany({
-      where: { workspaceId: actor.workspaceId, scheduledReportId: id },
-      orderBy: { startedAt: 'desc' },
-      take: RUNS_PAGE_SIZE,
+    return this.executions.list(actor.workspaceId, {
+      scheduledReportId: id,
+      status: filters.status,
+      trigger: filters.trigger,
+      limit: filters.limit ?? RUNS_PAGE_SIZE,
     });
-    return runs.map((run) => this.toRunResponse(run));
+  }
+
+  /** @deprecated Alias de listExecutions para GET /reports/schedules/:id/runs (issue #38). */
+  listRuns(actor: AuthenticatedUser, id: string): Promise<ReportExecutionResponseDto[]> {
+    return this.listExecutions(actor, id);
   }
 
   async summary(actor: AuthenticatedUser): Promise<ScheduledReportsSummaryDto> {
@@ -355,8 +394,12 @@ export class ScheduledReportsService implements OnModuleInit {
         where: { workspaceId: actor.workspaceId },
         _count: { _all: true },
       }),
-      this.prisma.scheduledReportRun.count({
-        where: { workspaceId: actor.workspaceId, startedAt: { gte: startToday, lte: now } },
+      this.prisma.reportExecution.count({
+        where: {
+          workspaceId: actor.workspaceId,
+          scheduledReportId: { not: null },
+          startedAt: { gte: startToday, lte: now },
+        },
       }),
       this.prisma.scheduledReport.findMany({
         where: { workspaceId: actor.workspaceId, estado: 'ACTIVE' },
@@ -391,13 +434,16 @@ export class ScheduledReportsService implements OnModuleInit {
       const local = getDateParts(triggeredAt, schedule.zonaHoraria);
       const localDate = `${String(local.year).padStart(4, '0')}-${String(local.month).padStart(2, '0')}-${String(local.day).padStart(2, '0')}`;
       const idempotencyKey = `${id}:${localDate}T${schedule.hora}`;
-      let run: ScheduledReportRun;
+      let run: ReportExecution;
       try {
-        run = await this.prisma.scheduledReportRun.create({
+        run = await this.prisma.reportExecution.create({
           data: {
             workspaceId: schedule.workspaceId,
             scheduledReportId: schedule.id,
             trigger: 'SCHEDULED',
+            titulo: schedule.nombre,
+            formato: dtoFormat(schedule.formato),
+            actorUserId: schedule.createdById,
             scheduledFor,
             idempotencyKey,
             leaseExpiresAt: new Date(Date.now() + RUN_LEASE_MS),
@@ -416,7 +462,7 @@ export class ScheduledReportsService implements OnModuleInit {
       }
 
       await this.executeRun(schedule, run.id, owner, 'SCHEDULED');
-    } catch (error) {
+    } catch {
       this.logger.error(`No se pudo iniciar la ejecución programada ${id}`);
     }
   }
@@ -432,40 +478,55 @@ export class ScheduledReportsService implements OnModuleInit {
     try {
       const leaseHeld = await this.renewRunLease(runId);
       if (!leaseHeld) {
-        return await this.prisma.scheduledReportRun.findUniqueOrThrow({ where: { id: runId } });
+        return await this.prisma.reportExecution.findUniqueOrThrow({ where: { id: runId } });
       }
-      const prepared = await this.savedQueries.prepareRun(actor, schedule.savedQueryId, {});
-      const recipientRoles = schedule.enviarCorreo
-        ? await this.recipientRoles(schedule.workspaceId, schedule.destinatarios)
-        : [];
-      if (recipientRoles.includes('AUDITOR')) {
-        throw new BadRequestException('AUDITOR no puede recibir reportes de datos de negocio');
+
+      // Reintentos con backoff exponencial (issue #39). Los errores 4xx (consulta inválida,
+      // destinatario AUDITOR, permisos) no se reintentan porque fallarían igual.
+      let generation: { value: ReportExecutionResult; attempts: number };
+      try {
+        generation = await retryWithBackoff(
+          async (attempt) => {
+            if (attempt > 1) {
+              await this.prisma.reportExecution.updateMany({
+                where: { id: runId, status: 'RUNNING' },
+                data: { attempts: attempt },
+              });
+            }
+            return this.generateScheduledReport(schedule, actor);
+          },
+          {
+            policy: getReportRetryPolicy(),
+            onRetry: (nextAttempt, _error, delayMs) =>
+              this.logger.warn(
+                `Reintentando el reporte ${schedule.id} (intento ${nextAttempt}) en ${Math.round(delayMs / 1000)} s`,
+              ),
+            sleep: this.sleep,
+          },
+        );
+      } catch (error) {
+        throw new ScheduledRunFailedError(error instanceof RetriesExhaustedError ? error.attempts : 1);
       }
-      const maskAsRole = recipientRoles.some((role) => role === 'LECTOR' || role === null)
-        ? 'LECTOR'
-        : actor.role;
 
-      const result = await this.reports.triggerScheduledReport(
-        actor,
-        {
-          reportTitle: schedule.nombre,
-          recipients: schedule.destinatarios,
-          format: dtoFormat(schedule.formato),
-          crossJoinParams: prepared.payload,
-          customMessage: `Reporte programado de la consulta ${prepared.query.nombre}.`,
-        },
-        { maskAsRole, sendEmail: schedule.enviarCorreo },
-      );
-
+      const result = generation.value;
+      // Intentos totales: los de generación más los reenvíos de correo de la última generación.
+      const attempts = generation.attempts + Math.max(0, result.deliveryAttempts - 1);
       const deliveryFailed = result.deliveryError !== undefined;
       const finishedAt = new Date();
-      const completed = await this.prisma.scheduledReportRun.updateMany({
+      const current = await this.prisma.reportExecution.findUniqueOrThrow({
+        where: { id: runId },
+        select: { startedAt: true },
+      });
+      const completed = await this.prisma.reportExecution.updateMany({
         where: { id: runId, status: 'RUNNING', leaseExpiresAt: { gt: finishedAt } },
         data: {
           status: deliveryFailed ? 'FAILED' : 'SUCCEEDED',
           finishedAt,
           leaseExpiresAt: null,
+          durationMs: finishedAt.getTime() - current.startedAt.getTime(),
+          attempts,
           totalRows: result.totalRows,
+          fileSizeBytes: result.fileSizeBytes,
           error: deliveryFailed ? SAFE_EMAIL_ERROR : null,
           downloadUrl: result.downloadUrl,
           expiresAt: new Date(result.expiresAt),
@@ -481,9 +542,9 @@ export class ScheduledReportsService implements OnModuleInit {
           actor,
           trigger,
           context,
+          attempts,
         );
       }
-      const run = await this.prisma.scheduledReportRun.findUniqueOrThrow({ where: { id: runId } });
       if (trigger === 'SCHEDULED') {
         await this.prisma.scheduledReport.update({
           where: { id: schedule.id },
@@ -492,21 +553,101 @@ export class ScheduledReportsService implements OnModuleInit {
             lastError: deliveryFailed ? SAFE_EMAIL_ERROR : null,
           },
         });
+        if (deliveryFailed) await this.notifyAuthor(schedule, runId, SAFE_EMAIL_ERROR, attempts);
       }
-      await this.recordRunAudit(actor, schedule, run.id, trigger, deliveryFailed ? 'FAILURE' : 'SUCCESS', {
+      await this.recordRunAudit(actor, schedule, runId, trigger, deliveryFailed ? 'FAILURE' : 'SUCCESS', {
         format: schedule.formato,
         totalRows: result.totalRows,
+        fileSizeBytes: result.fileSizeBytes,
+        attempts,
         deliveryFailed,
       }, context);
-      return run;
-    } catch {
-      const run = await this.finishFailedRun(schedule, runId, SAFE_RUN_ERROR, trigger === 'SCHEDULED', actor, trigger, context);
+      return await this.prisma.reportExecution.findUniqueOrThrow({ where: { id: runId } });
+    } catch (error) {
+      const attempts = error instanceof ScheduledRunFailedError ? error.attempts : 1;
+      const run = await this.finishFailedRun(
+        schedule,
+        runId,
+        SAFE_RUN_ERROR,
+        trigger === 'SCHEDULED',
+        actor,
+        trigger,
+        context,
+        attempts,
+      );
       if (trigger === 'SCHEDULED') this.removeJob(schedule.id);
       return run;
     } finally {
       stopHeartbeat();
     }
   }
+
+  /** Un intento completo: valida la consulta, decide el enmascaramiento y genera/envía el archivo. */
+  private async generateScheduledReport(
+    schedule: ScheduleRecord,
+    actor: AuthenticatedUser,
+  ): Promise<ReportExecutionResult> {
+    const prepared = await this.savedQueries.prepareRun(actor, schedule.savedQueryId, {});
+    const recipientRoles = schedule.enviarCorreo
+      ? await this.recipientRoles(schedule.workspaceId, schedule.destinatarios)
+      : [];
+    if (recipientRoles.includes('AUDITOR')) {
+      throw new BadRequestException('AUDITOR no puede recibir reportes de datos de negocio');
+    }
+    const maskAsRole = recipientRoles.some((role) => role === 'LECTOR' || role === null)
+      ? 'LECTOR'
+      : actor.role;
+
+    return this.reports.triggerScheduledReport(
+      actor,
+      {
+        reportTitle: schedule.nombre,
+        recipients: schedule.destinatarios,
+        format: dtoFormat(schedule.formato),
+        crossJoinParams: prepared.payload,
+        customMessage: `Reporte programado de la consulta ${prepared.query.nombre}.`,
+      },
+      { maskAsRole, sendEmail: schedule.enviarCorreo },
+    );
+  }
+
+  /**
+   * Avisa por correo al autor de la programación de que una ejecución automática falló (issue #39).
+   * Nunca lanza: un fallo del aviso no debe cambiar el resultado registrado de la ejecución.
+   */
+  private async notifyAuthor(
+    schedule: { id: string; workspaceId: string; nombre: string; createdById: string | null; zonaHoraria: string },
+    executionId: string,
+    error: string,
+    attempts: number,
+  ): Promise<void> {
+    try {
+      if (!schedule.createdById) return;
+      const author = await this.prisma.user.findFirst({
+        where: { id: schedule.createdById, workspaceId: schedule.workspaceId },
+        select: { email: true, name: true },
+      });
+      if (!author) return;
+
+      const email = renderReportFailureEmail({
+        authorName: author.name,
+        reportTitle: schedule.nombre,
+        error,
+        attempts,
+        failedAt: formatInTimeZone(new Date(), schedule.zonaHoraria),
+      });
+      await this.mail.sendMail({ to: author.email, subject: email.subject, text: email.text, html: email.html });
+      await this.prisma.reportExecution.update({
+        where: { id: executionId },
+        data: { authorNotifiedAt: new Date() },
+      });
+    } catch {
+      this.logger.error(`No se pudo avisar al autor del fallo de la programación ${schedule.id}`);
+    }
+  }
+
+  /** Inyectable en tests para no esperar los backoffs reales. */
+  sleep?: (ms: number) => Promise<void>;
 
   private startLeaseHeartbeat(runId: string): () => void {
     const timer = setInterval(() => {
@@ -518,7 +659,7 @@ export class ScheduledReportsService implements OnModuleInit {
 
   private async renewRunLease(runId: string): Promise<boolean> {
     const now = new Date();
-    const renewed = await this.prisma.scheduledReportRun.updateMany({
+    const renewed = await this.prisma.reportExecution.updateMany({
       where: { id: runId, status: 'RUNNING', leaseExpiresAt: { gt: now } },
       data: { leaseExpiresAt: new Date(now.getTime() + RUN_LEASE_MS) },
     });
@@ -526,7 +667,7 @@ export class ScheduledReportsService implements OnModuleInit {
   }
 
   private async recoverAbandonedRuns(now: Date): Promise<void> {
-    const abandoned = await this.prisma.scheduledReportRun.findMany({
+    const abandoned = await this.prisma.reportExecution.findMany({
       where: { status: 'RUNNING', leaseExpiresAt: { lt: now } },
       select: {
         id: true,
@@ -534,33 +675,40 @@ export class ScheduledReportsService implements OnModuleInit {
         scheduledReportId: true,
         trigger: true,
         startedAt: true,
+        attempts: true,
+        scheduledReport: {
+          select: { id: true, workspaceId: true, nombre: true, createdById: true, zonaHoraria: true },
+        },
       },
     });
     for (const run of abandoned) {
-      const recovered = await this.prisma.scheduledReportRun.updateMany({
+      const recovered = await this.prisma.reportExecution.updateMany({
         where: { id: run.id, status: 'RUNNING', leaseExpiresAt: { lt: now } },
         data: {
           status: 'FAILED',
           finishedAt: now,
           leaseExpiresAt: null,
+          durationMs: now.getTime() - run.startedAt.getTime(),
           error: SAFE_INTERRUPTED_ERROR,
         },
       });
       if (recovered.count === 0) continue;
 
-      if (run.trigger === 'SCHEDULED') {
+      if (run.trigger === 'SCHEDULED' && run.scheduledReport) {
         await this.prisma.scheduledReport.updateMany({
-          where: { id: run.scheduledReportId },
+          where: { id: run.scheduledReport.id },
           data: { lastRunAt: run.startedAt, lastError: SAFE_INTERRUPTED_ERROR },
         });
+        await this.notifyAuthor(run.scheduledReport, run.id, SAFE_INTERRUPTED_ERROR, run.attempts);
       }
       await this.audit.record({
         eventType: 'SCHEDULED_REPORT_RUN',
         outcome: 'FAILURE',
         actorEmail: 'system@datanexus.local',
         workspaceId: run.workspaceId,
-        targetType: 'SCHEDULED_REPORT',
-        targetId: run.scheduledReportId,
+        // Los reportes bajo demanda no tienen programación: se registran sobre la ejecución.
+        targetType: run.scheduledReportId ? 'SCHEDULED_REPORT' : 'REPORT',
+        targetId: run.scheduledReportId ?? run.id,
         details: {
           executionId: run.id,
           trigger: run.trigger,
@@ -578,14 +726,25 @@ export class ScheduledReportsService implements OnModuleInit {
     actor?: AuthenticatedUser,
     trigger: 'SCHEDULED' | 'MANUAL' = 'SCHEDULED',
     context: RequestAuditContext = {},
+    attempts = 1,
   ) {
     const finishedAt = new Date();
-    const failed = await this.prisma.scheduledReportRun.updateMany({
-      where: { id: runId, status: 'RUNNING' },
-      data: { status: 'FAILED', finishedAt, leaseExpiresAt: null, error: message },
+    const started = await this.prisma.reportExecution.findUniqueOrThrow({
+      where: { id: runId },
+      select: { startedAt: true },
     });
-    const run = await this.prisma.scheduledReportRun.findUniqueOrThrow({ where: { id: runId } });
-    if (failed.count === 0) return run;
+    const failed = await this.prisma.reportExecution.updateMany({
+      where: { id: runId, status: 'RUNNING' },
+      data: {
+        status: 'FAILED',
+        finishedAt,
+        leaseExpiresAt: null,
+        durationMs: finishedAt.getTime() - started.startedAt.getTime(),
+        attempts,
+        error: message,
+      },
+    });
+    if (failed.count === 0) return this.prisma.reportExecution.findUniqueOrThrow({ where: { id: runId } });
     if (trigger === 'SCHEDULED') {
       await this.prisma.scheduledReport.update({
         where: { id: schedule.id },
@@ -603,9 +762,11 @@ export class ScheduledReportsService implements OnModuleInit {
       role: 'ADMIN' as const,
       workspaceId: schedule.workspaceId,
     };
-    await this.recordRunAudit(auditActor, schedule, runId, trigger, 'FAILURE', { error: message }, context);
+    await this.recordRunAudit(auditActor, schedule, runId, trigger, 'FAILURE', { error: message, attempts }, context);
     if (disableSchedule) this.logger.error(`La programación ${schedule.id} quedó en ERROR: ${message}`);
-    return run;
+    // En "Ejecutar ahora" el usuario ve el fallo en la respuesta; el aviso es para las automáticas.
+    if (trigger === 'SCHEDULED') await this.notifyAuthor(schedule, runId, message, attempts);
+    return this.prisma.reportExecution.findUniqueOrThrow({ where: { id: runId } });
   }
 
   private async getCurrentOwner(schedule: ScheduleRecord): Promise<AuthenticatedUser | null> {
@@ -883,25 +1044,6 @@ export class ScheduledReportsService implements OnModuleInit {
       lastError: schedule.lastError,
       createdAt: schedule.createdAt,
       updatedAt: schedule.updatedAt,
-    };
-  }
-
-  private toRunResponse(run: {
-    id: string;
-    trigger: 'SCHEDULED' | 'MANUAL';
-    status: 'RUNNING' | 'SUCCEEDED' | 'FAILED';
-    scheduledFor: Date | null;
-    startedAt: Date;
-    finishedAt: Date | null;
-    totalRows: number | null;
-    error: string | null;
-    downloadUrl: string | null;
-    expiresAt: Date | null;
-    messageId: string | null;
-  }): ScheduledReportRunResponseDto {
-    return {
-      ...run,
-      downloadUrl: run.expiresAt && run.expiresAt > new Date() ? run.downloadUrl : null,
     };
   }
 
