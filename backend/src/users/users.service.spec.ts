@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { UsersService } from './users.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -174,90 +174,96 @@ describe('UsersService', () => {
     });
   });
 
-  describe('inviteMember', () => {
-    it('blocks non-admin from inviting members', async () => {
-      await expect(
-        service.inviteMember(
-          { id: 'u2', email: 'u2@ws.com', name: 'User 2', role: 'LECTOR', workspaceId: 'ws-1' },
-          { email: 'new@ws.com', name: 'New', role: 'LECTOR' },
-        ),
-      ).rejects.toThrow(ForbiddenException);
+  describe('removeMember', () => {
+    const admin = { id: 'admin-1', email: 'admin@acme.com', name: 'Admin', role: 'ADMIN' as const, workspaceId: 'ws-1' };
+    let tx: any;
+
+    beforeEach(() => {
+      tx = {
+        user: {
+          findUnique: vi.fn(),
+          delete: vi.fn().mockResolvedValue(undefined),
+        },
+        $queryRaw: vi.fn(),
+      };
+      prismaService.$transaction.mockImplementation((callback: (client: typeof tx) => unknown) => callback(tx));
     });
 
-    it('rejects emails outside the workspace allowed domains', async () => {
-      prismaService.workspace = {
-        findUnique: vi.fn().mockResolvedValue({ dominiosPermitidos: ['acme.com'] }),
-      };
-      prismaService.user = { findUnique: vi.fn(), create: vi.fn() };
+    it.each(['OPERADOR', 'LECTOR', 'AUDITOR'] as const)('rechaza a %s sin abrir transacción', async (role) => {
+      await expect(service.removeMember({ ...admin, role }, 'user-2')).rejects.toThrow(ForbiddenException);
+      expect(prismaService.$transaction).not.toHaveBeenCalled();
+    });
 
-      await expect(
-        service.inviteMember(
-          { id: 'u1', email: 'u1@acme.com', name: 'Admin', role: 'ADMIN', workspaceId: 'ws-1' },
-          { email: 'intruso@otra.com', name: 'Intruso', role: 'LECTOR' },
-        ),
-      ).rejects.toThrow(BadRequestException);
+    it('no permite darse de baja a uno mismo', async () => {
+      await expect(service.removeMember(admin, 'admin-1')).rejects.toThrow(ForbiddenException);
+      expect(prismaService.$transaction).not.toHaveBeenCalled();
+    });
 
-      expect(prismaService.workspace.findUnique).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 'ws-1' } }),
+    it('responde 404 para usuarios de otro workspace', async () => {
+      tx.user.findUnique.mockResolvedValue({ id: 'u-9', email: 'x@otra.com', name: 'X', role: 'LECTOR', workspaceId: 'ws-2' });
+      await expect(service.removeMember(admin, 'u-9')).rejects.toThrow(NotFoundException);
+      expect(tx.user.delete).not.toHaveBeenCalled();
+    });
+
+    it('da de baja a un LECTOR sin consultar ADMIN y lo audita', async () => {
+      const target = { id: 'u-2', email: 'lector@acme.com', name: 'Lector', role: 'LECTOR', workspaceId: 'ws-1' };
+      tx.user.findUnique.mockResolvedValue(target);
+
+      await expect(service.removeMember(admin, 'u-2', { ipAddress: '10.0.0.1' })).resolves.toEqual(target);
+
+      expect(tx.$queryRaw).not.toHaveBeenCalled();
+      expect(tx.user.delete).toHaveBeenCalledWith({ where: { id: 'u-2' } });
+      expect(auditService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'USER_REMOVED',
+          targetId: 'u-2',
+          ipAddress: '10.0.0.1',
+          details: { email: 'lector@acme.com', role: 'LECTOR' },
+        }),
+        tx,
       );
-      expect(prismaService.user.create).not.toHaveBeenCalled();
+    });
+
+    it('no elimina al último ADMINISTRADOR (409)', async () => {
+      tx.user.findUnique.mockResolvedValue({ id: 'admin-2', email: 'a2@acme.com', name: 'A2', role: 'ADMIN', workspaceId: 'ws-1' });
+      tx.$queryRaw.mockResolvedValue([{ id: 'admin-2' }]);
+
+      await expect(service.removeMember(admin, 'admin-2')).rejects.toThrow(ConflictException);
+      expect(tx.user.delete).not.toHaveBeenCalled();
       expect(auditService.record).not.toHaveBeenCalled();
     });
 
-    it('accepts subdomains of an allowed domain', async () => {
-      prismaService.workspace = {
-        findUnique: vi.fn().mockResolvedValue({ dominiosPermitidos: ['acme.com'] }),
-      };
-      prismaService.user = {
-        findUnique: vi.fn().mockResolvedValue(null),
-        create: vi.fn().mockResolvedValue({ id: 'u-new', email: 'ana@ventas.acme.com' }),
-      };
+    it('elimina a un ADMIN si queda otro, bloqueando las filas de ADMIN', async () => {
+      tx.user.findUnique.mockResolvedValue({ id: 'admin-2', email: 'a2@acme.com', name: 'A2', role: 'ADMIN', workspaceId: 'ws-1' });
+      tx.$queryRaw.mockResolvedValue([{ id: 'admin-1' }, { id: 'admin-2' }]);
 
-      await service.inviteMember(
-        { id: 'u1', email: 'u1@acme.com', name: 'Admin', role: 'ADMIN', workspaceId: 'ws-1' },
-        { email: 'ana@ventas.acme.com', name: 'Ana', role: 'LECTOR' },
-      );
+      await service.removeMember(admin, 'admin-2');
 
-      expect(prismaService.user.create).toHaveBeenCalled();
+      const [sql] = tx.$queryRaw.mock.calls[0] as [TemplateStringsArray];
+      expect(sql.join('?')).toContain('FOR UPDATE');
+      expect(tx.user.delete).toHaveBeenCalled();
     });
+  });
 
-    it('creates new user and records audit log for ADMIN', async () => {
-      prismaService.workspace = {
-        findUnique: vi.fn().mockResolvedValue({ dominiosPermitidos: [] }),
+  describe('updateRole y el último ADMINISTRADOR', () => {
+    it('no permite quitar el rol al último ADMIN', async () => {
+      const tx = {
+        user: {
+          findUnique: vi.fn().mockResolvedValue({ id: 'admin-2', email: 'a2@acme.com', name: 'A2', role: 'ADMIN', workspaceId: 'ws-1' }),
+          update: vi.fn(),
+        },
+        $queryRaw: vi.fn().mockResolvedValue([{ id: 'admin-2' }]),
       };
-      prismaService.user = {
-        findUnique: vi.fn().mockResolvedValue(null),
-        create: vi.fn().mockResolvedValue({
-          id: 'u-new',
-          email: 'new@ws.com',
-          name: 'New User',
-          role: 'LECTOR',
-          workspaceId: 'ws-1',
-        }),
-      };
+      prismaService.$transaction.mockImplementation((callback: (client: typeof tx) => unknown) => callback(tx));
 
-      const result = await service.inviteMember(
-        { id: 'u1', email: 'u1@ws.com', name: 'Admin', role: 'ADMIN', workspaceId: 'ws-1' },
-        { email: 'new@ws.com', name: 'New User', role: 'LECTOR' },
-      );
-
-      expect(prismaService.user.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({
-          email: 'new@ws.com',
-          name: 'New User',
-          role: 'LECTOR',
-          workspaceId: 'ws-1',
-        }),
-        select: expect.any(Object),
-      });
-      expect(auditService.record).toHaveBeenCalledWith(
-        expect.objectContaining({
-          eventType: 'USER_INVITED',
-          outcome: 'SUCCESS',
-          actorUserId: 'u1',
-        }),
-      );
-      expect(result.id).toBe('u-new');
+      await expect(
+        service.updateRole(
+          { id: 'admin-1', email: 'admin@acme.com', name: 'Admin', role: 'ADMIN', workspaceId: 'ws-1' },
+          'admin-2',
+          'LECTOR',
+        ),
+      ).rejects.toThrow(ConflictException);
+      expect(tx.user.update).not.toHaveBeenCalled();
     });
   });
 });

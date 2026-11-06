@@ -1,11 +1,10 @@
 import {
-  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import bcrypt from 'bcrypt';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type {
@@ -13,8 +12,6 @@ import type {
   RequestAuditContext,
 } from '../auth/interfaces/authenticated-user.interface.js';
 import { hasPermission, type UserRole } from '../auth/interfaces/user-role.js';
-import { InviteUserDto } from './dto/invite-user.dto.js';
-import { isEmailDomainAllowed } from '../workspaces/workspace-settings.js';
 
 const SAFE_USER_SELECT = {
   id: true,
@@ -23,6 +20,9 @@ const SAFE_USER_SELECT = {
   role: true,
   workspaceId: true,
 } as const;
+
+export const LAST_ADMIN_MESSAGE =
+  'El workspace debe conservar al menos un ADMINISTRADOR; asigna el rol a otro miembro antes.';
 
 @Injectable()
 export class UsersService {
@@ -40,67 +40,6 @@ export class UsersService {
       select: SAFE_USER_SELECT,
       orderBy: { name: 'asc' },
     });
-  }
-
-  /**
-   * Invita o da de alta un nuevo miembro en el Workspace con contraseña temporal segura.
-   * Requiere rol ADMIN.
-   */
-  async inviteMember(
-    actor: AuthenticatedUser,
-    dto: InviteUserDto,
-    requestContext: RequestAuditContext = {},
-  ) {
-    if (!hasPermission(actor.role, 'MANAGE_MEMBERS')) {
-      throw new ForbiddenException('Se requiere rol ADMIN para invitar miembros');
-    }
-
-    const workspace = await this.prisma.workspace.findUnique({
-      where: { id: actor.workspaceId },
-      select: { dominiosPermitidos: true },
-    });
-    const allowedDomains = workspace?.dominiosPermitidos ?? [];
-    if (!isEmailDomainAllowed(dto.email, allowedDomains)) {
-      throw new BadRequestException(
-        `El correo debe pertenecer a un dominio permitido del workspace: ${allowedDomains.join(', ')}`,
-      );
-    }
-
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email: dto.email.toLowerCase() },
-    });
-
-    if (existingUser) {
-      throw new ConflictException(`Ya existe un usuario registrado con el correo ${dto.email}`);
-    }
-
-    const rawPassword = dto.temporaryPassword ?? 'DataNexus2026!';
-    const hashedPassword = await bcrypt.hash(rawPassword, 10);
-
-    const newUser = await this.prisma.user.create({
-      data: {
-        email: dto.email.toLowerCase(),
-        name: dto.name,
-        role: dto.role,
-        password: hashedPassword,
-        workspaceId: actor.workspaceId,
-      },
-      select: SAFE_USER_SELECT,
-    });
-
-    await this.auditService.record({
-      eventType: 'USER_INVITED',
-      outcome: 'SUCCESS',
-      actorUserId: actor.id,
-      actorEmail: actor.email,
-      workspaceId: actor.workspaceId,
-      targetType: 'USER',
-      targetId: newUser.id,
-      details: { invitedEmail: newUser.email, role: newUser.role },
-      ...requestContext,
-    });
-
-    return newUser;
   }
 
   async updateRole(
@@ -127,6 +66,7 @@ export class UsersService {
       }
 
       if (target.role === newRole) return target;
+      if (target.role === 'ADMIN') await this.assertNotLastAdmin(tx, actor.workspaceId);
 
       const updatedUser = await tx.user.update({
         where: { id: targetUserId },
@@ -151,5 +91,56 @@ export class UsersService {
 
       return updatedUser;
     });
+  }
+
+  /**
+   * Da de baja a un miembro del workspace (RF-06): borra su cuenta y, en cascada, sus sesiones.
+   * No se puede dar de baja uno mismo ni dejar el workspace sin ADMINISTRADOR.
+   */
+  async removeMember(actor: AuthenticatedUser, targetUserId: string, requestContext: RequestAuditContext = {}) {
+    if (!hasPermission(actor.role, 'MANAGE_MEMBERS')) {
+      throw new ForbiddenException('Se requiere rol ADMIN para dar de baja miembros');
+    }
+    if (actor.id === targetUserId) {
+      throw new ForbiddenException('No puedes darte de baja a ti mismo; pide a otro ADMINISTRADOR que lo haga');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const target = await tx.user.findUnique({ where: { id: targetUserId }, select: SAFE_USER_SELECT });
+      if (!target || target.workspaceId !== actor.workspaceId) {
+        throw new NotFoundException('Usuario no encontrado en el workspace');
+      }
+      if (target.role === 'ADMIN') await this.assertNotLastAdmin(tx, actor.workspaceId);
+
+      await tx.user.delete({ where: { id: targetUserId } });
+
+      await this.auditService.record(
+        {
+          eventType: 'USER_REMOVED',
+          outcome: 'SUCCESS',
+          actorUserId: actor.id,
+          actorEmail: actor.email,
+          workspaceId: actor.workspaceId,
+          targetType: 'USER',
+          targetId: targetUserId,
+          details: { email: target.email, role: target.role },
+          ...requestContext,
+        },
+        tx,
+      );
+
+      return target;
+    });
+  }
+
+  /**
+   * Bloquea (FOR UPDATE) las filas de ADMIN del workspace y exige que quede más de uno.
+   * El bloqueo serializa bajas y cambios de rol concurrentes: dos ADMIN no pueden quitarse mutuamente a la vez.
+   */
+  private async assertNotLastAdmin(tx: Prisma.TransactionClient, workspaceId: string): Promise<void> {
+    const admins = await tx.$queryRaw<{ id: string }[]>`
+      SELECT "id" FROM "User" WHERE "workspaceId" = ${workspaceId} AND "role" = 'ADMIN'::"Role" ORDER BY "id" FOR UPDATE
+    `;
+    if (admins.length <= 1) throw new ConflictException(LAST_ADMIN_MESSAGE);
   }
 }

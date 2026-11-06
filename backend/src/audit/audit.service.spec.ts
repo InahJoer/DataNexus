@@ -101,6 +101,21 @@ describe('AuditService', () => {
     expect(queryValues.some((value) => typeof value === 'string' && value.includes('do-not-store'))).toBe(false);
   });
 
+  it('keeps role, email and expiry for membership events, nothing else', async () => {
+    await service.record({
+      eventType: 'USER_REMOVED',
+      outcome: 'SUCCESS',
+      workspaceId: 'workspace-1',
+      targetType: 'USER',
+      targetId: 'user-2',
+      details: { email: 'ana@acme.com', role: 'LECTOR', password: 'do-not-store', tokenHash: 'do-not-store' },
+    });
+
+    const [, ...queryValues] = prismaService.$executeRaw.mock.calls[0] as [TemplateStringsArray, ...unknown[]];
+    expect(queryValues).toContain(JSON.stringify({ role: 'LECTOR', email: 'ana@acme.com' }));
+    expect(queryValues.some((value) => typeof value === 'string' && value.includes('do-not-store'))).toBe(false);
+  });
+
   it('writes through the supplied transaction client', async () => {
     const transactionExecute = vi.fn().mockResolvedValue(1);
     const transaction = {

@@ -12,6 +12,14 @@ import { QueryAuditLogsDto } from './dto/query-audit-logs.dto.js';
 import type { AuditExportFormat, ExportAuditLogsDto } from './dto/export-audit-logs.dto.js';
 
 const CONNECTION_FIELDS = new Set(['nombre', 'tipoMotor', 'host', 'dbName', 'connectionString']);
+/** Eventos de alta/baja de miembros: guardan rol, correo afectado y vencimiento de la invitación. */
+const MEMBERSHIP_EVENTS: ReadonlySet<AuditEventType> = new Set([
+  'USER_INVITED',
+  'INVITATION_RESENT',
+  'INVITATION_REVOKED',
+  'INVITATION_ACCEPTED',
+  'USER_REMOVED',
+]);
 const WORKSPACE_FIELDS = new Set([
   'nombreEmpresa',
   'logoUrl',
@@ -257,8 +265,10 @@ export class AuditService {
       }
     }
 
-    if (eventType === 'USER_INVITED' && typeof details.role === 'string') {
-      safeDetails.role = details.role;
+    if (MEMBERSHIP_EVENTS.has(eventType)) {
+      if (typeof details.role === 'string') safeDetails.role = details.role.slice(0, 32);
+      if (typeof details.email === 'string') safeDetails.email = details.email.slice(0, 254);
+      if (typeof details.expiraEn === 'string') safeDetails.expiraEn = details.expiraEn.slice(0, 64);
     }
 
     if (eventType === 'CONNECTION_CREATED' || eventType === 'CONNECTION_DELETED') {
@@ -294,7 +304,8 @@ export class AuditService {
       (eventType === 'PASSWORD_RESET_REQUESTED' ||
         eventType === 'PASSWORD_RESET' ||
         eventType === 'SESSION_EXPIRED' ||
-        eventType === 'LOGIN_FAILURE') &&
+        eventType === 'LOGIN_FAILURE' ||
+        eventType === 'INVITATION_ACCEPTED') &&
       typeof details.motivo === 'string'
     ) {
       safeDetails.motivo = details.motivo.slice(0, 64);

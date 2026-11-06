@@ -90,12 +90,15 @@ describe('DTOs con la política aplicada', () => {
     expect(errorsOf(good)).toEqual([]);
   });
 
-  it('InviteUserDto valida la contraseña temporal solo si se envía', () => {
+  it('InviteUserDto exige correo corporativo y ya no acepta contraseña temporal', () => {
     const base = { email: 'nuevo@empresa.com', name: 'Nuevo', role: 'LECTOR' };
     expect(errorsOf(plainToInstance(InviteUserDto, base))).toEqual([]);
-    expect(errorsOf(plainToInstance(InviteUserDto, { ...base, temporaryPassword: '123456' }))).toContain(
-      'temporaryPassword',
-    );
+    expect(errorsOf(plainToInstance(InviteUserDto, { ...base, name: '   ' }))).toContain('name');
+    // La contraseña la define el invitado al aceptar (RF-06); el ValidationPipe global rechaza el campo extra.
+    const withPassword = plainToInstance(InviteUserDto, { ...base, temporaryPassword: 'Temporal#2026dn' });
+    expect(
+      validateSync(withPassword, { whitelist: true, forbidNonWhitelisted: true }).map((error) => error.property),
+    ).toEqual(['temporaryPassword']);
     expect(errorsOf(plainToInstance(InviteUserDto, { ...base, email: 'nuevo@hotmail.com' }))).toContain('email');
   });
 });

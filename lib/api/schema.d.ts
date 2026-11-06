@@ -267,11 +267,68 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Invitar o dar de alta un nuevo miembro en el Workspace
-         * @description Crea un nuevo usuario asignado directamente al workspace del administrador.
+         * Invitar a un nuevo miembro por enlace (RF-06)
+         * @description Crea una invitación con token de un solo uso y envía el enlace por correo. El usuario se crea al aceptarla con su propia contraseña. Respeta los dominios permitidos del workspace.
          */
         post: operations["UsersController_invite"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/invitations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Listar invitaciones del workspace (ADMIN) */
+        get: operations["UsersController_listInvitations"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/invitations/{id}/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reenviar una invitación pendiente o expirada
+         * @description Genera un enlace nuevo (el anterior deja de servir) y renueva el vencimiento.
+         */
+        post: operations["UsersController_resendInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/invitations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revocar una invitación pendiente
+         * @description Su enlace deja de servir de inmediato.
+         */
+        delete: operations["UsersController_revokeInvitation"];
         options?: never;
         head?: never;
         patch?: never;
@@ -292,6 +349,66 @@ export interface paths {
         head?: never;
         /** Cambiar el rol de un usuario del workspace */
         patch: operations["UsersController_updateRole"];
+        trace?: never;
+    };
+    "/users/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Dar de baja a un miembro del workspace
+         * @description Elimina la cuenta y cierra sus sesiones. No se puede dar de baja uno mismo ni al último ADMINISTRADOR.
+         */
+        delete: operations["UsersController_remove"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/invitation-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Consultar una invitación antes de aceptarla
+         * @description Devuelve correo, nombre, rol y workspace de una invitación pendiente y vigente.
+         */
+        post: operations["AcceptInvitationController_preview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/accept-invite": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Aceptar una invitación y definir la contraseña (RF-06)
+         * @description Crea la cuenta con el rol de la invitación. El enlace es de un solo uso.
+         */
+        post: operations["AcceptInvitationController_accept"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/engine/connections/health": {
@@ -772,16 +889,40 @@ export interface components {
              */
             name: string;
             /**
-             * @description Rol inicial del usuario dentro del workspace
+             * @description Rol que tendrá el usuario al aceptar la invitación
              * @example LECTOR
              * @enum {string}
              */
             role: "ADMIN" | "OPERADOR" | "LECTOR" | "AUDITOR";
-            /**
-             * @description Contraseña temporal inicial. Entre 10 y 72 caracteres, con al menos una mayúscula, una minúscula, un número y un símbolo. No puede contener tu correo ni contraseñas comunes.
-             * @example Temporal#2026dn
-             */
-            temporaryPassword?: string;
+        };
+        InvitationInviterDto: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            email: string;
+        };
+        InvitationResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** @example nuevo.miembro@empresa.com */
+            email: string;
+            /** @example María López */
+            name: string;
+            /** @enum {string} */
+            role: "ADMIN" | "OPERADOR" | "LECTOR" | "AUDITOR";
+            /** @enum {string} */
+            estado: "PENDIENTE" | "ACEPTADA" | "REVOCADA" | "EXPIRADA";
+            /** Format: date-time */
+            expiresAt: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            acceptedAt: string | null;
+            /** Format: date-time */
+            revokedAt: string | null;
+            invitedBy: components["schemas"]["InvitationInviterDto"] | null;
+            /** @description Solo en invitar/reenviar: false si el correo no pudo enviarse (se puede reenviar). */
+            correoEnviado?: boolean;
         };
         UpdateUserRoleDto: {
             /**
@@ -789,6 +930,34 @@ export interface components {
              * @enum {string}
              */
             role: "ADMIN" | "OPERADOR" | "LECTOR" | "AUDITOR";
+        };
+        InvitationTokenDto: {
+            /** @description Token recibido en el enlace del correo de invitación */
+            token: string;
+        };
+        InvitationPreviewDto: {
+            email: string;
+            name: string;
+            /** @enum {string} */
+            role: "ADMIN" | "OPERADOR" | "LECTOR" | "AUDITOR";
+            /** @example Acme Analytics S.A. */
+            nombreEmpresa: string;
+            /** Format: date-time */
+            expiresAt: string;
+        };
+        AcceptInvitationDto: {
+            /** @description Token recibido en el enlace del correo de invitación */
+            token: string;
+            /**
+             * @description Entre 10 y 72 caracteres, con al menos una mayúscula, una minúscula, un número y un símbolo. No puede contener tu correo ni contraseñas comunes.
+             * @example MiClave#2026dn
+             */
+            password: string;
+            /**
+             * @description Nombre a mostrar; por defecto el de la invitación
+             * @example María López
+             */
+            name?: string;
         };
         ConnectionHealthItemDto: {
             /** Format: uuid */
@@ -1381,7 +1550,7 @@ export interface operations {
                 /** @description Filtrar registros hasta esta fecha (formato ISO 8601) */
                 fechaFin?: string;
                 /** @description Filtrar por tipo de acción o evento */
-                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED";
+                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED" | "INVITATION_RESENT" | "INVITATION_REVOKED" | "INVITATION_ACCEPTED" | "USER_REMOVED";
             };
             header?: never;
             path?: never;
@@ -1422,7 +1591,7 @@ export interface operations {
                 /** @description Filtrar registros hasta esta fecha (formato ISO 8601) */
                 fechaFin?: string;
                 /** @description Filtrar por tipo de acción o evento */
-                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED";
+                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED" | "INVITATION_RESENT" | "INVITATION_REVOKED" | "INVITATION_ACCEPTED" | "USER_REMOVED";
                 format?: "csv" | "json";
             };
             header?: never;
@@ -1670,8 +1839,16 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Usuario creado exitosamente. */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationResponseDto"];
+                };
+            };
+            /** @description Correo fuera de los dominios permitidos o datos inválidos. */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1684,7 +1861,99 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description El correo electrónico ya se encuentra registrado. */
+            /** @description El correo ya está registrado o ya tiene una invitación pendiente. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UsersController_listInvitations: {
+        parameters: {
+            query?: {
+                /** @description Filtra por estado */
+                estado?: "PENDIENTE" | "ACEPTADA" | "REVOCADA" | "EXPIRADA";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationResponseDto"][];
+                };
+            };
+        };
+    };
+    UsersController_resendInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationResponseDto"];
+                };
+            };
+            /** @description Invitación no encontrada en el workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description La invitación ya fue aceptada o revocada. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UsersController_revokeInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationResponseDto"];
+                };
+            };
+            /** @description Invitación no encontrada en el workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description La invitación ya fue aceptada o revocada. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -1724,6 +1993,135 @@ export interface operations {
             };
             /** @description Usuario no encontrado en el workspace. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Es el último ADMINISTRADOR del workspace. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UsersController_remove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Miembro dado de baja (sin contraseña). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Se requiere ADMIN o se intentó la baja propia. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Usuario no encontrado en el workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Es el último ADMINISTRADOR del workspace. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AcceptInvitationController_preview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationTokenDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationPreviewDto"];
+                };
+            };
+            /** @description Invitación inválida, usada, revocada o expirada. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Demasiadas solicitudes. Intenta más tarde. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AcceptInvitationController_accept: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptInvitationDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponseDto"];
+                };
+            };
+            /** @description Invitación inválida, usada, revocada o expirada, o contraseña débil. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Ya existe una cuenta con ese correo. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Demasiadas solicitudes. Intenta más tarde. */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

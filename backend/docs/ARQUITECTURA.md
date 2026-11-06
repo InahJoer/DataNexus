@@ -145,9 +145,25 @@ Nunca se guardan valores de filtros, filas ni credenciales.
 
 ### 4.6 Gestión de Miembros (`/users`)
 - `GET /users`: Listado de todos los miembros del Workspace.
-- `POST /users/invite`: Invitación o alta de un nuevo miembro con rol `ADMIN`, `OPERADOR`, `LECTOR` o `AUDITOR` (ADMIN).
 - `PATCH /users/:id/role`: Modificación de permisos de usuario (ADMIN).
-- Si el workspace define `dominiosPermitidos`, `POST /users/invite` solo acepta correos de esos dominios (o subdominios).
+- `DELETE /users/:id`: Baja de un miembro (ADMIN). Borra la cuenta y, en cascada, sus sesiones, así que sus tokens
+  dejan de funcionar al instante. Nadie puede darse de baja a sí mismo y el workspace nunca se queda sin `ADMIN`
+  (409): la comprobación bloquea con `SELECT ... FOR UPDATE` las filas de ADMIN, de modo que dos ADMIN que se dan de
+  baja mutuamente a la vez no pueden dejar el workspace vacío. La misma regla aplica al quitar el rol `ADMIN`.
+
+**Invitaciones por enlace (RF-06).** El usuario se crea al aceptar, con la contraseña que él elige; ya no existen
+contraseñas temporales.
+- `POST /users/invite`: Crea una invitación (correo, nombre, rol) y envía el enlace `FRONTEND_URL/accept-invite?token=…`.
+  Respeta `dominiosPermitidos`; responde 409 si el correo ya tiene cuenta o una invitación pendiente. Si el correo no
+  sale, la invitación se conserva con `correoEnviado: false` para reenviarla.
+- `GET /users/invitations?estado=`: Lista las invitaciones (`PENDIENTE`, `ACEPTADA`, `REVOCADA` o `EXPIRADA`, que es
+  una pendiente vencida).
+- `POST /users/invitations/:id/resend`: Genera un token nuevo (el anterior deja de servir) y renueva el vencimiento.
+- `DELETE /users/invitations/:id`: Revoca una invitación pendiente.
+- `POST /auth/invitation-preview` y `POST /auth/accept-invite` (públicos, 10 intentos cada 15 min por IP): consultan y
+  aceptan la invitación. El token va en el body, es aleatorio (256 bits), solo se guarda su hash SHA-256, vence a las
+  `INVITATION_TTL_HOURS` (72 por defecto) y es de un solo uso (consumo atómico).
+- Todo queda auditado: `USER_INVITED`, `INVITATION_RESENT`, `INVITATION_REVOKED`, `INVITATION_ACCEPTED` y `USER_REMOVED`.
 
 ### 4.7 Espacio de Trabajo (`/workspaces`) — RF-05
 - `GET /workspaces/me`: Datos del workspace del token (nombre, logo, zona horaria IANA). La `configuracion`
