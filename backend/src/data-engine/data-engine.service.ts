@@ -20,7 +20,9 @@ import {
   type ExtractOptions,
 } from './adapters/data-source-adapter.interface.js';
 import { DataSourceClientPool } from './pool/data-source-client-pool.js';
-import { MaskingService } from './masking/masking.service.js';
+import { MaskingService, type SensitiveRule } from './masking/masking.service.js';
+import { SensitiveFieldsService, type SensitiveSource } from './masking/sensitive-fields.service.js';
+import { hasPermission } from '../auth/interfaces/user-role.js';
 import { ExportService } from './export/export.service.js';
 import type { ConnectionHealthItemDto, ConnectionHealthResponseDto } from './dto/connection-health.dto.js';
 import type { ConnectionFieldsResponseDto } from './dto/connection-schema.dto.js';
@@ -110,7 +112,17 @@ export class DataEngineService {
     @Optional() private readonly clientPool?: DataSourceClientPool,
     private readonly maskingService: MaskingService = new MaskingService(),
     private readonly exportService: ExportService = new ExportService(),
+    @Optional() private readonly sensitiveFields?: SensitiveFieldsService,
   ) {}
+
+  /**
+   * Campos sensibles configurados (RF-20) que aplican a las fuentes de una consulta. Solo se consultan para roles que
+   * reciben datos enmascarados; si la consulta falla, falla la petición (nunca se devuelven datos sin enmascarar).
+   */
+  private async maskingRules(user: AuthenticatedUser, sources: SensitiveSource[]): Promise<SensitiveRule[]> {
+    if (hasPermission(user.role, 'VIEW_UNMASKED_DATA') || !this.sensitiveFields) return [];
+    return this.sensitiveFields.rulesFor(user.workspaceId, sources);
+  }
 
   async getConnectionsHealth(actor: AuthenticatedUser): Promise<ConnectionHealthResponseDto> {
     const connections = await this.withTimeout(
@@ -266,7 +278,8 @@ export class DataEngineService {
 
     // Lo que el motor no pudo filtrar se aplica a la página; el cursor sigue avanzando por la última fila leída.
     const rows = residual.length ? page.rows.filter((row) => matchesFilters(row, residual)) : page.rows;
-    const data = this.maskingService.maskDataset(rows, actor.role);
+    const rules = await this.maskingRules(actor, [{ conexionId: connection.id, entidad: query.entidad }]);
+    const data = this.maskingService.maskDataset(rows, actor.role, rules);
     return {
       entidad: query.entidad,
       ...(query.esquema ? { esquema: query.esquema } : {}),
@@ -286,13 +299,10 @@ export class DataEngineService {
     payload: CrossJoinDto,
     user: AuthenticatedUser,
   ): Promise<PaginatedCrossJoinResult> {
-    const { rows: combinedData, truncated } = await this.performJoin(payload, user);
+    const { rows: combinedData, truncated, rules } = await this.performJoin(payload, user);
 
     // Enmascaramiento si es LECTOR
-    const securedData = this.maskingService.maskDataset(
-      combinedData,
-      user.role,
-    );
+    const securedData = this.maskingService.maskDataset(combinedData, user.role, rules);
 
     // Paginación nativa en memoria
     const limit = payload.limit ?? 50;
@@ -315,11 +325,8 @@ export class DataEngineService {
     payload: ExportCrossJoinDto,
     user: AuthenticatedUser,
   ): Promise<ExportResult> {
-    const { rows: combinedData } = await this.performJoin(payload, user);
-    const securedData = this.maskingService.maskDataset(
-      combinedData,
-      user.role,
-    );
+    const { rows: combinedData, rules } = await this.performJoin(payload, user);
+    const securedData = this.maskingService.maskDataset(combinedData, user.role, rules);
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 
@@ -368,8 +375,8 @@ export class DataEngineService {
       throw new BadRequestException('Los reportes solo admiten formato Excel o PDF');
     }
 
-    const { rows: combinedData } = await this.performJoin(payload, user);
-    const securedData = this.maskingService.maskDataset(combinedData, user.role);
+    const { rows: combinedData, rules } = await this.performJoin(payload, user);
+    const securedData = this.maskingService.maskDataset(combinedData, user.role, rules);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 
     if (payload.format === 'excel') {
@@ -406,9 +413,9 @@ export class DataEngineService {
     user: AuthenticatedUser,
     options: AsyncJoinOptions = {},
   ): Promise<{ rows: Record<string, any>[]; truncated: boolean }> {
-    const { rows, truncated } = await this.performJoin(payload, user, { ...options, cooperative: true });
+    const { rows, truncated, rules } = await this.performJoin(payload, user, { ...options, cooperative: true });
     options.signal?.throwIfAborted();
-    const secured = this.maskingService.maskDataset(rows, user.role);
+    const secured = this.maskingService.maskDataset(rows, user.role, rules);
     options.onProgress?.(1);
     return { rows: secured, truncated };
   }
@@ -417,13 +424,17 @@ export class DataEngineService {
     payload: CrossJoinDto,
     user: AuthenticatedUser,
     options: AsyncJoinOptions & { cooperative?: boolean } = {},
-  ): Promise<{ rows: Record<string, any>[]; truncated: boolean }> {
+  ): Promise<{ rows: Record<string, any>[]; truncated: boolean; rules: SensitiveRule[] }> {
     this.validateAggregation(payload);
     // Progreso de un job: extracción 0-40 %, join 40-80 %, armado de filas 80-100 %.
     const report = (from: number, to: number) => (fraction: number) =>
       options.onProgress?.(from + (to - from) * Math.min(1, Math.max(0, fraction)));
 
     const plan = resolveJoinPlan(payload);
+    const rules = await this.maskingRules(
+      user,
+      plan.sources.map((source) => ({ conexionId: source.conexionId, entidad: source.entidad })),
+    );
 
     // 1. Obtener y validar pertenencia al workspace de cada conexión (una vez por conexión)
     const connectionIds = [...new Set(plan.sources.map((source) => source.conexionId))];
@@ -495,10 +506,7 @@ export class DataEngineService {
       if (aggregate) {
         // Aggregate the secured source row so arbitrary metric aliases cannot
         // reveal values that are masked for LECTOR users.
-        const aggregationRow = this.maskingService.maskRecordForRole(
-          joinedRow,
-          user.role,
-        );
+        const aggregationRow = this.maskingService.maskRecordForRole(joinedRow, user.role, rules);
         const groupValues = Object.fromEntries(
           groupBy.map((field) => [
             field,
@@ -520,6 +528,7 @@ export class DataEngineService {
           aggregationRow,
           aggregations,
           user.role,
+          rules,
         );
         bucket.output = this.toAggregateRow(bucket, aggregations);
         bucket.bytes = getJsonByteLength(bucket.output);
@@ -546,8 +555,8 @@ export class DataEngineService {
     // RF-16: el usuario puede limitar el resultado a 50, 100, 500 o 1000 filas.
     const rowLimit = payload.limiteFilas;
     return rowLimit && rows.length > rowLimit
-      ? { rows: rows.slice(0, rowLimit), truncated: true }
-      : { rows, truncated: false };
+      ? { rows: rows.slice(0, rowLimit), truncated: true, rules }
+      : { rows, truncated: false, rules };
   }
 
   private validateAggregation(payload: CrossJoinDto): void {
@@ -605,6 +614,7 @@ export class DataEngineService {
     aggregationRow: Record<string, any>,
     aggregations: AggregationMetricDto[],
     role?: string,
+    rules?: SensitiveRule[],
   ): void {
     for (const metric of aggregations) {
       const state = bucket.metrics.get(metric.as)!;
@@ -614,7 +624,7 @@ export class DataEngineService {
         : undefined;
       if (
         metric.field &&
-        this.maskingService.isValueMasked(metric.field, rawValue, role)
+        this.maskingService.isValueMasked(metric.field, rawValue, role, rules)
       ) {
         state.masked = true;
         continue;
