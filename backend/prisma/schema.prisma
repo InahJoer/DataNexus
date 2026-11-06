@@ -64,21 +64,22 @@ enum InvitationStatus {
 
 /// Espacio de trabajo (tenant). Toda consulta de negocio se filtra por su id (RF-05).
 model Workspace {
-  id                 String       @id @default(uuid())
-  nombreEmpresa      String
+  id                    String           @id @default(uuid())
+  nombreEmpresa         String
   /// URL https del logo que muestra el cliente web.
-  logoUrl            String?
+  logoUrl               String?
   /// Zona horaria IANA (p. ej. America/Managua) para fechas y reportes programados.
-  zonaHoraria        String       @default("UTC")
+  zonaHoraria           String           @default("UTC")
   /// Dominios de correo admitidos al invitar miembros. Vacío = sin restricción adicional.
-  dominiosPermitidos String[]     @default([])
+  dominiosPermitidos    String[]         @default([])
   /// Campos sensibles por defecto del workspace; los consumirá el enmascaramiento configurable (RF-20).
-  camposSensibles    String[]     @default([])
-  fechaCreacion      DateTime     @default(now())
-  fechaActualizacion DateTime     @default(now()) @updatedAt
-  users              User[]
-  conexiones         ConexionDB[]
-  invitations        Invitation[]
+  camposSensibles       String[]         @default([])
+  fechaCreacion         DateTime         @default(now())
+  fechaActualizacion    DateTime         @default(now()) @updatedAt
+  users                 User[]
+  conexiones            ConexionDB[]
+  camposSensiblesReglas SensitiveField[]
+  invitations           Invitation[]
 }
 
 model User {
@@ -201,4 +202,30 @@ model Invitation {
 
   @@index([workspaceId, status])
   @@index([email])
+}
+
+/// Estrategia de enmascaramiento de un campo sensible (RF-20).
+enum MaskingStrategy {
+  EMAIL
+  PHONE
+  FULL
+  HASH
+}
+
+/// Campo marcado como sensible (RF-20, issue #34). conexionId o entidad vacíos ("") = aplica a todas.
+/// Se usa "" en lugar de NULL para que el índice único impida reglas duplicadas (en PostgreSQL NULL no se repite).
+/// Los roles sin VIEW_UNMASKED_DATA nunca reciben su valor real en ningún endpoint.
+model SensitiveField {
+  id          String          @id @default(uuid())
+  workspaceId String
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  conexionId  String          @default("")
+  entidad     String          @default("")
+  campo       String
+  estrategia  MaskingStrategy @default(FULL)
+  creadoPor   String?
+  createdAt   DateTime        @default(now())
+
+  @@unique([workspaceId, conexionId, entidad, campo])
+  @@index([workspaceId])
 }
