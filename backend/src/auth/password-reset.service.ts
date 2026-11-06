@@ -132,7 +132,8 @@ export class PasswordResetService {
 
       const updated = await tx.user.update({
         where: { id: record.userId },
-        data: { password: passwordHash },
+        // Restablecer la contraseña también desbloquea la cuenta.
+        data: { password: passwordHash, failedLoginAttempts: 0, lockedUntil: null },
         select: { id: true, email: true, workspaceId: true },
       });
       await tx.passwordResetToken.deleteMany({ where: { userId: record.userId, usedAt: null } });
