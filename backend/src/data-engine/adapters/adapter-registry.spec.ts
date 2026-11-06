@@ -41,7 +41,7 @@ describe('AdapterRegistry', () => {
     expect(() => new AdapterRegistry([adapter('MYSQL'), adapter('MYSQL')])).toThrow(/duplicado/);
   });
 
-  it('Nest resuelve el pool, los cuatro adaptadores, el registro y DataEngineService', async () => {
+  it('Nest resuelve el pool, los cinco adaptadores, el registro y DataEngineService', async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [DataSourcePoolModule],
       providers: [
@@ -54,10 +54,11 @@ describe('AdapterRegistry', () => {
     }).compile();
 
     expect(moduleRef.get(AdapterRegistry).supported()).toEqual([
-      { tipoMotor: 'POSTGRESQL', explore: true, fields: true, extract: false },
+      { tipoMotor: 'POSTGRESQL', explore: true, fields: true, extract: true },
       { tipoMotor: 'MYSQL', explore: true, fields: true, extract: true },
       { tipoMotor: 'SQLSERVER', explore: true, fields: true, extract: true },
       { tipoMotor: 'FIRESTORE', explore: true, fields: true, extract: true },
+      { tipoMotor: 'MONGODB', explore: true, fields: true, extract: true },
     ]);
     expect(moduleRef.get(DataEngineService)).toBeInstanceOf(DataEngineService);
     expect(moduleRef.get(DataSourceClientPool)).toBeInstanceOf(DataSourceClientPool);

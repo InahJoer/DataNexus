@@ -149,21 +149,21 @@ access tokens ya emitidos. Reglas:
   - Las llaves se normalizan antes de comparar (1 y `"1"` coinciden, `ObjectId` como texto) y las nulas nunca cruzan. Benchmark con 100.000 filas por fuente en [`docs/BENCHMARK-CROSS-JOIN.md`](BENCHMARK-CROSS-JOIN.md).
 - `POST /engine/export`: Generación y descarga directa de archivos (`format: excel | pdf | json`) con rate limiting estricto (20 req/min).
 
-**Adaptadores de fuentes de datos (RNF-10, issues #27 y #28).** `DataEngineService` solo conoce la interfaz
+**Adaptadores de fuentes de datos (RNF-10, issues #27, #28 y #29).** `DataEngineService` solo conoce la interfaz
 `IDataSourceAdapter` (`listObjects`, `listFields`, `extract` y `capabilities`) y obtiene el adaptador del motor con
 `AdapterRegistry` (acepta alias como "SQL Server" o "Firebase"). Agregar un motor = crear su adaptador y añadirlo a
 `DATA_SOURCE_ADAPTER_CLASSES` en `adapters/adapter-providers.ts`; el servicio no cambia.
 
 | Motor | Explorar | Campos | Extraer (cross-join) |
 | :--- | :---: | :---: | :---: |
-| PostgreSQL | ✅ | ✅ | ❌ (pendiente) |
+| PostgreSQL | ✅ | ✅ | ✅ |
 | MySQL / MariaDB | ✅ | ✅ | ✅ |
 | SQL Server | ✅ | ✅ | ✅ |
 | Firestore | ✅ | ✅ (muestreo) | ✅ |
-| MongoDB | ❌ (issue #29) | ❌ | ❌ |
+| MongoDB | ✅ (colecciones y vistas) | ✅ (muestreo de 100 documentos) | ✅ |
 
 - **Pool de clientes (`DataSourceClientPool`):** reutiliza un cliente por conexión y credenciales (pg.Pool, pool de
-  mysql2, ConnectionPool de mssql, instancia de Firestore). Cierra los inactivos tras `DATA_SOURCE_POOL_IDLE_MS`
+  mysql2, ConnectionPool de mssql, instancia de Firestore, MongoClient). Cierra los inactivos tras `DATA_SOURCE_POOL_IDLE_MS`
   (5 min) y los menos usados si se superan `DATA_SOURCE_POOL_MAX_ENTRIES` (50). `ConnectionsService` lo invalida al
   editar o eliminar una conexión, el motor lo invalida tras un timeout y al apagar la aplicación
   (`enableShutdownHooks` + `OnModuleDestroy`) no queda ninguna conexión abierta.
@@ -171,6 +171,12 @@ access tokens ya emitidos. Reglas:
   invertidas, traduce los filtros a `WHERE` con parámetros `?` (filter pushdown), limita a `DATA_ENGINE_MAX_SOURCE_ROWS`
   + 1 filas, corta en el servidor con `MAX_EXECUTION_TIME` y estima el tamaño de cada fila en el servidor para no
   transferir filas que superen `DATA_ENGINE_MAX_SOURCE_BYTES`. Lee en streaming y descarta la conexión si corta a mitad.
+- **Extractor PostgreSQL:** las mismas garantías que MySQL, con identificadores entre comillas dobles, parámetros
+  `$1, $2…`, `statement_timeout` y lectura fila a fila. Sin esquema usa `public` o el primero que tenga la tabla.
+- **Adaptador MongoDB (#29):** colecciones y vistas de la base configurada, campos por muestreo (`$sample`) y
+  extracción con los filtros traducidos a `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`, `$in` y `$nin`. Solo acepta valores
+  escalares y campos sin segmentos que empiecen por `$`, así que no se pueden inyectar operadores. Convierte los tipos BSON
+  a JSON (`ObjectId` a texto para poder cruzar `_id` con SQL) y tiene prueba de conexión propia.
 
 ### 4.4 Auditoría (`/audit`)
 - `GET /audit/logs`: Consulta paginada (`page`, `limit`) con filtros por `fechaInicio`, `fechaFin` y `tipoAccion` (ADMIN o AUDITOR).
