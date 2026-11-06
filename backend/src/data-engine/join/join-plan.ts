@@ -132,32 +132,35 @@ function ownValue(record: Record<string, any>, field: string): unknown {
   return Object.prototype.hasOwnProperty.call(record, field) ? record[field] : undefined;
 }
 
+/** Filas procesadas entre pausas al ejecutar un join sin bloquear el event loop. */
+export const JOIN_YIELD_EVERY = 2_000;
+
 /**
- * Ejecuta el plan en memoria con índices hash (O(N + M) por relación). Cada relación une el resultado acumulado
- * con una fuente nueva según su tipo:
- * - INNER: solo filas con pareja; LEFT: además las del lado acumulado sin pareja;
- * - RIGHT: además los registros de la fuente nueva sin pareja; FULL: ambos.
- * `maxRows` limita cada resultado intermedio para que una explosión de combinaciones no agote la memoria.
+ * Núcleo del join como generador: hace el trabajo y se detiene (`yield`) cada `JOIN_YIELD_EVERY` filas con la
+ * fracción completada. La versión síncrona lo recorre de corrido; la asíncrona cede el event loop en cada pausa.
  */
-export function executeJoinPlan(
+function* joinPlanSteps(
   plan: JoinPlan,
   recordsByAlias: ReadonlyMap<string, Record<string, any>[]>,
   maxRows: number,
-): JoinTuple[] {
+): Generator<number, JoinTuple[]> {
   const index = new Map(plan.sources.map((source, position) => [source.alias, position]));
   const width = plan.sources.length;
   const records = (alias: string) => recordsByAlias.get(alias) ?? [];
   const tooMany = () => new PayloadTooLargeException(`El join supera el máximo de ${maxRows} filas configurado`);
+  let work = 0;
 
   const first = records(plan.sources[0].alias);
   if (first.length > maxRows) throw tooMany();
-  let rows: JoinTuple[] = first.map((record) => {
+  let rows: JoinTuple[] = [];
+  for (const record of first) {
     const tuple: JoinTuple = Array.from({ length: width }, () => null);
     tuple[0] = record;
-    return tuple;
-  });
+    rows.push(tuple);
+    if (++work % JOIN_YIELD_EVERY === 0) yield 0;
+  }
 
-  for (const relation of plan.relations) {
+  for (const [relationIndex, relation] of plan.relations.entries()) {
     const leftPosition = index.get(relation.izquierda)!;
     const rightPosition = index.get(relation.derecha)!;
     const rightRecords = records(relation.derecha);
@@ -165,15 +168,19 @@ export function executeJoinPlan(
     const rightFields = relation.llaves.map((pair) => pair.derecha);
     const keepLeft = relation.tipo === 'LEFT' || relation.tipo === 'FULL';
     const keepRight = relation.tipo === 'RIGHT' || relation.tipo === 'FULL';
+    const progress = (done: number, total: number) =>
+      (relationIndex + (total ? done / total : 1)) / plan.relations.length;
 
     const rightIndex = new Map<string, number[]>();
-    rightRecords.forEach((record, position) => {
-      const key = compositeKey(record, rightFields);
-      if (key === null) return;
-      const bucket = rightIndex.get(key);
-      if (bucket) bucket.push(position);
-      else rightIndex.set(key, [position]);
-    });
+    for (let position = 0; position < rightRecords.length; position++) {
+      const key = compositeKey(rightRecords[position], rightFields);
+      if (key !== null) {
+        const bucket = rightIndex.get(key);
+        if (bucket) bucket.push(position);
+        else rightIndex.set(key, [position]);
+      }
+      if (++work % JOIN_YIELD_EVERY === 0) yield progress(0, 1);
+    }
     const matchedRight = keepRight ? new Uint8Array(rightRecords.length) : undefined;
 
     const next: JoinTuple[] = [];
@@ -181,7 +188,8 @@ export function executeJoinPlan(
       if (next.length >= maxRows) throw tooMany();
       next.push(tuple);
     };
-    for (const row of rows) {
+    for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+      const row = rows[rowIndex];
       const key = compositeKey(row[leftPosition], leftFields);
       const matches = key === null ? undefined : rightIndex.get(key);
       if (matches?.length) {
@@ -194,18 +202,70 @@ export function executeJoinPlan(
       } else if (keepLeft) {
         push(row.slice());
       }
+      if (++work % JOIN_YIELD_EVERY === 0) yield progress(rowIndex + 1, rows.length);
     }
     if (matchedRight) {
-      rightRecords.forEach((record, position) => {
-        if (matchedRight[position]) return;
-        const tuple: JoinTuple = Array.from({ length: width }, () => null);
-        tuple[rightPosition] = record;
-        push(tuple);
-      });
+      for (let position = 0; position < rightRecords.length; position++) {
+        if (!matchedRight[position]) {
+          const tuple: JoinTuple = Array.from({ length: width }, () => null);
+          tuple[rightPosition] = rightRecords[position];
+          push(tuple);
+        }
+        if (++work % JOIN_YIELD_EVERY === 0) yield progress(1, 1);
+      }
     }
     rows = next;
   }
   return rows;
+}
+
+/**
+ * Ejecuta el plan en memoria con índices hash (O(N + M) por relación). Cada relación une el resultado acumulado
+ * con una fuente nueva según su tipo:
+ * - INNER: solo filas con pareja; LEFT: además las del lado acumulado sin pareja;
+ * - RIGHT: además los registros de la fuente nueva sin pareja; FULL: ambos.
+ * `maxRows` limita cada resultado intermedio para que una explosión de combinaciones no agote la memoria.
+ */
+export function executeJoinPlan(
+  plan: JoinPlan,
+  recordsByAlias: ReadonlyMap<string, Record<string, any>[]>,
+  maxRows: number,
+): JoinTuple[] {
+  const steps = joinPlanSteps(plan, recordsByAlias, maxRows);
+  for (;;) {
+    const step = steps.next();
+    if (step.done) return step.value;
+  }
+}
+
+export interface AsyncJoinOptions {
+  /** Cancela el join entre pausas (por ejemplo, cuando el usuario cancela un job). */
+  signal?: AbortSignal;
+  /** Fracción completada (0 a 1), para el progreso de un job. */
+  onProgress?: (fraction: number) => void;
+}
+
+/** Cede el event loop: deja pasar peticiones HTTP y timers entre bloques del join. */
+export const yieldToEventLoop = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+/**
+ * Igual que `executeJoinPlan`, pero cede el event loop cada `JOIN_YIELD_EVERY` filas (RNF-04): un join de cientos
+ * de miles de filas no deja al servidor sin responder, se puede cancelar y reporta su progreso.
+ */
+export async function executeJoinPlanAsync(
+  plan: JoinPlan,
+  recordsByAlias: ReadonlyMap<string, Record<string, any>[]>,
+  maxRows: number,
+  options: AsyncJoinOptions = {},
+): Promise<JoinTuple[]> {
+  const steps = joinPlanSteps(plan, recordsByAlias, maxRows);
+  for (;;) {
+    options.signal?.throwIfAborted();
+    const step = steps.next();
+    if (step.done) return step.value;
+    options.onProgress?.(step.value);
+    await yieldToEventLoop();
+  }
 }
 
 /**
@@ -218,11 +278,47 @@ export function createRowFlattener(
   plan: JoinPlan,
   recordsByAlias: ReadonlyMap<string, Record<string, any>[]>,
 ): (tuple: JoinTuple) => Record<string, any> {
-  const fieldsByPosition = plan.sources.map((source) => {
+  const steps = collectFields(plan, recordsByAlias);
+  for (;;) {
+    const step = steps.next();
+    if (step.done) return buildFlattener(plan, step.value);
+  }
+}
+
+/** Igual que `createRowFlattener`, cediendo el event loop mientras recorre los registros (joins asíncronos). */
+export async function createRowFlattenerAsync(
+  plan: JoinPlan,
+  recordsByAlias: ReadonlyMap<string, Record<string, any>[]>,
+  signal?: AbortSignal,
+): Promise<(tuple: JoinTuple) => Record<string, any>> {
+  const steps = collectFields(plan, recordsByAlias);
+  for (;;) {
+    signal?.throwIfAborted();
+    const step = steps.next();
+    if (step.done) return buildFlattener(plan, step.value);
+    await yieldToEventLoop();
+  }
+}
+
+/** Columnas conocidas de cada fuente (unión de las claves de sus registros), con pausas cada JOIN_YIELD_EVERY. */
+function* collectFields(
+  plan: JoinPlan,
+  recordsByAlias: ReadonlyMap<string, Record<string, any>[]>,
+): Generator<void, string[][]> {
+  const fieldsByPosition: string[][] = [];
+  let work = 0;
+  for (const source of plan.sources) {
     const fields = new Set<string>();
-    for (const record of recordsByAlias.get(source.alias) ?? []) for (const key of Object.keys(record)) fields.add(key);
-    return [...fields];
-  });
+    for (const record of recordsByAlias.get(source.alias) ?? []) {
+      for (const key of Object.keys(record)) fields.add(key);
+      if (++work % JOIN_YIELD_EVERY === 0) yield;
+    }
+    fieldsByPosition.push([...fields]);
+  }
+  return fieldsByPosition;
+}
+
+function buildFlattener(plan: JoinPlan, fieldsByPosition: string[][]): (tuple: JoinTuple) => Record<string, any> {
   const owners = new Map<string, number>();
   for (const fields of fieldsByPosition) for (const field of fields) owners.set(field, (owners.get(field) ?? 0) + 1);
   const outputName = (position: number, field: string) =>

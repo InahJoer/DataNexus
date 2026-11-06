@@ -42,6 +42,7 @@ services:
       PORT: 3001
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       DATABASE_URL: postgresql://datanexus:datanexus@postgres:5432/datanexus?schema=public
+      REDIS_URL: redis://redis:6379
     ports:
       - '${BACKEND_PORT:-3001}:3001'
     volumes:
@@ -50,6 +51,8 @@ services:
     command: ['sh', '-c', 'npm run db:deploy && npm run dev']
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:3001/api/docs').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]

@@ -36,7 +36,16 @@ import {
   getMaxJoinBytes,
   getMaxJoinRows,
 } from './data-engine.constants.js';
-import { createRowFlattener, describeJoinPlan, executeJoinPlan } from './join/join-plan.js';
+import {
+  JOIN_YIELD_EVERY,
+  createRowFlattener,
+  createRowFlattenerAsync,
+  describeJoinPlan,
+  executeJoinPlan,
+  executeJoinPlanAsync,
+  yieldToEventLoop,
+  type AsyncJoinOptions,
+} from './join/join-plan.js';
 import { resolveJoinPlan } from './join/resolve-join-plan.js';
 import { assertValidFilters, matchesFilters, parseFilterQuery, splitFiltersForPushdown } from './filters/filter-tree.js';
 import {
@@ -387,11 +396,32 @@ export class DataEngineService {
   /**
    * Lógica nuclear de Inner Join en memoria indexada O(N + M).
    */
+  /**
+   * Cross-join para un job asíncrono (RNF-04, issue #33): mismo resultado que `executeCrossJoin` (filtros,
+   * agregaciones, limiteFilas y enmascaramiento según el rol de quien lo pidió), sin paginar, pero cediendo el event
+   * loop durante el join, informando el progreso (0 a 1) y deteniéndose si se cancela.
+   */
+  async runCrossJoinJob(
+    payload: CrossJoinDto,
+    user: AuthenticatedUser,
+    options: AsyncJoinOptions = {},
+  ): Promise<{ rows: Record<string, any>[]; truncated: boolean }> {
+    const { rows, truncated } = await this.performJoin(payload, user, { ...options, cooperative: true });
+    options.signal?.throwIfAborted();
+    const secured = this.maskingService.maskDataset(rows, user.role);
+    options.onProgress?.(1);
+    return { rows: secured, truncated };
+  }
+
   private async performJoin(
     payload: CrossJoinDto,
     user: AuthenticatedUser,
+    options: AsyncJoinOptions & { cooperative?: boolean } = {},
   ): Promise<{ rows: Record<string, any>[]; truncated: boolean }> {
     this.validateAggregation(payload);
+    // Progreso de un job: extracción 0-40 %, join 40-80 %, armado de filas 80-100 %.
+    const report = (from: number, to: number) => (fraction: number) =>
+      options.onProgress?.(from + (to - from) * Math.min(1, Math.max(0, fraction)));
 
     const plan = resolveJoinPlan(payload);
 
@@ -424,8 +454,17 @@ export class DataEngineService {
     const recordsByAlias = new Map(extracted);
 
     // 3. Ejecutar las relaciones (INNER/LEFT/RIGHT/FULL) con índices hash y aplanar las filas
-    const tuples = executeJoinPlan(plan, recordsByAlias, getMaxJoinRows());
-    const flatten = createRowFlattener(plan, recordsByAlias);
+    options.signal?.throwIfAborted();
+    report(0, 0.4)(1);
+    const tuples = options.cooperative
+      ? await executeJoinPlanAsync(plan, recordsByAlias, getMaxJoinRows(), {
+          signal: options.signal,
+          onProgress: report(0.4, 0.8),
+        })
+      : executeJoinPlan(plan, recordsByAlias, getMaxJoinRows());
+    const flatten = options.cooperative
+      ? await createRowFlattenerAsync(plan, recordsByAlias, options.signal)
+      : createRowFlattener(plan, recordsByAlias);
 
     // 4. Recorrer las filas unidas y, cuando se solicita, conservar solo el estado agregado.
     const joinedRows: Record<string, any>[] = [];
@@ -445,7 +484,12 @@ export class DataEngineService {
       aggregateGroups.set('[]', bucket);
     }
 
-    for (const tuple of tuples) {
+    for (const [tupleIndex, tuple] of tuples.entries()) {
+      if (options.cooperative && tupleIndex > 0 && tupleIndex % JOIN_YIELD_EVERY === 0) {
+        options.signal?.throwIfAborted();
+        report(0.8, 1)(tupleIndex / tuples.length);
+        await yieldToEventLoop();
+      }
       const joinedRow = flatten(tuple);
 
       if (aggregate) {

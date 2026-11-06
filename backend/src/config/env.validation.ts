@@ -128,6 +128,38 @@ export class EnvironmentVariables {
   @Max(720)
   INVITATION_TTL_HOURS?: number;
 
+  /**
+   * Redis para la cola de joins asíncronos (BullMQ, RNF-04). Sin él, los jobs usan una cola en memoria de una sola
+   * instancia (válida para desarrollo; en producción con varias réplicas configure Redis).
+   */
+  @IsOptional()
+  @Matches(/^rediss?:\/\/\S+$/, { message: 'REDIS_URL debe empezar por redis:// o rediss://' })
+  REDIS_URL?: string;
+
+  /** Joins asíncronos que procesa a la vez cada instancia (por defecto 2). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(32)
+  JOBS_CONCURRENCY?: number;
+
+  /** Jobs en cola o en proceso permitidos por workspace (por defecto 3). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  JOBS_MAX_ACTIVE_PER_WORKSPACE?: number;
+
+  /** Segundos que se conserva el resultado de un job antes de expirar (por defecto 3600). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(60)
+  @Max(604800)
+  JOBS_RESULT_TTL_SECONDS?: number;
+
   /** Minutos sin actividad tras los que se cierra la sesión (RF-04, por defecto 30). */
   @IsOptional()
   @Type(() => Number)
