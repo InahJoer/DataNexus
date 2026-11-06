@@ -5,6 +5,7 @@ import {
   HttpException,
   NotFoundException,
   PayloadTooLargeException,
+  ForbiddenException,
   Injectable,
   Logger,
   Optional,
@@ -18,6 +19,7 @@ import {
   type CatalogObject,
   type DataSourceConnection,
   type ExtractOptions,
+  type UpdateRecordResult,
 } from './adapters/data-source-adapter.interface.js';
 import { DataSourceClientPool } from './pool/data-source-client-pool.js';
 import { MaskingService, type SensitiveRule } from './masking/masking.service.js';
@@ -58,6 +60,7 @@ import {
   type DataPage,
 } from './pagination/keyset.js';
 import type { BrowseDataQueryDto, BrowseDataResponseDto } from './dto/browse-data.dto.js';
+import type { UpdateRecordDto } from './dto/update-record.dto.js';
 
 const EXPLORATION_TIMEOUT_MS = 10_000;
 
@@ -288,6 +291,43 @@ export class DataEngineService {
       filas: data.length,
       data,
       nextCursor: page.lastKey ? encodeCursor(binding, page.lastKey) : null,
+    };
+  }
+
+  async updateRecord(actor: AuthenticatedUser, input: UpdateRecordDto) {
+    if (!hasPermission(actor.role, 'MODIFY_RECORDS')) {
+      throw new ForbiddenException('Se requiere rol ADMIN u OPERADOR para editar registros');
+    }
+
+    const connection = await this.connectionsService.getConnectionForExploration(input.conexionId, actor.workspaceId);
+    const adapter = this.adapters.get(connection.tipoMotor);
+    if (!adapter?.updateRecord) {
+      throw new BadRequestException('La edición no está disponible para este motor');
+    }
+
+    let updatedValues: UpdateRecordResult;
+    try {
+      updatedValues = await adapter.updateRecord(connection, {
+        entityName: input.entidad,
+        ...(input.esquema ? { schema: input.esquema } : {}),
+        primaryKey: input.llavePrimaria,
+        field: input.campo,
+        expectedValue: input.valorAnterior,
+        nextValue: input.valorNuevo,
+      });
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      if (this.isTimeoutError(error)) throw new GatewayTimeoutException('La actualización excedió el tiempo permitido');
+      this.logger.warn(`Falló la actualización en la conexión ${connection.id} (${adapter.tipoMotor})`);
+      throw new BadGatewayException('No fue posible actualizar el registro en la fuente externa');
+    }
+
+    return {
+      actualizada: true,
+      entidad: input.entidad,
+      campo: input.campo,
+      valorAnterior: updatedValues.valueBefore,
+      valorNuevo: updatedValues.valueAfter,
     };
   }
 

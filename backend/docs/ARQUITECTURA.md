@@ -144,6 +144,7 @@ access tokens ya emitidos. Reglas:
 - `GET /engine/connections/:id/schema`: Introspección de tablas, vistas o colecciones disponibles.
 - `GET /engine/connections/:id/schema/fields`: Campos de una tabla o colección.
 - `GET /engine/connections/:id/data?entidad=&esquema=&limite=&cursor=&filtros=`: Exploración paginada de una tabla o colección (issue #32, RNF-06). Devuelve la página y `nextCursor` (opaco, atado a la conexión, esquema y entidad). Cada motor usa su cursor nativo, sin `OFFSET` ni cargar la fuente: **keyset sobre la llave primaria** en PostgreSQL, MySQL y SQL Server (`(a > ?) OR (a = ? AND b > ?)`, también con llave compuesta), **`_id`** en MongoDB y **`startAfter`** por id de documento en Firestore. Cualquier página cuesta lo mismo: recorrer 1.000.000 de filas de PostgreSQL en páginas de 1.000 retiene ~1 MB de memoria (test de integración). Las tablas SQL sin llave primaria responden 400. `filtros` usa el formato del cross-join en JSON; aplica enmascaramiento para LECTOR y registra `BROWSE_DATA` al iniciar cada recorrido.
+- `PATCH /engine/records` (issue #36): ADMIN y OPERADOR cambian una celda de una tabla PostgreSQL/MySQL/SQL Server o colección Firestore enviando la llave primaria, el campo, `valorAnterior` y `valorNuevo`. SQL bloquea la fila en una transacción; el soporte MySQL requiere InnoDB. Firestore compara y actualiza en una transacción. Un valor obsoleto responde 409; LECTOR y AUDITOR reciben 403. Cada cambio confirmado registra `MODIFY_RECORD`. ADMIN ve llave y valores; AUDITOR conserva actor y metadatos del evento, pero recibe redactadas la llave y los valores anterior/nuevo en el listado y en las exportaciones CSV/JSON. Si la fuente se actualiza y falla la escritura de auditoría, responde 503 con `mutationApplied: true`.
 - `POST /engine/join`: Cross-join en memoria con paginación (`limit`, `offset`) y enmascaramiento dinámico para rol `LECTOR`. Acepta dos formatos (issue #30):
   - **N fuentes** (`fuentes` + `relaciones`): de 2 a 5 tablas o colecciones de cualquier motor; cada relación es `INNER`, `LEFT`, `RIGHT` o `FULL` con 1 a 3 pares de llaves (llave compuesta). La primera relación une dos fuentes y cada una de las siguientes añade una fuente nueva a una ya unida (sin ciclos). Las columnas repetidas entre fuentes se califican con el alias (`clientes.email`).
   - **Original** (`conexionSqlId`, `tablaSql`, `conexionNoSqlId`, `coleccionNoSql`, `llaveSql`, `llaveNoSql`): sigue igual (columnas repetidas como `sql.campo` / `nosql.campo`) y admite `tipoJoin`.
@@ -193,12 +194,14 @@ access tokens ya emitidos. Reglas:
 ### 4.4 Auditoría (`/audit`)
 - `GET /audit/logs`: Consulta paginada (`page`, `limit`) con filtros por `fechaInicio`, `fechaFin` y `tipoAccion` (ADMIN o AUDITOR).
 - `GET /audit/logs/export?format=csv|json`: Descarga la bitácora con los mismos filtros (máximo 10 000 registros por archivo). La exportación queda registrada como `AUDIT_LOG_EXPORTED`.
+- Para `MODIFY_RECORD`, AUDITOR ve el actor y metadatos del evento, pero no la llave del registro ni los valores anterior/nuevo; la redacción se aplica al listado y a ambos formatos de exportación.
 
 **Eventos registrados:** `LOGIN_SUCCESS`, `LOGIN_FAILURE`, `USER_ROLE_CHANGED`, `USER_INVITED`, `CONNECTION_CREATED`,
 `CONNECTION_UPDATED`, `CONNECTION_DELETED`, `REPORT_GENERATED_AND_SENT`, `EXECUTE_JOIN`, `EXPORT`, `BROWSE_DATA`, `AUDIT_LOG_EXPORTED`
-y `MODIFY_RECORD` (reservado para la edición de celdas). Cada evento guarda usuario, fecha UTC, IP, user agent, resultado
+y `MODIFY_RECORD` (edición de celdas). Cada evento guarda usuario, fecha UTC, IP, user agent, resultado
 (`SUCCESS`/`FAILURE`) y la entidad afectada (`targetType`/`targetId`, p. ej. `dbo.clientes x pedidos` en un Cross-Join).
-Nunca se guardan valores de filtros, filas ni credenciales.
+No se guardan valores de filtros, filas completas ni credenciales; `MODIFY_RECORD` conserva solo la celda modificada,
+su llave y sus valores anterior/nuevo para ADMIN.
 
 **Inmutabilidad (RF-26):** la tabla `RegistroAuditoria` es de solo inserción en dos capas:
 1. `PrismaService` rechaza `update`, `upsert` y `delete` sobre el modelo antes de llegar a la base de datos.
@@ -265,6 +268,7 @@ en los controladores y `hasPermission()` en los servicios (defensa en profundida
 | `READ_AUDIT` · Consultar la bitácora de auditoría | ✅ | ❌ | ❌ | ✅ |
 | `MANAGE_MEMBERS` · Invitar miembros y cambiar roles | ✅ | ❌ | ❌ | ❌ |
 | `MANAGE_WORKSPACE` · Editar datos y configuración del workspace | ✅ | ❌ | ❌ | ❌ |
+| `MODIFY_RECORDS` · Editar celdas en las fuentes externas | ✅ | ✅ | ❌ | ❌ |
 | `VIEW_UNMASKED_DATA` · Ver datos sin enmascarar | ✅ | ✅ | ❌ | ❌ |
 
 - El `MaskingService` es *fail-closed*: cualquier rol sin `VIEW_UNMASKED_DATA` (LECTOR, AUDITOR o un rol desconocido)

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, PayloadTooLargeException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, PayloadTooLargeException } from '@nestjs/common';
 import { Pool, Query, type PoolClient, type QueryResultRow } from 'pg';
 import { DataSourceClientPool } from '../pool/data-source-client-pool.js';
 import {
@@ -12,7 +12,10 @@ import type {
   DataSourceConnection,
   ExtractOptions,
   IDataSourceAdapter,
+  UpdateRecordInput,
+  UpdateRecordResult,
 } from './data-source-adapter.interface.js';
+import { assertExactPrimaryKey, assertExpectedCellValue, decodeBase64CellValue, normalizeCellValue } from './cell-update.js';
 import { buildSqlFilterClauses, uniqueColumnName } from './sql-filters.js';
 import {
   NO_PRIMARY_KEY_MESSAGE,
@@ -210,6 +213,107 @@ export class PostgresAdapter implements IDataSourceAdapter {
       ` ORDER BY ${keys.map(quote).join(', ')} LIMIT ${options.pageSize + 1}`;
     const raw = await this.withPool(connection, async (pool) => (await pool.query(text, values)).rows as Record<string, unknown>[]);
     return toDataPage(raw, keys, options.pageSize, (row) => this.normalizeRow(row, ''));
+  }
+
+  async updateRecord(connection: DataSourceConnection, input: UpdateRecordInput): Promise<UpdateRecordResult> {
+    const schema = input.schema ?? (await this.resolveSchema(connection, input.entityName));
+    if (!schema) throw new NotFoundException('La tabla no existe en la conexión');
+    const table = `${quotePostgresIdentifier(schema, 'esquema')}.${quotePostgresIdentifier(input.entityName, 'tabla')}`;
+
+    return await this.withPool(connection, async (pool) => {
+      const client = await pool.connect();
+      let inTransaction = false;
+      try {
+        await client.query('BEGIN');
+        inTransaction = true;
+
+        const objectResult = await client.query<{ tableType: string }>(
+          `SELECT table_type AS "tableType" FROM information_schema.tables
+           WHERE table_schema = $1 AND table_name = $2`,
+          [schema, input.entityName],
+        );
+        if (objectResult.rows[0]?.tableType !== 'BASE TABLE') {
+          if (objectResult.rows.length === 0) throw new NotFoundException('La tabla no existe en la conexión');
+          throw new BadRequestException('Solo se pueden editar tablas base');
+        }
+
+        const columns = await client.query<{ name: string; dataType: string; generated: string; isIdentity: string }>(
+          `SELECT column_name AS name, data_type AS "dataType", is_generated AS generated, is_identity AS "isIdentity"
+           FROM information_schema.columns WHERE table_schema = $1 AND table_name = $2`,
+          [schema, input.entityName],
+        );
+        const column = columns.rows.find((candidate) => candidate.name === input.field);
+        if (!column) throw new BadRequestException('El campo no existe en la tabla');
+        if (column.generated !== 'NEVER' || column.isIdentity === 'YES') {
+          throw new BadRequestException('No se pueden editar campos generados');
+        }
+
+        const primaryKey = (
+          await client.query<{ name: string }>(
+            `SELECT kcu.column_name AS name
+             FROM information_schema.table_constraints tc
+             JOIN information_schema.key_column_usage kcu
+               ON kcu.constraint_name = tc.constraint_name AND kcu.table_schema = tc.table_schema AND kcu.table_name = tc.table_name
+             WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = $1 AND tc.table_name = $2
+             ORDER BY kcu.ordinal_position`,
+            [schema, input.entityName],
+          )
+        ).rows.map((row) => row.name);
+        if (primaryKey.length === 0) throw new BadRequestException(NO_PRIMARY_KEY_MESSAGE);
+        if (primaryKey.includes(input.field)) throw new BadRequestException('No se puede editar una columna de llave primaria');
+        const key = assertExactPrimaryKey(input.primaryKey, primaryKey);
+
+        const keyValues: unknown[] = [];
+        const keyWhere = primaryKey.map((name) => {
+          keyValues.push(key[name]);
+          return `${quotePostgresIdentifier(name, 'llave primaria')} = $${keyValues.length}`;
+        });
+        const selected = await client.query<Record<string, unknown>>(
+          `SELECT ${quotePostgresIdentifier(input.field, 'campo')} AS "__dn_value" FROM ${table}
+           WHERE ${keyWhere.join(' AND ')} FOR UPDATE`,
+          keyValues,
+        );
+        if (selected.rows.length === 0) throw new NotFoundException('El registro no existe en la tabla');
+        const valueBefore = assertExpectedCellValue(selected.rows[0].__dn_value, input.expectedValue);
+
+        const nextValue = column.dataType === 'bytea'
+          ? decodeBase64CellValue(input.nextValue)
+          : (column.dataType === 'json' || column.dataType === 'jsonb') && input.nextValue !== null
+            ? JSON.stringify(input.nextValue)
+            : input.nextValue;
+        const updateValues: unknown[] = [nextValue];
+        const updateWhere = primaryKey.map((name) => {
+          updateValues.push(key[name]);
+          return `${quotePostgresIdentifier(name, 'llave primaria')} = $${updateValues.length}`;
+        });
+        await client.query(
+          `UPDATE ${table} SET ${quotePostgresIdentifier(input.field, 'campo')} = $1 WHERE ${updateWhere.join(' AND ')}`,
+          updateValues,
+        );
+        const persisted = await client.query<{ __dn_value: unknown }>(
+          `SELECT ${quotePostgresIdentifier(input.field, 'campo')} AS "__dn_value" FROM ${table}
+           WHERE ${keyWhere.join(' AND ')} FOR UPDATE`,
+          keyValues,
+        );
+        if (persisted.rows.length === 0) throw new NotFoundException('El registro ya no existe en la tabla');
+        const valueAfter = normalizeCellValue(persisted.rows[0].__dn_value);
+
+        await client.query('COMMIT');
+        inTransaction = false;
+        return { valueBefore, valueAfter };
+      } catch (error) {
+        if (inTransaction) {
+          try {
+            await client.query('ROLLBACK');
+          } catch {
+            // Preserve the source or domain error that caused the rollback.
+          }
+        }
+        throw error;
+      } finally {
+        client.release();
+      }
+    });
   }
 
   /**

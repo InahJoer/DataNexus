@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, PayloadTooLargeException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, PayloadTooLargeException } from '@nestjs/common';
 import mysql from 'mysql2/promise';
 import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import type { Connection as CoreConnection } from 'mysql2';
@@ -14,7 +14,10 @@ import type {
   DataSourceConnection,
   ExtractOptions,
   IDataSourceAdapter,
+  UpdateRecordInput,
+  UpdateRecordResult,
 } from './data-source-adapter.interface.js';
+import { assertExactPrimaryKey, assertExpectedCellValue, decodeBase64CellValue, normalizeCellValue } from './cell-update.js';
 import { buildSqlFilterClauses, uniqueColumnName } from './sql-filters.js';
 import {
   NO_PRIMARY_KEY_MESSAGE,
@@ -208,6 +211,114 @@ export class MysqlAdapter implements IDataSourceAdapter {
       ` ORDER BY ${keys.map(quote).join(', ')} LIMIT ${options.pageSize + 1}`;
     const raw = await this.query<Record<string, unknown>>(connection, sql, params);
     return toDataPage(raw, keys, options.pageSize, (row) => this.normalizeRow(row, ''));
+  }
+
+  async updateRecord(connection: DataSourceConnection, input: UpdateRecordInput): Promise<UpdateRecordResult> {
+    quoteMysqlIdentifier(input.entityName, 'tabla');
+    if (input.schema !== undefined) quoteMysqlIdentifier(input.schema, 'esquema');
+    quoteMysqlIdentifier(input.field, 'campo');
+    const qualifiedTable = input.schema
+      ? `${quoteMysqlIdentifier(input.schema, 'esquema')}.${quoteMysqlIdentifier(input.entityName, 'tabla')}`
+      : quoteMysqlIdentifier(input.entityName, 'tabla');
+
+    return await this.withPool(connection, async (pool) => {
+      const pooled = await pool.getConnection();
+      let healthy = true;
+      let inTransaction = false;
+      try {
+        await pooled.beginTransaction();
+        inTransaction = true;
+
+        const [objects] = await pooled.query<RowDataPacket[]>(
+          `SELECT TABLE_TYPE AS tableType, ENGINE AS engine FROM information_schema.tables
+           WHERE TABLE_SCHEMA = COALESCE(?, DATABASE()) AND TABLE_NAME = ?`,
+          [input.schema ?? null, input.entityName],
+        );
+        const object = objects[0] as { tableType?: string; engine?: string } | undefined;
+        if (!object) throw new NotFoundException('La tabla no existe en la conexión');
+        if (object.tableType !== 'BASE TABLE') throw new BadRequestException('Solo se pueden editar tablas base');
+        if (object.engine?.toLowerCase() !== 'innodb') {
+          throw new BadRequestException('La tabla debe usar InnoDB para garantizar la concurrencia optimista');
+        }
+
+        const [columnRows] = await pooled.query<RowDataPacket[]>(
+          `SELECT COLUMN_NAME AS name, DATA_TYPE AS dataType, EXTRA AS extra, GENERATION_EXPRESSION AS generationExpression
+           FROM information_schema.columns
+           WHERE TABLE_SCHEMA = COALESCE(?, DATABASE()) AND TABLE_NAME = ?`,
+          [input.schema ?? null, input.entityName],
+        );
+        const column = (columnRows as unknown as Array<{ name: string; dataType: string; extra: string; generationExpression: string }>).find(
+          (candidate) => candidate.name === input.field,
+        );
+        if (!column) throw new BadRequestException('El campo no existe en la tabla');
+        if (/generated|auto_increment/i.test(column.extra ?? '') || Boolean(column.generationExpression)) {
+          throw new BadRequestException('No se pueden editar campos generados');
+        }
+
+        const [keyRows] = await pooled.query<RowDataPacket[]>(
+          `SELECT COLUMN_NAME AS name FROM information_schema.KEY_COLUMN_USAGE
+           WHERE TABLE_SCHEMA = COALESCE(?, DATABASE()) AND TABLE_NAME = ? AND CONSTRAINT_NAME = 'PRIMARY'
+           ORDER BY ORDINAL_POSITION`,
+          [input.schema ?? null, input.entityName],
+        );
+        const primaryKey = (keyRows as unknown as Array<{ name: string }>).map((row) => row.name);
+        if (primaryKey.length === 0) throw new BadRequestException(NO_PRIMARY_KEY_MESSAGE);
+        if (primaryKey.includes(input.field)) throw new BadRequestException('No se puede editar una columna de llave primaria');
+        const key = assertExactPrimaryKey(input.primaryKey, primaryKey);
+        const keyClauses = primaryKey.map((name) => `${quoteMysqlIdentifier(name, 'llave primaria')} = ?`);
+        const keyValues = primaryKey.map((name) => key[name]);
+
+        const [selectedRows] = await pooled.query<RowDataPacket[]>(
+          `SELECT ${quoteMysqlIdentifier(input.field, 'campo')} AS __dn_value FROM ${qualifiedTable}
+           WHERE ${keyClauses.join(' AND ')} FOR UPDATE`,
+          keyValues,
+        );
+        const selected = selectedRows[0] as { __dn_value?: unknown } | undefined;
+        if (!selected) throw new NotFoundException('El registro no existe en la tabla');
+        const valueBefore = assertExpectedCellValue(selected.__dn_value, input.expectedValue);
+        if (Object.is(normalizeCellValue(selected.__dn_value), input.nextValue)) {
+          await pooled.commit();
+          inTransaction = false;
+          return { valueBefore, valueAfter: valueBefore };
+        }
+
+        const binaryTypes = new Set(['binary', 'varbinary', 'tinyblob', 'blob', 'mediumblob', 'longblob', 'bit']);
+        const isJson = column.dataType === 'json';
+        const nextValue = binaryTypes.has(column.dataType)
+          ? decodeBase64CellValue(input.nextValue)
+          : isJson && input.nextValue !== null
+            ? JSON.stringify(input.nextValue)
+            : input.nextValue;
+        await pooled.query(
+          `UPDATE ${qualifiedTable} SET ${quoteMysqlIdentifier(input.field, 'campo')} = ? WHERE ${keyClauses.join(' AND ')}`,
+          [nextValue, ...keyValues],
+        );
+
+        const [persistedRows] = await pooled.query<RowDataPacket[]>(
+          `SELECT ${quoteMysqlIdentifier(input.field, 'campo')} AS __dn_value FROM ${qualifiedTable}
+           WHERE ${keyClauses.join(' AND ')}`,
+          keyValues,
+        );
+        if (!persistedRows[0]) throw new NotFoundException('El registro ya no existe en la tabla');
+        const valueAfter = normalizeCellValue((persistedRows[0] as { __dn_value?: unknown }).__dn_value);
+
+        await pooled.commit();
+        inTransaction = false;
+        return { valueBefore, valueAfter };
+      } catch (error) {
+        if (inTransaction) {
+          try {
+            await pooled.rollback();
+          } catch {
+            healthy = false;
+          }
+        }
+        throw error;
+      } finally {
+        if (healthy) pooled.release();
+        else pooled.destroy();
+      }
+    });
   }
 
   private async streamRows(

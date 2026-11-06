@@ -150,7 +150,7 @@ export class AuditService {
       page,
       limit,
       totalPages: Math.ceil(total / limit),
-      data,
+      data: actor.role === 'AUDITOR' ? data.map((row) => this.redactModifyRecordForAuditor(row)) : data,
     };
   }
 
@@ -174,6 +174,9 @@ export class AuditService {
     });
     const truncated = rows.length > MAX_AUDIT_EXPORT_ROWS;
     const exported = truncated ? rows.slice(0, MAX_AUDIT_EXPORT_ROWS) : rows;
+    const visibleRows = actor.role === 'AUDITOR'
+      ? exported.map((row) => this.redactModifyRecordForAuditor(row))
+      : exported;
 
     await this.record({
       eventType: 'AUDIT_LOG_EXPORTED',
@@ -195,7 +198,7 @@ export class AuditService {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     if (format === 'json') {
       return {
-        buffer: Buffer.from(JSON.stringify(exported, null, 2), 'utf8'),
+        buffer: Buffer.from(JSON.stringify(visibleRows, null, 2), 'utf8'),
         contentType: 'application/json; charset=utf-8',
         filename: `datanexus_auditoria_${timestamp}.json`,
         truncated,
@@ -203,7 +206,7 @@ export class AuditService {
     }
 
     return {
-      buffer: Buffer.from(this.toCsv(exported), 'utf8'),
+      buffer: Buffer.from(this.toCsv(visibleRows), 'utf8'),
       contentType: 'text/csv; charset=utf-8',
       filename: `datanexus_auditoria_${timestamp}.csv`,
       truncated,
@@ -214,6 +217,25 @@ export class AuditService {
     if (!hasPermission(actor.role, 'READ_AUDIT')) {
       throw new ForbiddenException('Se requiere rol ADMIN o AUDITOR para consultar los logs de auditoría');
     }
+  }
+
+  /** Los auditores ven metadatos del evento, pero no la identidad de la fila ni sus valores de negocio. */
+  private redactModifyRecordForAuditor(row: AuditLogRow): AuditLogRow {
+    if (row.eventType !== 'MODIFY_RECORD') return row;
+    let detailsJson: string | null = null;
+    if (row.detailsJson) {
+      try {
+        const parsed: unknown = JSON.parse(row.detailsJson);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Invalid audit detail');
+        const details = { ...(parsed as Record<string, unknown>) };
+        for (const key of ['llavePrimaria', 'valorAnterior', 'valorNuevo']) delete details[key];
+        detailsJson = JSON.stringify(details);
+      } catch {
+        // Fail closed if a legacy or malformed detail cannot be safely redacted.
+        detailsJson = null;
+      }
+    }
+    return { ...row, targetId: null, detailsJson };
   }
 
   private buildWhere(
@@ -301,6 +323,25 @@ export class AuditService {
       if (typeof details.enmascarado === 'boolean') safeDetails.enmascarado = details.enmascarado;
     }
 
+    if (eventType === 'MODIFY_RECORD') {
+      for (const key of ['conexionId', 'entidad', 'esquema', 'campo']) {
+        if (typeof details[key] === 'string') safeDetails[key] = (details[key] as string).slice(0, 300);
+      }
+      const primaryKey = details.llavePrimaria;
+      if (typeof primaryKey === 'string') {
+        safeDetails.llavePrimaria = primaryKey;
+      } else if (primaryKey && typeof primaryKey === 'object' && !Array.isArray(primaryKey)) {
+        const keyValues: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
+        for (const [key, value] of Object.entries(primaryKey as Record<string, unknown>).slice(0, 32)) {
+          if (key.length > 0 && key.length <= 128 && this.isAuditScalar(value)) keyValues[key] = value;
+        }
+        if (Object.keys(keyValues).length > 0) safeDetails.llavePrimaria = keyValues;
+      }
+      for (const key of ['valorAnterior', 'valorNuevo']) {
+        if (this.isAuditScalar(details[key])) safeDetails[key] = details[key];
+      }
+    }
+
     if (eventType === 'EXECUTE_JOIN' || eventType === 'EXPORT') {
       for (const key of DATA_ACCESS_STRING_FIELDS) {
         if (typeof details[key] === 'string') safeDetails[key] = (details[key] as string).slice(0, 300);
@@ -369,5 +410,10 @@ export class AuditService {
     }
 
     return { campos, cambios };
+  }
+
+  private isAuditScalar(value: unknown): value is string | number | boolean | null {
+    return value === null || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value)) ||
+      typeof value === 'string';
   }
 }

@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Body,
   Param,
   ParseUUIDPipe,
@@ -11,6 +12,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import {
@@ -24,6 +26,8 @@ import {
   ApiOperation,
   ApiQuery,
   ApiPayloadTooLargeResponse,
+  ApiConflictResponse,
+  ApiServiceUnavailableResponse,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -41,6 +45,7 @@ import { ConnectionHealthResponseDto } from './dto/connection-health.dto.js';
 import { ConnectionFieldsResponseDto, ConnectionSchemaResponseDto } from './dto/connection-schema.dto.js';
 import { PaginatedCrossJoinResultDto } from './dto/cross-join-result.dto.js';
 import { ExploreFieldsQueryDto } from './dto/explore-fields.dto.js';
+import { UpdateRecordDto } from './dto/update-record.dto.js';
 
 @ApiTags('Engine - Cross-Join & Analytics')
 @ApiBearerAuth()
@@ -157,6 +162,66 @@ export class DataEngineController {
       }
       throw error;
     }
+  }
+
+  @Patch('records')
+  @RequirePermission('MODIFY_RECORDS')
+  @ApiOperation({
+    summary: 'Actualizar una celda de una fila en su fuente de origen',
+    description:
+      'Disponible para ADMIN y OPERADOR en PostgreSQL, MySQL, SQL Server y Firestore. Requiere el valor observado para rechazar cambios concurrentes; los conflictos devuelven 409.',
+  })
+  @ApiOkResponse({
+    schema: {
+      type: 'object',
+      properties: {
+        actualizada: { type: 'boolean', example: true },
+        entidad: { type: 'string', example: 'clientes' },
+        campo: { type: 'string', example: 'nombre' },
+        valorAnterior: { nullable: true, oneOf: [{ type: 'string' }, { type: 'number' }, { type: 'boolean' }] },
+        valorNuevo: { nullable: true, oneOf: [{ type: 'string' }, { type: 'number' }, { type: 'boolean' }] },
+      },
+    },
+  })
+  @ApiBadRequestResponse({ description: 'Payload, entidad, campo o llave primaria no válidos.' })
+  @ApiUnauthorizedResponse({ description: 'Token JWT inválido o ausente.' })
+  @ApiForbiddenResponse({ description: 'Solo ADMIN y OPERADOR pueden editar registros.' })
+  @ApiNotFoundResponse({ description: 'Conexión fuera del workspace, tabla o registro inexistente.' })
+  @ApiConflictResponse({ description: 'El valor de la celda cambió desde la última lectura.' })
+  @ApiBadGatewayResponse({ description: 'Falló la actualización en la fuente externa.' })
+  @ApiGatewayTimeoutResponse({ description: 'La actualización superó el tiempo máximo de la fuente.' })
+  @ApiServiceUnavailableResponse({ description: 'La celda se actualizó, pero no se pudo guardar el evento de auditoría.' })
+  async updateRecord(@Req() request: AuthenticatedRequest, @Body() input: UpdateRecordDto) {
+    const result = await this.dataEngineService.updateRecord(request.user, input);
+    try {
+      await this.auditService.record({
+        eventType: 'MODIFY_RECORD',
+        outcome: 'SUCCESS',
+        actorUserId: request.user.id,
+        actorEmail: request.user.email,
+        workspaceId: request.user.workspaceId,
+        targetType: 'RECORD',
+        details: {
+          conexionId: input.conexionId,
+          entidad: input.entidad,
+          ...(input.esquema ? { esquema: input.esquema } : {}),
+          llavePrimaria: input.llavePrimaria,
+          campo: input.campo,
+          valorAnterior: result.valorAnterior,
+          valorNuevo: result.valorNuevo,
+        },
+        ipAddress: request.ip,
+        userAgent: request.get('user-agent') ?? undefined,
+      });
+    } catch {
+      throw new ServiceUnavailableException({
+        statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+        code: 'AUDIT_WRITE_FAILED_AFTER_MUTATION',
+        message: 'La celda se actualizó, pero no se pudo guardar el evento de auditoría. Vuelve a leer el registro antes de reintentar.',
+        mutationApplied: true,
+      });
+    }
+    return result;
   }
 
   @Post('join')
