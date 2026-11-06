@@ -1,10 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsIn, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsStrongPassword, PASSWORD_POLICY_DESCRIPTION } from '../../auth/validators/password-policy.js';
+import { IsCorporateEmail } from '../../auth/validators/corporate-email.js';
 import { USER_ROLES, type UserRole } from '../../auth/interfaces/user-role.js';
 
 export class InviteUserDto {
   @ApiProperty({ description: 'Correo electrónico del nuevo miembro', example: 'nuevo.miembro@empresa.com' })
   @IsEmail({}, { message: 'El correo debe ser una dirección de email válida' })
+  @IsCorporateEmail()
   @IsNotEmpty()
   email: string;
 
@@ -22,11 +25,10 @@ export class InviteUserDto {
   role: UserRole;
 
   @ApiPropertyOptional({
-    description: 'Contraseña temporal inicial (mínimo 6 caracteres)',
-    example: 'Temporal123!',
+    description: `Contraseña temporal inicial. ${PASSWORD_POLICY_DESCRIPTION}`,
+    example: 'Temporal#2026dn',
   })
   @IsOptional()
-  @IsString()
-  @MinLength(6, { message: 'La contraseña temporal debe tener al menos 6 caracteres' })
+  @IsStrongPassword()
   temporaryPassword?: string;
 }

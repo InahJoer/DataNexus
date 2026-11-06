@@ -46,6 +46,7 @@ enum AuditEventType {
   LOGOUT
   SESSION_EXPIRED
   REFRESH_TOKEN_REUSED
+  ACCOUNT_LOCKED
 }
 
 model Workspace {
@@ -62,6 +63,10 @@ model User {
   name                String
   password            String
   role                Role                 @default(LECTOR)
+  /// Intentos de login fallidos consecutivos. Se reinicia al entrar o al bloquear la cuenta.
+  failedLoginAttempts Int                  @default(0)
+  /// Bloqueo temporal tras LOGIN_MAX_ATTEMPTS intentos fallidos (RF-01/RF-02).
+  lockedUntil         DateTime?
   workspaceId         String
   workspace           Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   passwordResetTokens PasswordResetToken[]
