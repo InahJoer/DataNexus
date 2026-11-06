@@ -8,6 +8,7 @@ import { RegisterDto } from './dto/register.dto.js';
 import { SessionsService } from './sessions.service.js';
 import { isUserRole } from './interfaces/user-role.js';
 import type { AuthResponseDto } from './dto/auth-response.dto.js';
+import { AccountLockedException, getLockoutPolicy } from './login-lockout.js';
 
 @Injectable()
 export class AuthService {
@@ -36,22 +37,46 @@ export class AuthService {
         eventType: 'LOGIN_FAILURE',
         outcome: 'FAILURE',
         actorEmail: normalizedEmail,
+        details: { motivo: 'usuario_no_encontrado' },
         ...requestContext,
       });
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
-    const isPasswordValid = await bcrypt.compare(loginDto.password, user.password);
-    if (!isPasswordValid || !isUserRole(user.role)) {
+    const actor = { actorUserId: user.id, actorEmail: user.email, workspaceId: user.workspaceId };
+
+    // Cuenta bloqueada: ni siquiera se compara la contraseña.
+    if (user.lockedUntil && user.lockedUntil.getTime() > Date.now()) {
       await this.auditService.record({
         eventType: 'LOGIN_FAILURE',
         outcome: 'FAILURE',
-        actorUserId: user.id,
-        actorEmail: user.email,
-        workspaceId: user.workspaceId,
+        ...actor,
+        details: { motivo: 'cuenta_bloqueada', bloqueadoHasta: user.lockedUntil.toISOString() },
+        ...requestContext,
+      });
+      throw new AccountLockedException(user.lockedUntil);
+    }
+
+    const isPasswordValid = await bcrypt.compare(loginDto.password, user.password);
+    if (!isPasswordValid) {
+      await this.registerFailedAttempt(user.id, actor, requestContext);
+    }
+    if (!isUserRole(user.role)) {
+      await this.auditService.record({
+        eventType: 'LOGIN_FAILURE',
+        outcome: 'FAILURE',
+        ...actor,
+        details: { motivo: 'rol_invalido' },
         ...requestContext,
       });
       throw new UnauthorizedException('Credenciales inválidas');
+    }
+
+    if (user.failedLoginAttempts > 0 || user.lockedUntil) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { failedLoginAttempts: 0, lockedUntil: null },
+      });
     }
 
     const authenticatedUser = {
@@ -73,6 +98,54 @@ export class AuthService {
     });
 
     return { ...tokens, user: authenticatedUser };
+  }
+
+  /**
+   * Suma un intento fallido de forma atómica. Al llegar a LOGIN_MAX_ATTEMPTS (5) bloquea la
+   * cuenta LOGIN_LOCK_MINUTES (15) y responde 423; si no, responde 401. Siempre lanza.
+   */
+  private async registerFailedAttempt(
+    userId: string,
+    actor: { actorUserId: string; actorEmail: string; workspaceId: string },
+    requestContext: RequestAuditContext,
+  ): Promise<never> {
+    const policy = getLockoutPolicy((key) => process.env[key]);
+    const { failedLoginAttempts } = await this.prisma.user.update({
+      where: { id: userId },
+      data: { failedLoginAttempts: { increment: 1 } },
+      select: { failedLoginAttempts: true },
+    });
+
+    if (failedLoginAttempts >= policy.maxAttempts) {
+      const lockedUntil = new Date(Date.now() + policy.lockMs);
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { lockedUntil, failedLoginAttempts: 0 },
+      });
+      await this.auditService.record({
+        eventType: 'ACCOUNT_LOCKED',
+        outcome: 'FAILURE',
+        ...actor,
+        targetType: 'USER',
+        targetId: userId,
+        details: {
+          intentos: failedLoginAttempts,
+          bloqueoMinutos: policy.lockMs / 60_000,
+          bloqueadoHasta: lockedUntil.toISOString(),
+        },
+        ...requestContext,
+      });
+      throw new AccountLockedException(lockedUntil);
+    }
+
+    await this.auditService.record({
+      eventType: 'LOGIN_FAILURE',
+      outcome: 'FAILURE',
+      ...actor,
+      details: { motivo: 'credenciales_invalidas', intentos: failedLoginAttempts },
+      ...requestContext,
+    });
+    throw new UnauthorizedException('Credenciales inválidas');
   }
 
   /**

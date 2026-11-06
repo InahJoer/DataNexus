@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsString, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsString, Matches, MaxLength } from 'class-validator';
+import { IsStrongPassword, PASSWORD_POLICY_DESCRIPTION } from '../validators/password-policy.js';
 
 export class ForgotPasswordDto {
   @ApiProperty({ example: 'admin@datanexus.demo' })
@@ -15,11 +16,8 @@ export class ResetPasswordDto {
   @Matches(/^[A-Za-z0-9_-]{20,128}$/, { message: 'El token tiene un formato inválido' })
   token: string;
 
-  @ApiProperty({ example: 'NuevaClave2026!', minLength: 8, maxLength: 72 })
-  @IsString()
-  @MinLength(8, { message: 'La contraseña debe tener al menos 8 caracteres' })
-  // bcrypt ignora lo que pase de 72 bytes.
-  @MaxLength(72, { message: 'La contraseña no puede superar 72 caracteres' })
+  @ApiProperty({ example: 'NuevaClave#2026', description: PASSWORD_POLICY_DESCRIPTION })
+  @IsStrongPassword()
   newPassword: string;
 }
 

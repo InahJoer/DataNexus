@@ -78,6 +78,18 @@ graph TD
 - `POST /auth/login`: Autenticación con email/contraseña. Abre una sesión y devuelve `access_token` (JWT de 15 min),
   `refresh_token` y `expires_in`.
 - `POST /auth/refresh`: Rota el refresh token y emite un access token nuevo.
+
+**Política de credenciales (RF-01/RF-02):**
+- **Contraseñas** (registro, contraseña temporal de invitación y restablecimiento): entre 10 y 72 caracteres, con
+  mayúscula, minúscula, número y símbolo, sin espacios al inicio o al final, sin contraseñas comunes y sin la parte
+  local del correo. Implementada en `src/auth/validators/password-policy.ts` (`@IsStrongPassword()`).
+- **Correo corporativo** en registro e invitaciones: se rechazan Gmail, Hotmail, Outlook, Yahoo, iCloud y otros
+  proveedores personales. La lista se reemplaza con `BLOCKED_EMAIL_DOMAINS`; `ALLOW_PERSONAL_EMAILS=true` desactiva la
+  regla para demos.
+- **Bloqueo por intentos fallidos:** al 5.º intento fallido seguido (`LOGIN_MAX_ATTEMPTS`) la cuenta se bloquea
+  15 minutos (`LOGIN_LOCK_MINUTES`) y el login responde `423 Locked` con los minutos restantes, incluso con la contraseña
+  correcta. Un login correcto o restablecer la contraseña reinician el contador. Se auditan `LOGIN_FAILURE` (con el
+  motivo y el número de intento) y `ACCOUNT_LOCKED`.
 - `POST /auth/logout`: Cierra la sesión del refresh token (idempotente, 204).
 
 **Sesiones (RF-04):** cada login crea una `UserSession` y el access token lleva su id (`sid`). `JwtStrategy` verifica

@@ -21,6 +21,7 @@ describe('AuthService', () => {
       user: {
         findUnique: vi.fn(),
         create: vi.fn(),
+        update: vi.fn().mockResolvedValue({ failedLoginAttempts: 1 }),
       },
     };
 
