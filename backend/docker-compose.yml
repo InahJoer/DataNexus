@@ -20,5 +20,19 @@ services:
       timeout: 5s
       retries: 10
 
+  # Cola de joins asíncronos (BullMQ, RNF-04). Opcional: sin REDIS_URL el backend usa una cola en memoria.
+  #   docker compose up -d redis
+  redis:
+    image: redis:7-alpine
+    container_name: datanexus-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   datanexus-pgdata:

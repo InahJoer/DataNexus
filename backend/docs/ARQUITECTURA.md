@@ -153,6 +153,12 @@ access tokens ya emitidos. Reglas:
     - **Misma semántica en todos los motores:** `neq` y `not-in` no incluyen nulos (como en SQL). Un test de integración compara PostgreSQL, MongoDB y la evaluación en memoria con los mismos datos y filtros, incluidos intentos de inyección.
   - **`limiteFilas` (RF-16):** `50`, `100`, `500` o `1000`. Recorta el resultado después del join y la respuesta incluye `truncado: true` si había más filas.
 - `POST /engine/export`: Generación y descarga directa de archivos (`format: excel | pdf | json`) con rate limiting estricto (20 req/min).
+- **Joins asíncronos (issue #33, RNF-04):** para cruces pesados que no conviene esperar en una sola petición. Mismo payload y permiso (`RUN_JOINS`) que `POST /engine/join`.
+  - `POST /engine/jobs` valida el payload, lo encola y responde `202` con el `id` (estado `EN_COLA`). `GET /engine/jobs/:id?offset=&limit=` devuelve estado (`EN_COLA`, `EN_PROCESO`, `COMPLETADO`, `FALLIDO`, `CANCELADO`), progreso (0-100) y, al completar, el resultado paginado. `DELETE /engine/jobs/:id` cancela un job en cola (no llega a ejecutarse) o en proceso (se detiene en la siguiente pausa). `GET /engine/jobs` lista los jobs propios (ADMIN ve todos los del workspace).
+  - **No bloquea el event loop:** el join, el armado de columnas y el de filas ceden el event loop cada 2.000 filas (`executeJoinPlanAsync`). Con 200.000 x 200.000 filas la pausa máxima del servidor es de ~30 ms, frente a ~900 ms del mismo join síncrono (test).
+  - **Cola:** con `REDIS_URL`, **BullMQ + Redis** (los jobs se reparten entre réplicas y el resultado se guarda como lista de Redis, paginada con `LRANGE`). Sin `REDIS_URL`, una cola en memoria con la misma API (solo una instancia; para desarrollo). `docker compose up -d redis` levanta Redis en local.
+  - **Límites y expiración:** `JOBS_CONCURRENCY` (2 por instancia), `JOBS_MAX_ACTIVE_PER_WORKSPACE` (3 en cola o en proceso; el siguiente responde 429) y `JOBS_RESULT_TTL_SECONDS` (3600): pasado ese tiempo el estado y el resultado se borran solos. El payload (con sus filtros) se borra al terminar.
+  - El resultado se guarda ya enmascarado según el rol de quien pidió el job; solo lo ven su autor y los ADMIN del workspace. Al terminar se registra `EXECUTE_JOIN` en la bitácora con la IP original.
 
 **Adaptadores de fuentes de datos (RNF-10, issues #27, #28 y #29).** `DataEngineService` solo conoce la interfaz
 `IDataSourceAdapter` (`listObjects`, `listFields`, `extract` y `capabilities`) y obtiene el adaptador del motor con

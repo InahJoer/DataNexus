@@ -9,11 +9,13 @@ import { ADAPTER_PROVIDERS } from './adapters/adapter-providers.js';
 import { DataSourcePoolModule } from './pool/data-source-pool.module.js';
 import { MaskingService } from './masking/masking.service.js';
 import { ExportService } from './export/export.service.js';
+import { JoinJobsController } from './jobs/join-jobs.controller.js';
+import { JoinJobsService } from './jobs/join-jobs.service.js';
 
 @Module({
   imports: [AuthModule, CommonModule, ConnectionsModule, AuditModule, DataSourcePoolModule],
-  controllers: [DataEngineController],
-  providers: [DataEngineService, MaskingService, ExportService, ...ADAPTER_PROVIDERS],
+  controllers: [DataEngineController, JoinJobsController],
+  providers: [DataEngineService, MaskingService, ExportService, JoinJobsService, ...ADAPTER_PROVIDERS],
   exports: [DataEngineService, MaskingService, ExportService],
 })
 export class DataEngineModule {}
