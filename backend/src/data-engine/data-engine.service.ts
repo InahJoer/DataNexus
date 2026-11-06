@@ -38,6 +38,7 @@ import {
 } from './data-engine.constants.js';
 import { createRowFlattener, describeJoinPlan, executeJoinPlan } from './join/join-plan.js';
 import { resolveJoinPlan } from './join/resolve-join-plan.js';
+import { assertValidFilters, matchesFilters, splitFiltersForPushdown } from './filters/filter-tree.js';
 
 const EXPLORATION_TIMEOUT_MS = 10_000;
 
@@ -46,6 +47,9 @@ export interface PaginatedCrossJoinResult {
   limit: number;
   offset: number;
   data: Record<string, any>[];
+  /** Límite de filas pedido (RF-16) y si el resultado tenía más filas. */
+  limiteFilas?: number;
+  truncado?: boolean;
 }
 
 export interface ExportResult {
@@ -211,7 +215,7 @@ export class DataEngineService {
     payload: CrossJoinDto,
     user: AuthenticatedUser,
   ): Promise<PaginatedCrossJoinResult> {
-    const combinedData = await this.performJoin(payload, user);
+    const { rows: combinedData, truncated } = await this.performJoin(payload, user);
 
     // Enmascaramiento si es LECTOR
     const securedData = this.maskingService.maskDataset(
@@ -229,6 +233,7 @@ export class DataEngineService {
       limit,
       offset,
       data: paginatedData,
+      ...(payload.limiteFilas ? { limiteFilas: payload.limiteFilas, truncado: truncated } : {}),
     };
   }
 
@@ -239,7 +244,7 @@ export class DataEngineService {
     payload: ExportCrossJoinDto,
     user: AuthenticatedUser,
   ): Promise<ExportResult> {
-    const combinedData = await this.performJoin(payload, user);
+    const { rows: combinedData } = await this.performJoin(payload, user);
     const securedData = this.maskingService.maskDataset(
       combinedData,
       user.role,
@@ -292,7 +297,7 @@ export class DataEngineService {
       throw new BadRequestException('Los reportes solo admiten formato Excel o PDF');
     }
 
-    const combinedData = await this.performJoin(payload, user);
+    const { rows: combinedData } = await this.performJoin(payload, user);
     const securedData = this.maskingService.maskDataset(combinedData, user.role);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 
@@ -323,7 +328,7 @@ export class DataEngineService {
   private async performJoin(
     payload: CrossJoinDto,
     user: AuthenticatedUser,
-  ): Promise<Record<string, any>[]> {
+  ): Promise<{ rows: Record<string, any>[]; truncated: boolean }> {
     this.validateAggregation(payload);
 
     const plan = resolveJoinPlan(payload);
@@ -431,9 +436,12 @@ export class DataEngineService {
       joinedRows.push(joinedRow);
     }
 
-    return aggregate
-      ? Array.from(aggregateGroups.values(), (bucket) => bucket.output)
-      : joinedRows;
+    const rows = aggregate ? Array.from(aggregateGroups.values(), (bucket) => bucket.output) : joinedRows;
+    // RF-16: el usuario puede limitar el resultado a 50, 100, 500 o 1000 filas.
+    const rowLimit = payload.limiteFilas;
+    return rowLimit && rows.length > rowLimit
+      ? { rows: rows.slice(0, rowLimit), truncated: true }
+      : { rows, truncated: false };
   }
 
   private validateAggregation(payload: CrossJoinDto): void {
@@ -613,8 +621,25 @@ export class DataEngineService {
     }
     this.logger.log(`Extrayendo '${entityName}' de la conexión ${connection.id} (${adapter.tipoMotor})`);
 
+    // Filter pushdown: el motor ejecuta lo que puede; el resto se evalúa en memoria con la misma semántica.
+    assertValidFilters(options?.filters);
+    const { pushed, residual } = splitFiltersForPushdown(
+      options?.filters,
+      (filter) => adapter.canPushDown?.(filter) ?? true,
+      adapter.pushesFilterGroups ?? true,
+    );
+    const adapterOptions: ExtractOptions = {
+      ...(options?.schema ? { schema: options.schema } : {}),
+      ...(pushed.length ? { filters: pushed } : {}),
+    };
+
     try {
-      return await adapter.extract(connection, entityName, options);
+      const records = await adapter.extract(
+        connection,
+        entityName,
+        Object.keys(adapterOptions).length ? adapterOptions : undefined,
+      );
+      return residual.length ? records.filter((record) => matchesFilters(record, residual)) : records;
     } catch (error) {
       if (error instanceof HttpException) throw error;
       if (error instanceof UnsupportedOperationError) {

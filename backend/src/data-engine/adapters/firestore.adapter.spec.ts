@@ -117,7 +117,36 @@ describe('FirestoreAdapter', () => {
     ]);
   });
 
+  it('traduce between a dos where e isNull a == / != null (issue #31)', async () => {
+    await adapter.extract(connection, 'orders', {
+      filters: [
+        { campo: 'createdAt', operador: 'between', valor: ['2026-01-01', '2026-01-31'] },
+        { campo: 'deletedAt', operador: 'isNull', valor: true },
+        { campo: 'paidAt', operador: 'isNull', valor: false },
+      ],
+    });
+    expect(mocks.filterCalls).toEqual([
+      ['createdAt', '>=', '2026-01-01'],
+      ['createdAt', '<=', '2026-01-31'],
+      ['deletedAt', '==', null],
+      ['paidAt', '!=', null],
+    ]);
+  });
+
+  it('descarta los documentos con null en != y not-in, igual que SQL', async () => {
+    mocks.documents = [
+      { id: 'a', data: { region: 'norte' } },
+      { id: 'b', data: { region: null } },
+    ];
+    const rows = await adapter.extract(connection, 'orders', {
+      filters: [{ campo: 'region', operador: 'not-in', valor: ['sur'] }],
+    });
+    expect(rows.map((row) => row.__documentId)).toEqual(['a']);
+  });
+
   it.each([
+    ['un grupo OR (lo evalúa el motor en memoria)', { logica: 'OR', filtros: [{ campo: 'a', operador: 'eq', valor: 1 }] }],
+    ['contains (lo evalúa el motor en memoria)', { campo: 'status', operador: 'contains', valor: 'pa' }],
     ['un operador desconocido', { campo: 'status', operador: 'like', valor: 'x' }],
     ['un objeto como valor', { campo: 'status', operador: 'eq', valor: { $ne: null } }],
     ['null con un operador de orden', { campo: 'total', operador: 'gt', valor: null }],

@@ -7,16 +7,23 @@ import {
   getMaxSourceBytes,
   getMaxSourceRows,
 } from '../data-engine.constants.js';
-import { FILTER_OPERATORS, type DataFilter, type FilterOperator } from '../dto/cross-join.dto.js';
+import {
+  assertValidFilters,
+  isFilterGroup,
+  matchesFilters,
+  type DataFilter,
+  type FilterNode,
+  type FilterOperator,
+} from '../filters/filter-tree.js';
 import type {
   CatalogObject,
   DataSourceConnection,
   ExtractOptions,
   IDataSourceAdapter,
 } from './data-source-adapter.interface.js';
-import { isScalarFilterValue } from './sql-filters.js';
 
-const WHERE_FILTER_OPERATORS: Record<FilterOperator, WhereFilterOp> = {
+/** Operadores que Firestore ejecuta en el servidor; contains, startsWith y los grupos OR se evalúan en memoria. */
+const WHERE_FILTER_OPERATORS: Partial<Record<FilterOperator, WhereFilterOp>> = {
   eq: '==',
   neq: '!=',
   gt: '>',
@@ -38,8 +45,13 @@ interface FirestoreServiceAccount {
 export class FirestoreAdapter implements IDataSourceAdapter {
   readonly tipoMotor = 'FIRESTORE' as const;
   readonly capabilities = { explore: true, fields: true, extract: true };
+  readonly pushesFilterGroups = false;
 
   constructor(private readonly clients: DataSourceClientPool) {}
+
+  canPushDown(filter: DataFilter): boolean {
+    return filter.operador in WHERE_FILTER_OPERATORS || filter.operador === 'between' || filter.operador === 'isNull';
+  }
 
   listObjects(connection: DataSourceConnection): Promise<CatalogObject[]> {
     return this.withClient(connection, async (firestore) => {
@@ -64,15 +76,13 @@ export class FirestoreAdapter implements IDataSourceAdapter {
     options: ExtractOptions = {},
   ): Promise<Record<string, any>[]> {
     this.validateCollectionName(collectionName);
-    for (const filter of options.filters ?? []) this.validateFilter(filter);
+    const filters = this.validateFilters(options.filters);
     const maxRows = getMaxSourceRows();
     const maxBytes = getMaxSourceBytes();
 
     return await this.withClient(connection, async (firestore) => {
       let query: Query = firestore.collection(collectionName);
-      for (const filter of options.filters ?? []) {
-        query = query.where(filter.campo, WHERE_FILTER_OPERATORS[filter.operador], filter.valor);
-      }
+      for (const filter of filters) query = this.applyFilter(query, filter);
       const stream = query.limit(maxRows + 1).stream() as NodeJS.ReadableStream & { destroy(error?: Error): unknown };
       const timeout = setTimeout(
         () => stream.destroy(Object.assign(new Error('Firestore query timeout'), { code: 'DEADLINE_EXCEEDED' })),
@@ -90,6 +100,8 @@ export class FirestoreAdapter implements IDataSourceAdapter {
           const data = this.normalizeValue(document.data()) as Record<string, any>;
           const documentIdKey = this.uniqueMetadataKey(data, '__documentId');
           const row = { ...data, [documentIdKey]: document.id };
+          // Misma semántica que SQL: Firestore incluye los null en != y not-in; aquí se descartan.
+          if (!matchesFilters(row, filters)) continue;
           const rowBytes = getJsonByteLength(row);
           if (totalBytes + rowBytes > maxBytes) {
             throw new PayloadTooLargeException(`La colección supera el máximo de ${maxBytes} bytes configurado`);
@@ -155,34 +167,24 @@ export class FirestoreAdapter implements IDataSourceAdapter {
     }
   }
 
-  private validateFilter(filter: DataFilter): void {
-    if (
-      !filter ||
-      typeof filter.campo !== 'string' ||
-      !filter.campo.trim() ||
-      filter.campo.length > 150 ||
-      !FILTER_OPERATORS.includes(filter.operador)
-    ) {
-      throw new BadRequestException('El filtro de Firestore no es válido');
-    }
-    if (filter.operador === 'in' || filter.operador === 'not-in') {
-      if (
-        !Array.isArray(filter.valor) ||
-        filter.valor.length === 0 ||
-        filter.valor.length > 10 ||
-        filter.valor.some((value) => value === null || !isScalarFilterValue(value))
-      ) {
-        throw new BadRequestException('El valor del filtro de Firestore no es válido');
+  /** Solo condiciones de primer nivel que Firestore ejecuta (DataEngineService evalúa el resto en memoria). */
+  private validateFilters(filters: readonly FilterNode[] | undefined): DataFilter[] {
+    assertValidFilters(filters);
+    return (filters ?? []).map((filter) => {
+      if (isFilterGroup(filter) || !this.canPushDown(filter) || filter.campo.length > 1500) {
+        throw new BadRequestException('El filtro de Firestore no es válido');
       }
-      return;
+      return filter;
+    });
+  }
+
+  private applyFilter(query: Query, filter: DataFilter): Query {
+    if (filter.operador === 'isNull') return query.where(filter.campo, filter.valor ? '==' : '!=', null);
+    if (filter.operador === 'between') {
+      const [min, max] = filter.valor as [string | number, string | number];
+      return query.where(filter.campo, '>=', min).where(filter.campo, '<=', max);
     }
-    if (
-      filter.valor === undefined ||
-      (filter.valor === null && filter.operador !== 'eq' && filter.operador !== 'neq') ||
-      (filter.valor !== null && !isScalarFilterValue(filter.valor))
-    ) {
-      throw new BadRequestException('El valor del filtro de Firestore no es válido');
-    }
+    return query.where(filter.campo, WHERE_FILTER_OPERATORS[filter.operador]!, filter.valor);
   }
 
   private uniqueMetadataKey(data: Record<string, any>, preferredKey: string): string {

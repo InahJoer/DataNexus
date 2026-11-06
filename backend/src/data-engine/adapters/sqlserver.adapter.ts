@@ -204,6 +204,7 @@ export class SqlServerAdapter implements IDataSourceAdapter {
     let index = 0;
     const clauses = buildSqlFilterClauses(columns, filters, {
       column: (name) => `${SOURCE_ALIAS}.${this.quoteIdentifier(name, 'filtro')}`,
+      text: (column) => `CAST(${column} AS NVARCHAR(4000))`,
       parameter: (value) => {
         const name = `filter_${index++}`;
         parameters[name] = value;

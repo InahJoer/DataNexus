@@ -62,6 +62,7 @@ export function buildMysqlSelect(
   const params: Array<string | number | boolean> = [];
   const where = buildSqlFilterClauses(columns, filters ?? [], {
     column: (name) => `${SOURCE_ALIAS}.${quoteMysqlIdentifier(name, 'filtro')}`,
+    text: (column) => `CAST(${column} AS CHAR)`,
     parameter: (value) => {
       params.push(value);
       return '?';

@@ -5,6 +5,7 @@ import type {
   AuthenticatedUser,
 } from '../auth/interfaces/authenticated-user.interface.js';
 import { hasPermission } from '../auth/interfaces/user-role.js';
+import { countConditions } from './filters/filter-tree.js';
 import type { CrossJoinDto, ExportCrossJoinDto } from './dto/cross-join.dto.js';
 
 /**
@@ -33,7 +34,7 @@ export function buildDataAccessAuditEvent(
         conexiones: [...new Set(fuentes.map((source) => source.conexionId))].join(','),
         fuentes: fuentes.length,
         tiposJoin: relaciones.map((relation) => relation.tipo ?? 'INNER').join(','),
-        filtros: fuentes.reduce((total, source) => total + (source.filtros?.length ?? 0), 0),
+        filtros: fuentes.reduce((total, source) => total + countConditions(source.filtros), 0),
       }
     : {
         conexionSqlId: payload.conexionSqlId,
@@ -42,8 +43,8 @@ export function buildDataAccessAuditEvent(
         tablaSql: payload.tablaSql,
         coleccionNoSql: payload.coleccionNoSql,
         tiposJoin: payload.tipoJoin ?? 'INNER',
-        filtrosSql: payload.filtrosSql?.length ?? 0,
-        filtrosNoSql: payload.filtrosNoSql?.length ?? 0,
+        filtrosSql: countConditions(payload.filtrosSql),
+        filtrosNoSql: countConditions(payload.filtrosNoSql),
       };
 
   return {

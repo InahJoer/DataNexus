@@ -1,20 +1,15 @@
 import { BadRequestException } from '@nestjs/common';
-import { FILTER_OPERATORS, type DataFilter } from '../dto/cross-join.dto.js';
-import { isScalarFilterValue } from './sql-filters.js';
+import {
+  assertValidFilters,
+  escapeRegExp,
+  isFilterGroup,
+  MAX_FILTER_FIELD_LENGTH,
+  type DataFilter,
+  type FilterNode,
+  type FilterScalar,
+} from '../filters/filter-tree.js';
 
-const MAX_FIELD_LENGTH = 150;
-const MAX_LIST_VALUES = 10;
-
-const MONGO_OPERATORS = {
-  eq: '$eq',
-  neq: '$ne',
-  gt: '$gt',
-  gte: '$gte',
-  lt: '$lt',
-  lte: '$lte',
-  in: '$in',
-  'not-in': '$nin',
-} as const;
+const COMPARISON = { gt: '$gt', gte: '$gte', lt: '$lt', lte: '$lte' } as const;
 
 /**
  * Valida el nombre de un campo de MongoDB. Se admiten rutas con punto (`cliente.id`), pero ningún segmento
@@ -24,7 +19,7 @@ export function assertMongoFieldName(field: unknown): asserts field is string {
   if (
     typeof field !== 'string' ||
     !field.trim() ||
-    field.length > MAX_FIELD_LENGTH ||
+    field.length > MAX_FILTER_FIELD_LENGTH ||
     field.includes('\0') ||
     field.split('.').some((segment) => !segment || segment.startsWith('$'))
   ) {
@@ -46,48 +41,57 @@ export function assertMongoCollectionName(collection: unknown): asserts collecti
   }
 }
 
-/**
- * Traduce los filtros del cross-join a un filtro de MongoDB (filter pushdown). Los valores solo pueden ser
- * escalares, nunca objetos, por lo que no es posible inyectar operadores como `{ $gt: '' }` o `$where`.
- * Varias condiciones sobre el mismo campo se combinan con `$and`.
- */
-export function buildMongoFilter(filters: readonly DataFilter[] = []): Record<string, unknown> {
-  const supported = new Set<string>(FILTER_OPERATORS);
-  const conditions: Record<string, unknown>[] = [];
+function leaf(filter: DataFilter): Record<string, unknown> {
+  assertMongoFieldName(filter.campo);
+  const field = filter.campo;
+  const value = filter.valor;
 
-  for (const filter of filters) {
-    if (!filter || !supported.has(filter.operador)) {
-      throw new BadRequestException('El operador de filtro no está soportado');
+  switch (filter.operador) {
+    case 'isNull':
+      // { $eq: null } también encuentra documentos sin el campo, igual que IS NULL en SQL.
+      return { [field]: value === true ? { $eq: null } : { $ne: null } };
+    case 'eq':
+      return { [field]: { $eq: value } };
+    case 'neq':
+      // Como en SQL, `campo <> x` no incluye documentos donde el campo es null o no existe.
+      return { [field]: value === null ? { $ne: null } : { $nin: [value, null] } };
+    case 'in':
+      return { [field]: { $in: [...(value as FilterScalar[])] } };
+    case 'not-in':
+      return { [field]: { $nin: [...(value as FilterScalar[]), null] } };
+    case 'between': {
+      const [min, max] = value as [string | number, string | number];
+      return { [field]: { $gte: min, $lte: max } };
     }
-    assertMongoFieldName(filter.campo);
-    const operator = MONGO_OPERATORS[filter.operador];
-
-    if (filter.operador === 'in' || filter.operador === 'not-in') {
-      if (
-        !Array.isArray(filter.valor) ||
-        filter.valor.length === 0 ||
-        filter.valor.length > MAX_LIST_VALUES ||
-        filter.valor.some((value) => value === null || !isScalarFilterValue(value))
-      ) {
-        throw new BadRequestException('El valor del filtro de lista no es válido');
-      }
-      conditions.push({ [filter.campo]: { [operator]: [...filter.valor] } });
-      continue;
+    case 'contains':
+    case 'startsWith': {
+      const pattern = escapeRegExp(String(value));
+      return { [field]: { $regex: filter.operador === 'contains' ? pattern : `^${pattern}`, $options: 'i' } };
     }
-
-    const value = filter.valor;
-    if (value === null) {
-      if (filter.operador !== 'eq' && filter.operador !== 'neq') {
-        throw new BadRequestException('El valor del filtro no es válido');
-      }
-      // En MongoDB `{ campo: null }` también encuentra documentos sin el campo, igual que IS NULL en SQL.
-      conditions.push({ [filter.campo]: { [operator]: null } });
-      continue;
+    default: {
+      const operator = COMPARISON[filter.operador as keyof typeof COMPARISON];
+      if (!operator) throw new BadRequestException('El operador de filtro no está soportado');
+      return { [field]: { [operator]: value } };
     }
-    if (!isScalarFilterValue(value)) throw new BadRequestException('El valor del filtro no es válido');
-    conditions.push({ [filter.campo]: { [operator]: value } });
   }
+}
 
+function node(filter: FilterNode): Record<string, unknown> {
+  if (!isFilterGroup(filter)) return leaf(filter);
+  const parts = filter.filtros.map(node);
+  if (parts.length === 1) return parts[0];
+  return { [filter.logica === 'OR' ? '$or' : '$and']: parts };
+}
+
+/**
+ * Traduce los filtros del cross-join a un filtro de MongoDB (filter pushdown), con grupos AND/OR ($and/$or).
+ * Los valores solo pueden ser escalares, nunca objetos, así que no se pueden inyectar operadores como
+ * `{ $gt: '' }` o `$where`; contains/startsWith escapan el texto para usarlo literalmente en $regex.
+ * Varios filtros de primer nivel se combinan con `$and`.
+ */
+export function buildMongoFilter(filters: readonly FilterNode[] = []): Record<string, unknown> {
+  assertValidFilters(filters);
+  const conditions = filters.map(node);
   if (conditions.length === 0) return {};
   if (conditions.length === 1) return conditions[0];
   return { $and: conditions };

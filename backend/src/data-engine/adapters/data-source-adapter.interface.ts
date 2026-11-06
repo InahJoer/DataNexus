@@ -1,5 +1,5 @@
 import type { TipoMotor } from '../../common/tipo-motor.js';
-import type { DataFilter } from '../dto/cross-join.dto.js';
+import type { DataFilter, FilterNode } from '../filters/filter-tree.js';
 
 export type CatalogObjectType = 'TABLE' | 'VIEW' | 'COLLECTION';
 
@@ -22,7 +22,8 @@ export interface DataSourceConnection {
 
 export interface ExtractOptions {
   schema?: string;
-  filters?: DataFilter[];
+  /** Filtros que el adaptador debe aplicar en el motor (ya validados; solo los que declara en canPushDown). */
+  filters?: FilterNode[];
 }
 
 /** Qué operaciones implementa un adaptador. */
@@ -48,6 +49,13 @@ export interface IDataSourceAdapter {
   listObjects(connection: DataSourceConnection): Promise<CatalogObject[]>;
   listFields(connection: DataSourceConnection, objectName: string, schema?: string): Promise<string[]>;
   extract(connection: DataSourceConnection, entityName: string, options?: ExtractOptions): Promise<Record<string, any>[]>;
+  /**
+   * Si el motor puede ejecutar esta condición (filter pushdown). Sin implementar = todas. Lo que no se puede
+   * ejecutar en el motor lo evalúa DataEngineService en memoria tras la extracción.
+   */
+  canPushDown?(filter: DataFilter): boolean;
+  /** Si el motor puede ejecutar grupos AND/OR anidados. Sin declarar = sí. */
+  readonly pushesFilterGroups?: boolean;
 }
 
 /** Token de inyección con la lista de adaptadores registrados. */
