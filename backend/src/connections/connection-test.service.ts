@@ -60,12 +60,25 @@ export class ConnectionTestService {
     options: ConnectionTestOptionsDto = {},
   ): Promise<ConnectionTestResultDto> {
     const connection = await this.connectionsService.getConnectionForExploration(id, actor.workspaceId);
-    return this.run(
+    const result = await this.run(
       connection.tipoMotor,
       connection.connectionString,
       connection.dbName,
       options.timeoutMs,
     );
+    // Último health check para el dashboard (issue #40); no debe cambiar el resultado de la prueba.
+    await Promise.resolve()
+      .then(() =>
+        this.connectionsService.recordHealthChecks(actor.workspaceId, [
+          {
+            id,
+            status: result.ok ? 'HEALTHY' : result.error?.code === 'UNSUPPORTED_ENGINE' ? 'UNSUPPORTED' : 'UNAVAILABLE',
+            latencyMs: result.latencyMs,
+          },
+        ]),
+      )
+      .catch(() => undefined);
+    return result;
   }
 
   private async run(

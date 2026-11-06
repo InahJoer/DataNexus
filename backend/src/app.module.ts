@@ -16,6 +16,8 @@ import { MailerModule } from './mailer/mailer.module.js';
 import { ReportsModule } from './reports/reports.module.js';
 import { WorkspacesModule } from './workspaces/workspaces.module.js';
 import { QueriesModule } from './queries/queries.module.js';
+import { UsageModule } from './usage/usage.module.js';
+import { DashboardModule } from './dashboard/dashboard.module.js';
 
 @Module({
   imports: [
@@ -47,6 +49,8 @@ import { QueriesModule } from './queries/queries.module.js';
     ReportsModule,
     WorkspacesModule,
     QueriesModule,
+    UsageModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [

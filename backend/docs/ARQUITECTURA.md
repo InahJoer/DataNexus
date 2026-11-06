@@ -261,6 +261,21 @@ contraseñas temporales.
 
 ---
 
+### 4.8 Dashboard (`/dashboard`) — issue #40
+- `GET /dashboard/summary`: resumen de la Vista general de Operaciones para cualquier rol autenticado. Incluye conexiones
+  activas, caídas y sin comprobar, motores conectados, conexiones que requieren atención y latencia del último health
+  check con umbral (`CONNECTION_LATENCY_THRESHOLD_MS`, 100 ms); Cross-Joins y exportaciones del mes local frente al
+  anterior; datos procesados frente al límite del plan (`WORKSPACE_DATA_LIMIT_GB`, 1 TB); consumo de API de los últimos
+  7 días frente a la semana anterior; consultas guardadas recientes; reportes programados próximos; actividad reciente de
+  la bitácora y estado del entorno (base de datos, Redis, correo y almacenamiento).
+- Las secciones que el rol no puede ver llegan como `null` (conexiones: ADMIN/OPERADOR; consultas: el LECTOR solo las
+  publicadas; reportes: ADMIN/OPERADOR). La actividad es de todo el workspace para ADMIN y AUDITOR y propia para el resto.
+- No abre conexiones externas: lee el último health check guardado en `ConexionDB` (lo actualizan
+  `GET /engine/connections/health` y `POST /connections/:id/test`). Se cachea 60 s por workspace y rol.
+- **Medición de uso:** un interceptor global cuenta las solicitudes autenticadas y el motor suma los bytes extraídos en
+  joins, exportaciones y reportes. `UsageMeterService` acumula en memoria y vuelca cada 15 s a `WorkspaceUsageDaily`
+  (días UTC) con `INSERT ... ON CONFLICT`, así varias réplicas suman sobre el mismo día.
+
 ## 5. Matriz de Roles y Seguridad (RBAC)
 
 DataNexus aplica la segregación de funciones de 4 roles definida en el Dossier Técnico. La matriz vive en código en

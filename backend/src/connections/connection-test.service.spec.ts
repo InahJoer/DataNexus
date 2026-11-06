@@ -162,4 +162,24 @@ describe('ConnectionTestService (RF-10)', () => {
     expect(result.error?.code).toBe('UNSUPPORTED_ENGINE');
     expect(result.error?.message).toContain('MONGODB');
   });
+
+  it('guarda el resultado como último health check de la conexión (issue #40)', async () => {
+    const tester = makeTester(async () => ({ serverVersion: 'PostgreSQL 16.2' }));
+    const recordHealthChecks = vi.fn().mockResolvedValue(undefined);
+    const { service } = makeService(tester, {
+      getConnectionForExploration: vi.fn().mockResolvedValue({
+        id: CONNECTION_ID,
+        tipoMotor: 'POSTGRESQL',
+        dbName: 'analytics',
+        connectionString: SECRET,
+      }),
+      recordHealthChecks,
+    } as Partial<ConnectionsService>);
+
+    await service.testSaved(actor, CONNECTION_ID);
+
+    expect(recordHealthChecks).toHaveBeenCalledWith('workspace-1', [
+      { id: CONNECTION_ID, status: 'HEALTHY', latencyMs: expect.any(Number) },
+    ]);
+  });
 });

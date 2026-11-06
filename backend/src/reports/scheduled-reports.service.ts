@@ -358,6 +358,27 @@ export class ScheduledReportsService implements OnModuleInit {
     return toReportExecutionResponse(result);
   }
 
+  /** Próximas ejecuciones activas del workspace, las más cercanas primero (dashboard, issue #40). */
+  async upcoming(
+    workspaceId: string,
+    limit = 5,
+  ): Promise<{ id: string; nombre: string; formato: ScheduledReportFormatDto; nextRunAt: string }[]> {
+    const schedules = await this.prisma.scheduledReport.findMany({
+      where: { workspaceId, estado: 'ACTIVE' },
+      include: SCHEDULE_INCLUDE,
+    });
+    return schedules
+      .map((schedule) => ({
+        id: schedule.id,
+        nombre: schedule.nombre,
+        formato: dtoFormat(schedule.formato),
+        nextRunAt: this.nextRunAt(schedule),
+      }))
+      .filter((item): item is typeof item & { nextRunAt: string } => item.nextRunAt !== null)
+      .sort((a, b) => a.nextRunAt.localeCompare(b.nextRunAt))
+      .slice(0, limit);
+  }
+
   /** Historial de ejecuciones de una programación (issue #39), más recientes primero. */
   async listExecutions(
     actor: AuthenticatedUser,

@@ -257,6 +257,30 @@ export class ConnectionsService {
   }
 
   /**
+   * Guarda el último health check de cada conexión (issue #40) para que el dashboard no abra conexiones.
+   * Solo actualiza conexiones del workspace indicado.
+   */
+  async recordHealthChecks(
+    workspaceId: string,
+    results: { id: string; status: string; latencyMs: number | null }[],
+    checkedAt: Date = new Date(),
+  ): Promise<void> {
+    if (results.length === 0) return;
+    await this.prisma.$transaction(
+      results.map((result) =>
+        this.prisma.conexionDB.updateMany({
+          where: { id: result.id, workspaceId },
+          data: {
+            ultimoHealthStatus: result.status,
+            ultimaLatenciaMs: result.latencyMs,
+            ultimoHealthAt: checkedAt,
+          },
+        }),
+      ),
+    );
+  }
+
+  /**
    * Acceso interno a credenciales para módulos de confianza (exploración, extracción y pruebas); nunca
    * exponer por HTTP. Devuelve la cadena en el formato del driver, tanto para credenciales estructuradas
    * como legado.

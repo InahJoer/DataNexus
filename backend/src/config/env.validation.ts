@@ -208,6 +208,22 @@ export class EnvironmentVariables {
   @Max(600000)
   REPORT_RETRY_BASE_DELAY_MS?: number;
 
+  /** Límite mensual de datos procesados del plan en GB, para el dashboard (issue #40, por defecto 1024 = 1 TB). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(1048576)
+  WORKSPACE_DATA_LIMIT_GB?: number;
+
+  /** Latencia en ms a partir de la cual el dashboard marca una conexión (issue #40, por defecto 100). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(60000)
+  CONNECTION_LATENCY_THRESHOLD_MS?: number;
+
   /** Dominios de correo personal bloqueados, separados por comas. Vacío = lista por defecto. */
   @IsOptional()
   @IsString()

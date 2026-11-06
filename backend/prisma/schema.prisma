@@ -90,6 +90,7 @@ model Workspace {
   consultasGuardadas    SavedQuery[]
   reportesProgramados   ScheduledReport[]
   ejecucionesReportes            ReportExecution[]
+  usoDiario                      WorkspaceUsageDaily[]
 }
 
 model User {
@@ -125,6 +126,11 @@ model ConexionDB {
   credencialesVersion        Int       @default(1)
   /// Metadatos NO secretos de las credenciales (puerto, usuario, ssl, projectId...). Nunca contiene contraseñas ni claves.
   detalles                   Json?
+  /// Último health check (issue #40): HEALTHY, UNAVAILABLE o UNSUPPORTED. Lo actualizan la comprobación del
+  /// dashboard y "Probar conexión", así el resumen no tiene que abrir conexiones en cada consulta.
+  ultimoHealthStatus         String?
+  ultimaLatenciaMs           Int?
+  ultimoHealthAt             DateTime?
   workspaceId                String
   workspace                  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
@@ -387,4 +393,17 @@ model ReportExecution {
   @@index([workspaceId, startedAt])
   @@index([scheduledReportId, startedAt])
   @@index([status, leaseExpiresAt])
+}
+
+/// Uso diario de un workspace (issue #40): solicitudes autenticadas a la API y bytes extraídos de las fuentes
+/// en joins, exportaciones y reportes. Se acumula en memoria y se vuelca con incrementos atómicos.
+model WorkspaceUsageDaily {
+  workspaceId     String
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  /// Día en UTC.
+  dia             DateTime  @db.Date
+  solicitudesApi  Int       @default(0)
+  bytesProcesados BigInt    @default(0)
+
+  @@id([workspaceId, dia])
 }
