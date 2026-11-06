@@ -57,7 +57,7 @@ function dtoFrequency(value: ScheduleRecord['frecuencia']): ScheduledReportFrequ
 }
 
 function dbFormat(value: ScheduledReportFormatDto) {
-  return value.toUpperCase() as 'EXCEL' | 'PDF' | 'JSON';
+  return value.toUpperCase() as 'EXCEL' | 'PDF' | 'JSON' | 'WORD';
 }
 
 function dtoFormat(value: ScheduleRecord['formato']): ScheduledReportFormatDto {

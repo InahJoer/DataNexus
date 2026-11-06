@@ -265,6 +265,7 @@ enum ScheduledReportFormat {
   EXCEL
   PDF
   JSON
+  WORD
 }
 
 enum ScheduledReportRunStatus {

@@ -20,7 +20,7 @@ import {
 export const SCHEDULED_REPORT_FREQUENCIES = ['daily', 'weekly', 'monthly'] as const;
 export type ScheduledReportFrequencyDto = (typeof SCHEDULED_REPORT_FREQUENCIES)[number];
 
-export const SCHEDULED_REPORT_FORMATS = ['excel', 'pdf', 'json'] as const;
+export const SCHEDULED_REPORT_FORMATS = ['excel', 'pdf', 'json', 'word'] as const;
 export type ScheduledReportFormatDto = (typeof SCHEDULED_REPORT_FORMATS)[number];
 
 export const SCHEDULED_REPORT_STATUSES = ['ACTIVE', 'PAUSED', 'ERROR'] as const;
