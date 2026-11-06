@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { ForbiddenException } from '@nestjs/common';
+import { PassThrough } from 'node:stream';
 import { ReportsService } from './reports.service.js';
 import type { DataEngineService } from '../data-engine/data-engine.service.js';
 import type { MailService } from '../mailer/mail.service.js';
@@ -13,6 +14,7 @@ describe('ReportsService', () => {
   let mailService: any;
   let auditService: any;
   let prismaService: any;
+  let reportStorage: any;
 
   const adminUser: AuthenticatedUser = {
     id: 'admin-1',
@@ -32,10 +34,10 @@ describe('ReportsService', () => {
 
   beforeEach(() => {
     dataEngineService = {
-      executeCrossJoinForExport: vi.fn().mockResolvedValue({
-        buffer: Buffer.from('mock-excel-binary'),
+      executeCrossJoinToStream: vi.fn().mockResolvedValue({
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         filename: 'datanexus_export_2026.xlsx',
+        totalRows: 12,
       }),
     };
 
@@ -57,11 +59,24 @@ describe('ReportsService', () => {
       },
     };
 
+    reportStorage = {
+      createWriteTarget: vi.fn().mockResolvedValue({
+        writable: new PassThrough(),
+        completed: Promise.resolve(Buffer.byteLength('mock-excel-binary')),
+      }),
+      createDownloadUrl: vi.fn().mockResolvedValue({
+        url: 'http://localhost:3001/reports/download/mock',
+        expiresAt: '2026-11-06T12:00:00.000Z',
+      }),
+      openLocalDownload: vi.fn(),
+    };
+
     service = new ReportsService(
       dataEngineService as unknown as DataEngineService,
       mailService as unknown as MailService,
       auditService as unknown as AuditService,
       prismaService as unknown as PrismaService,
+      reportStorage,
     );
   });
 
@@ -75,11 +90,11 @@ describe('ReportsService', () => {
       }),
     ).rejects.toThrow(ForbiddenException);
 
-    expect(dataEngineService.executeCrossJoinForExport).not.toHaveBeenCalled();
+    expect(dataEngineService.executeCrossJoinToStream).not.toHaveBeenCalled();
     expect(mailService.sendReportEmail).not.toHaveBeenCalled();
   });
 
-  it('executes cross-join, sends email with attachment and records audit', async () => {
+  it('streams the report, sends a secure download link and records audit', async () => {
     const result = await service.triggerReport(adminUser, {
       reportTitle: 'Reporte Financiero',
       recipients: ['analista@corp.com'],
@@ -94,21 +109,19 @@ describe('ReportsService', () => {
       },
     });
 
-    expect(dataEngineService.executeCrossJoinForExport).toHaveBeenCalledWith(
+    expect(dataEngineService.executeCrossJoinToStream).toHaveBeenCalledWith(
       expect.objectContaining({ format: 'excel' }),
       adminUser,
+      expect.any(PassThrough),
     );
     expect(mailService.sendReportEmail).toHaveBeenCalledWith(
       expect.objectContaining({
         to: ['analista@corp.com'],
         subject: '[DataNexus] Reporte Financiero',
-        attachments: [
-          expect.objectContaining({
-            filename: 'datanexus_export_2026.xlsx',
-          }),
-        ],
+        html: expect.stringContaining('http://localhost:3001/reports/download/mock'),
       }),
     );
+    expect(mailService.sendReportEmail.mock.calls[0][0].attachments).toBeUndefined();
     expect(auditService.record).toHaveBeenCalledWith(
       expect.objectContaining({
         eventType: 'REPORT_GENERATED_AND_SENT',
@@ -118,5 +131,7 @@ describe('ReportsService', () => {
     );
     expect(result.messageId).toBe('email-id-999');
     expect(result.fileSizeBytes).toBeGreaterThan(0);
+    expect(result.totalRows).toBe(12);
+    expect(result.downloadUrl).toBe('http://localhost:3001/reports/download/mock');
   });
 });
