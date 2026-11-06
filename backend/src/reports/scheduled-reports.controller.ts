@@ -9,6 +9,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -29,8 +30,9 @@ import { RolesGuard } from '../auth/guards/roles.guard.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-user.interface.js';
 import {
   CreateScheduledReportDto,
+  ListReportExecutionsQueryDto,
+  ReportExecutionResponseDto,
   ScheduledReportResponseDto,
-  ScheduledReportRunResponseDto,
   ScheduledReportsSummaryDto,
   UpdateScheduledReportDto,
 } from './dto/scheduled-report.dto.js';
@@ -126,15 +128,37 @@ export class ScheduledReportsController {
   @RequirePermission('MANAGE_REPORTS')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Ejecutar ahora sin cambiar el horario ni el estado' })
-  @ApiOkResponse({ type: ScheduledReportRunResponseDto })
+  @ApiOkResponse({ type: ReportExecutionResponseDto })
   runNow(@Req() request: AuthenticatedRequest, @Param('id', UUID_PIPE) id: string) {
     return this.scheduledReports.runNow(request.user, id, this.auditContext(request));
   }
 
+  @Get(':id/executions')
+  @RequirePermission('MANAGE_REPORTS')
+  @ApiOperation({
+    summary: 'Historial de ejecuciones de la programación (issue #39)',
+    description:
+      'Estado, duración, intentos, tamaño, filas, error, messageId y enlace mientras siga vigente. ' +
+      'Más recientes primero; admite filtros por estado y origen.',
+  })
+  @ApiOkResponse({ type: ReportExecutionResponseDto, isArray: true })
+  @ApiNotFoundResponse({ description: 'Programación no encontrada.' })
+  listExecutions(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', UUID_PIPE) id: string,
+    @Query() filters: ListReportExecutionsQueryDto,
+  ) {
+    return this.scheduledReports.listExecutions(request.user, id, filters);
+  }
+
   @Get(':id/runs')
   @RequirePermission('MANAGE_REPORTS')
-  @ApiOperation({ summary: 'Consultar ejecuciones y enlaces aún vigentes' })
-  @ApiOkResponse({ type: ScheduledReportRunResponseDto, isArray: true })
+  @ApiOperation({
+    summary: 'Alias de /executions (issue #38)',
+    deprecated: true,
+    description: 'Se mantiene por compatibilidad. Use GET /reports/schedules/:id/executions.',
+  })
+  @ApiOkResponse({ type: ReportExecutionResponseDto, isArray: true })
   @ApiNotFoundResponse({ description: 'Programación no encontrada.' })
   listRuns(@Req() request: AuthenticatedRequest, @Param('id', UUID_PIPE) id: string) {
     return this.scheduledReports.listRuns(request.user, id);

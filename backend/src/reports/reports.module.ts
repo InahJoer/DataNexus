@@ -11,6 +11,7 @@ import { ReportsController } from './reports.controller.js';
 import { ScheduledReportsController } from './scheduled-reports.controller.js';
 import { ReportsService } from './reports.service.js';
 import { ScheduledReportsService } from './scheduled-reports.service.js';
+import { ReportExecutionsService } from './report-executions.service.js';
 
 @Module({
   imports: [
@@ -24,7 +25,7 @@ import { ScheduledReportsService } from './scheduled-reports.service.js';
     QueriesModule,
   ],
   controllers: [ReportsController, ScheduledReportsController],
-  providers: [ReportsService, ScheduledReportsService],
+  providers: [ReportsService, ScheduledReportsService, ReportExecutionsService],
   exports: [ReportsService],
 })
 export class ReportsModule {}

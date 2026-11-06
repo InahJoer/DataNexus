@@ -213,7 +213,17 @@ su llave y sus valores anterior/nuevo para ADMIN.
 - `GET /reports/download/:id`: Descarga transmitida con firma HMAC en modo local; en GCS el correo usa una URL firmada V4 de 24 horas.
 - El backend usa GCS cuando `REPORT_STORAGE_PROVIDER=gcs`; en desarrollo usa almacenamiento local configurable con `REPORTS_LOCAL_DIRECTORY`.
 - Los enlaces de descarga son bearer: cualquier persona que tenga el enlace puede usarlo hasta su vencimiento; el bucket GCS debe permanecer privado.
-- *Cron Job automático:* Ejecución programada diaria a la medianoche (UTC).
+- *Programaciones configurables (issue #38):* `/reports/schedules` con CRUD, pausa, reanudación y `POST /:id/run` ("Ejecutar ahora").
+- **Historial de ejecuciones (issue #39):** cada ejecución (programada `SCHEDULED`, manual `MANUAL` o bajo demanda `ON_DEMAND`)
+  queda en `ReportExecution` con estado, duración, intentos, filas, tamaño del archivo, error seguro y `messageId`. Consulta:
+  `GET /reports/schedules/:id/executions` (por programación; `/runs` se mantiene como alias) y `GET /reports/executions`
+  (todo el workspace), con filtros `status`, `trigger` y `limit`. No se guardan filas ni detalles del driver o del SMTP.
+- **Reintentos con backoff:** los fallos transitorios (fuentes caídas, timeouts, SMTP) se reintentan con espera exponencial
+  (`REPORT_RETRY_MAX_ATTEMPTS`, por defecto 3; `REPORT_RETRY_BASE_DELAY_MS`, por defecto 30 s, que se duplica). Los errores
+  4xx (consulta inválida, destinatario `AUDITOR`) no se reintentan. Si solo falla el correo, se reenvía sin regenerar el archivo.
+  Cuando una ejecución programada falla definitivamente, se avisa por correo al autor de la programación (`authorNotifiedAt`).
+- **Plantillas de correo:** reportes, avisos de fallo, invitaciones y recuperación de contraseña comparten el layout de
+  `src/mailer/templates/email-layout.ts` (HTML en línea compatible con Outlook/Gmail, escapado de datos y enlaces solo `http(s)`).
 
 ### 4.6 Gestión de Miembros (`/users`)
 - `GET /users`: Listado de todos los miembros del Workspace.
