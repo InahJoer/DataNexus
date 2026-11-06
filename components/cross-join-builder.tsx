@@ -207,6 +207,7 @@ export function CrossJoinBuilder() {
     let cancelled = false;
     setIsLoadingSqlFields(true);
     setSqlFieldsError(null);
+    const sqlObject = selectedSqlObject;
 
     async function loadSqlFields() {
       try {
@@ -214,8 +215,8 @@ export function CrossJoinBuilder() {
           params: {
             path: { connectionId: sqlConnectionId },
             query: {
-              objectName: selectedSqlObject.name,
-              ...(selectedSqlObject.schema ? { schema: selectedSqlObject.schema } : {}),
+              objectName: sqlObject.name,
+              ...(sqlObject.schema ? { schema: sqlObject.schema } : {}),
             },
           },
         });
@@ -254,13 +255,14 @@ export function CrossJoinBuilder() {
     let cancelled = false;
     setIsLoadingNoSqlFields(true);
     setNoSqlFieldsError(null);
+    const noSqlObject = selectedNoSqlObject;
 
     async function loadNoSqlFields() {
       try {
         const response = await createApiClient(accessToken).GET('/engine/connections/{connectionId}/schema/fields', {
           params: {
             path: { connectionId: noSqlConnectionId },
-            query: { objectName: selectedNoSqlObject.name },
+            query: { objectName: noSqlObject.name },
           },
         });
         if (cancelled) return;

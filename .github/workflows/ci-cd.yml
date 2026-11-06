@@ -1,0 +1,200 @@
+name: DataNexus CI/CD
+
+on:
+  push:
+    branches:
+      - DOCKERCICD
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: datanexus-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test-backend:
+    name: Validate backend
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: datanexus
+          POSTGRES_PASSWORD: datanexus
+          POSTGRES_DB: datanexus
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U datanexus -d datanexus"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://datanexus:datanexus@localhost:5432/datanexus?schema=public
+      JWT_SECRET: ci-only-not-a-production-secret-0123456789
+      ENCRYPTION_KEY: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      FRONTEND_URL: http://localhost:3000
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.22.3
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci
+        working-directory: backend
+
+      - name: Generate Prisma Client
+        run: npm exec -- prisma generate
+        working-directory: backend
+
+      - name: Apply database migrations
+        run: npm run db:deploy
+        working-directory: backend
+
+      - name: Run backend lint
+        run: npm run lint
+        working-directory: backend
+
+      - name: Run backend tests
+        run: npm test
+        working-directory: backend
+
+  build-docker-images:
+    name: Build and validate Docker images
+    needs: test-backend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL || 'http://localhost:3001' }}
+          cache-from: type=gha,scope=datanexus-frontend
+          cache-to: type=gha,scope=datanexus-frontend,mode=max
+
+      - name: Build backend image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: false
+          cache-from: type=gha,scope=datanexus-backend
+          cache-to: type=gha,scope=datanexus-backend,mode=max
+
+  publish-images:
+    name: Publish validated images to GHCR
+    needs: build-docker-images
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Frontend image metadata
+        id: frontend-meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/inahjoer/datanexus-frontend
+          tags: |
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=dockercicd,enable=${{ github.ref == 'refs/heads/DOCKERCICD' }}
+
+      - name: Publish frontend image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.frontend-meta.outputs.tags }}
+          labels: ${{ steps.frontend-meta.outputs.labels }}
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL || 'http://localhost:3001' }}
+          cache-from: type=gha,scope=datanexus-frontend
+          cache-to: type=gha,scope=datanexus-frontend,mode=max
+
+      - name: Backend image metadata
+        id: backend-meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/inahjoer/datanexus-backend
+          tags: |
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=dockercicd,enable=${{ github.ref == 'refs/heads/DOCKERCICD' }}
+
+      - name: Publish backend image
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: ${{ steps.backend-meta.outputs.tags }}
+          labels: ${{ steps.backend-meta.outputs.labels }}
+          cache-from: type=gha,scope=datanexus-backend
+          cache-to: type=gha,scope=datanexus-backend,mode=max
+
+  deploy-railway:
+    name: Deploy Railway services (disabled until enabled)
+    needs: publish-images
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ENABLE_RAILWAY_CD == 'true' }}
+    runs-on: ubuntu-latest
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      RAILWAY_FRONTEND_SERVICE_ID: ${{ secrets.RAILWAY_FRONTEND_SERVICE_ID }}
+      RAILWAY_BACKEND_SERVICE_ID: ${{ secrets.RAILWAY_BACKEND_SERVICE_ID }}
+      NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+    steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.22.3
+
+      - name: Install Railway CLI
+        run: npm install --global @railway/cli@5.71.0
+
+      - name: Require Railway configuration
+        run: |
+          test -n "$RAILWAY_TOKEN"
+          test -n "$RAILWAY_FRONTEND_SERVICE_ID"
+          test -n "$RAILWAY_BACKEND_SERVICE_ID"
+          test -n "$NEXT_PUBLIC_API_URL"
+
+      - name: Redeploy frontend and backend
+        run: |
+          railway redeploy --service "$RAILWAY_FRONTEND_SERVICE_ID" --from-source --yes
+          railway redeploy --service "$RAILWAY_BACKEND_SERVICE_ID" --from-source --yes

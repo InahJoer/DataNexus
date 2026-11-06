@@ -1,0 +1,17 @@
+.git
+.github
+.agents
+.codex
+node_modules
+**/node_modules
+.next
+**/.next
+backend
+coverage
+**/coverage
+docs
+.env
+.env.*
+*.log
+*.tsbuildinfo
+docker-compose*.yml
