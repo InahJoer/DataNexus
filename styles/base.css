@@ -1,0 +1,44 @@
+/* Base: variables de diseño (colores, tipografía), reset y elementos de marca compartidos por todas las pantallas. */
+:root {
+  color-scheme: light;
+  --ink: #172522;
+  --ink-soft: #253a35;
+  --body: #f5f7f5;
+  --surface: #ffffff;
+  --line: #e6ebe8;
+  --muted: #77827e;
+  --muted-dark: #a6b4af;
+  --green: #168b78;
+  --green-dark: #0d7666;
+  --green-pale: #e8f5f1;
+  --blue: #4c7be8;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+* { box-sizing: border-box; }
+html { min-width: 320px; scroll-behavior: smooth; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--body);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+button, input { font: inherit; }
+button, a { -webkit-tap-highlight-color: transparent; }
+a { color: inherit; text-decoration: none; }
+button { color: inherit; }
+::selection { color: #103c34; background: #c7eee3; }
+
+.brand-mark { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); font-size: 18px; font-weight: 720; letter-spacing: -0.7px; }
+.brand-mark--light { color: #fff; }
+.brand-symbol { width: 36px; height: 36px; color: var(--green); flex: 0 0 auto; }
+.brand-mark--light .brand-symbol { color: #fff; }
+.brand-accent { color: var(--green); }
+.brand-mark--light .brand-accent { color: #81dfca; }
+.eyebrow { margin: 0; color: #75827d; font-size: 10px; line-height: 1.4; font-weight: 750; letter-spacing: 1.25px; }
+.eyebrow--light { color: #9bc9bc; }
+
