@@ -38,6 +38,8 @@ export const ROLE_PERMISSIONS = {
   READ_AUDIT: ['ADMIN', 'AUDITOR'],
   /** Invitar miembros y cambiar roles. */
   MANAGE_MEMBERS: ['ADMIN'],
+  /** Editar nombre, logo, zona horaria y configuración del workspace (RF-05). */
+  MANAGE_WORKSPACE: ['ADMIN'],
   /** Recibir datos de negocio sin enmascarar. El resto de roles siempre recibe datos enmascarados. */
   VIEW_UNMASKED_DATA: ['ADMIN', 'OPERADOR'],
 } as const satisfies Record<string, readonly UserRole[]>;

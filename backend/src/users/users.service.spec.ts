@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { UsersService } from './users.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
@@ -184,7 +184,47 @@ describe('UsersService', () => {
       ).rejects.toThrow(ForbiddenException);
     });
 
+    it('rejects emails outside the workspace allowed domains', async () => {
+      prismaService.workspace = {
+        findUnique: vi.fn().mockResolvedValue({ dominiosPermitidos: ['acme.com'] }),
+      };
+      prismaService.user = { findUnique: vi.fn(), create: vi.fn() };
+
+      await expect(
+        service.inviteMember(
+          { id: 'u1', email: 'u1@acme.com', name: 'Admin', role: 'ADMIN', workspaceId: 'ws-1' },
+          { email: 'intruso@otra.com', name: 'Intruso', role: 'LECTOR' },
+        ),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(prismaService.workspace.findUnique).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'ws-1' } }),
+      );
+      expect(prismaService.user.create).not.toHaveBeenCalled();
+      expect(auditService.record).not.toHaveBeenCalled();
+    });
+
+    it('accepts subdomains of an allowed domain', async () => {
+      prismaService.workspace = {
+        findUnique: vi.fn().mockResolvedValue({ dominiosPermitidos: ['acme.com'] }),
+      };
+      prismaService.user = {
+        findUnique: vi.fn().mockResolvedValue(null),
+        create: vi.fn().mockResolvedValue({ id: 'u-new', email: 'ana@ventas.acme.com' }),
+      };
+
+      await service.inviteMember(
+        { id: 'u1', email: 'u1@acme.com', name: 'Admin', role: 'ADMIN', workspaceId: 'ws-1' },
+        { email: 'ana@ventas.acme.com', name: 'Ana', role: 'LECTOR' },
+      );
+
+      expect(prismaService.user.create).toHaveBeenCalled();
+    });
+
     it('creates new user and records audit log for ADMIN', async () => {
+      prismaService.workspace = {
+        findUnique: vi.fn().mockResolvedValue({ dominiosPermitidos: [] }),
+      };
       prismaService.user = {
         findUnique: vi.fn().mockResolvedValue(null),
         create: vi.fn().mockResolvedValue({

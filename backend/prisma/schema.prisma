@@ -47,14 +47,25 @@ enum AuditEventType {
   SESSION_EXPIRED
   REFRESH_TOKEN_REUSED
   ACCOUNT_LOCKED
+  WORKSPACE_UPDATED
 }
 
+/// Espacio de trabajo (tenant). Toda consulta de negocio se filtra por su id (RF-05).
 model Workspace {
-  id            String       @id @default(uuid())
-  nombreEmpresa String
-  fechaCreacion DateTime     @default(now())
-  users         User[]
-  conexiones    ConexionDB[]
+  id                 String       @id @default(uuid())
+  nombreEmpresa      String
+  /// URL https del logo que muestra el cliente web.
+  logoUrl            String?
+  /// Zona horaria IANA (p. ej. America/Managua) para fechas y reportes programados.
+  zonaHoraria        String       @default("UTC")
+  /// Dominios de correo admitidos al invitar miembros. Vacío = sin restricción adicional.
+  dominiosPermitidos String[]     @default([])
+  /// Campos sensibles por defecto del workspace; los consumirá el enmascaramiento configurable (RF-20).
+  camposSensibles    String[]     @default([])
+  fechaCreacion      DateTime     @default(now())
+  fechaActualizacion DateTime     @default(now()) @updatedAt
+  users              User[]
+  conexiones         ConexionDB[]
 }
 
 model User {

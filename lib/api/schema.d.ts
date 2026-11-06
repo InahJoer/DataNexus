@@ -499,9 +499,73 @@ export interface paths {
         put?: never;
         /**
          * Disparar ejecución y envío de reporte por correo
-         * @description Ejecuta el cruce de datos en memoria, genera el archivo (Excel o PDF) y lo despacha como adjunto a los correos indicados. Requiere rol ADMIN u OPERADOR.
+         * @description Ejecuta el cruce de datos, almacena el archivo fuera de memoria y envía a los destinatarios un enlace seguro de descarga con 24 horas de vigencia. Requiere rol ADMIN u OPERADOR.
          */
         post: operations["ReportsController_trigger"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reports/download/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Descargar un reporte local con enlace firmado
+         * @description Valida el enlace firmado de 24 horas y transmite el archivo desde almacenamiento local. Los reportes GCS usan su URL firmada directamente.
+         */
+        get: operations["ReportsController_downloadLocalReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Obtener el workspace del usuario autenticado
+         * @description Disponible para cualquier rol. La configuración (dominios permitidos y campos sensibles) solo se incluye para ADMIN.
+         */
+        get: operations["WorkspacesController_findMine"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Actualizar el workspace (ADMIN)
+         * @description Cambia nombre, logo, zona horaria, dominios permitidos y campos sensibles por defecto. Registra WORKSPACE_UPDATED con el antes y el después.
+         */
+        patch: operations["WorkspacesController_updateMine"];
+        trace?: never;
+    };
+    "/workspaces/me/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Estadísticas del workspace
+         * @description Número de miembros por rol, conexiones por motor y reportes enviados. Disponible para cualquier rol.
+         */
+        get: operations["WorkspacesController_getStats"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -549,7 +613,10 @@ export interface components {
         ResetPasswordDto: {
             /** @description Token recibido en el enlace del correo */
             token: string;
-            /** @example NuevaClave2026! */
+            /**
+             * @description Entre 10 y 72 caracteres, con al menos una mayúscula, una minúscula, un número y un símbolo. No puede contener tu correo ni contraseñas comunes.
+             * @example NuevaClave#2026
+             */
             newPassword: string;
         };
         LoginDto: {
@@ -566,8 +633,8 @@ export interface components {
         };
         RegisterDto: {
             /**
-             * @description Correo electrónico del usuario
-             * @example admin@datanexus.com
+             * @description Correo corporativo del usuario (no se aceptan Gmail, Hotmail, Outlook, etc.)
+             * @example admin@empresa.com
              */
             email: string;
             /**
@@ -576,8 +643,8 @@ export interface components {
              */
             name: string;
             /**
-             * @description Contraseña en texto plano a hashear
-             * @example SecurePassword123!
+             * @description Entre 10 y 72 caracteres, con al menos una mayúscula, una minúscula, un número y un símbolo. No puede contener tu correo ni contraseñas comunes.
+             * @example Segura#2026dn
              */
             password: string;
             /**
@@ -711,8 +778,8 @@ export interface components {
              */
             role: "ADMIN" | "OPERADOR" | "LECTOR" | "AUDITOR";
             /**
-             * @description Contraseña temporal inicial (mínimo 6 caracteres)
-             * @example Temporal123!
+             * @description Contraseña temporal inicial. Entre 10 y 72 caracteres, con al menos una mayúscula, una minúscula, un número y un símbolo. No puede contener tu correo ni contraseñas comunes.
+             * @example Temporal#2026dn
              */
             temporaryPassword?: string;
         };
@@ -968,6 +1035,108 @@ export interface components {
              */
             customMessage?: string;
         };
+        WorkspaceSettingsDto: {
+            /**
+             * @example [
+             *       "acme.com"
+             *     ]
+             */
+            dominiosPermitidos: string[];
+            /**
+             * @example [
+             *       "cedula",
+             *       "salario"
+             *     ]
+             */
+            camposSensibles: string[];
+        };
+        WorkspaceResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** @example Acme Analytics S.A. */
+            nombreEmpresa: string;
+            /** @example https://cdn.acme.com/logo.png */
+            logoUrl: string | null;
+            /** @example America/Managua */
+            zonaHoraria: string;
+            /** Format: date-time */
+            fechaCreacion: string;
+            /** Format: date-time */
+            fechaActualizacion: string;
+            /** @description Configuración del workspace. Solo se incluye para el rol ADMIN. */
+            configuracion?: components["schemas"]["WorkspaceSettingsDto"];
+        };
+        UpdateWorkspaceDto: {
+            /**
+             * @description Nombre de la empresa o espacio de trabajo
+             * @example Acme Analytics S.A.
+             */
+            nombreEmpresa?: string;
+            /**
+             * @description URL https del logo. Envía null para eliminarlo.
+             * @example https://cdn.acme.com/logo.png
+             */
+            logoUrl?: string | null;
+            /**
+             * @description Zona horaria IANA
+             * @example America/Managua
+             */
+            zonaHoraria?: string;
+            /**
+             * @description Dominios de correo admitidos al invitar miembros (máximo 50). Lista vacía = sin restricción.
+             * @example [
+             *       "acme.com",
+             *       "acme.com.ni"
+             *     ]
+             */
+            dominiosPermitidos?: string[];
+            /**
+             * @description Campos sensibles por defecto del workspace (máximo 200).
+             * @example [
+             *       "cedula",
+             *       "salario",
+             *       "cliente.email"
+             *     ]
+             */
+            camposSensibles?: string[];
+        };
+        WorkspaceStatsDto: {
+            /**
+             * @description Miembros del workspace en total y por rol (ADMIN, OPERADOR, LECTOR, AUDITOR).
+             * @example {
+             *       "total": 4,
+             *       "porRol": {
+             *         "ADMIN": 1,
+             *         "OPERADOR": 1,
+             *         "LECTOR": 1,
+             *         "AUDITOR": 1
+             *       }
+             *     }
+             */
+            miembros: Record<string, never>;
+            /**
+             * @description Conexiones registradas en total y por motor (POSTGRESQL, MYSQL, SQLSERVER, FIRESTORE, MONGODB).
+             * @example {
+             *       "total": 2,
+             *       "porMotor": {
+             *         "POSTGRESQL": 1,
+             *         "MYSQL": 0,
+             *         "SQLSERVER": 0,
+             *         "FIRESTORE": 1,
+             *         "MONGODB": 0
+             *       }
+             *     }
+             */
+            conexiones: Record<string, never>;
+            /**
+             * @description Reportes generados y enviados con éxito, según la bitácora de auditoría.
+             * @example {
+             *       "enviados": 12,
+             *       "ultimoEnvio": "2026-11-05T06:00:00.000Z"
+             *     }
+             */
+            reportes: Record<string, never>;
+        };
     };
     responses: never;
     parameters: never;
@@ -1212,7 +1381,7 @@ export interface operations {
                 /** @description Filtrar registros hasta esta fecha (formato ISO 8601) */
                 fechaFin?: string;
                 /** @description Filtrar por tipo de acción o evento */
-                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED";
+                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED";
             };
             header?: never;
             path?: never;
@@ -1253,7 +1422,7 @@ export interface operations {
                 /** @description Filtrar registros hasta esta fecha (formato ISO 8601) */
                 fechaFin?: string;
                 /** @description Filtrar por tipo de acción o evento */
-                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED";
+                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED";
                 format?: "csv" | "json";
             };
             header?: never;
@@ -2205,6 +2374,153 @@ export interface operations {
             };
             /** @description Se requiere rol ADMIN u OPERADOR para automatizar reportes. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ReportsController_downloadLocalReport: {
+        parameters: {
+            query: {
+                /** @description Nombre del archivo incluido en el enlace firmado */
+                filename: string;
+                /** @description Vencimiento del enlace en segundos Unix */
+                expires: string;
+                /** @description Firma HMAC del enlace */
+                signature: string;
+            };
+            header?: never;
+            path: {
+                /** @description UUID aleatorio del reporte */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Archivo de reporte transmitido. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+            /** @description El enlace es inválido o expiró. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description El reporte no existe en almacenamiento local. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    WorkspacesController_findMine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResponseDto"];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description El workspace del token ya no existe. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    WorkspacesController_updateMine: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateWorkspaceDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResponseDto"];
+                };
+            };
+            /** @description Datos inválidos o ningún campo a modificar. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Se requiere rol ADMIN. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    WorkspacesController_getStats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceStatsDto"];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };

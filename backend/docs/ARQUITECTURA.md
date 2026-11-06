@@ -40,6 +40,7 @@ graph TD
         ControllerLayer --> AuditCtrl[AuditController /audit]
         ControllerLayer --> ReportsCtrl[ReportsController /reports]
         ControllerLayer --> UsersCtrl[UsersController /users]
+        ControllerLayer --> WorkspacesCtrl[WorkspacesController /workspaces]
         
         EngineCtrl --> EngineService[DataEngineService]
         EngineService --> CrossJoin[In-Memory Hash Join O N+M]
@@ -146,6 +147,19 @@ Nunca se guardan valores de filtros, filas ni credenciales.
 - `GET /users`: Listado de todos los miembros del Workspace.
 - `POST /users/invite`: Invitación o alta de un nuevo miembro con rol `ADMIN`, `OPERADOR`, `LECTOR` o `AUDITOR` (ADMIN).
 - `PATCH /users/:id/role`: Modificación de permisos de usuario (ADMIN).
+- Si el workspace define `dominiosPermitidos`, `POST /users/invite` solo acepta correos de esos dominios (o subdominios).
+
+### 4.7 Espacio de Trabajo (`/workspaces`) — RF-05
+- `GET /workspaces/me`: Datos del workspace del token (nombre, logo, zona horaria IANA). La `configuracion`
+  (dominios permitidos y campos sensibles por defecto) solo se incluye para `ADMIN`.
+- `PATCH /workspaces/me`: Cambio parcial de nombre, `logoUrl` (https; `null` lo elimina), `zonaHoraria`,
+  `dominiosPermitidos` (sin proveedores de correo personal) y `camposSensibles` (ADMIN). El cambio y el evento
+  `WORKSPACE_UPDATED` (con antes/después) se guardan en la misma transacción.
+- `GET /workspaces/me/stats`: Miembros por rol, conexiones por motor y reportes enviados (cualquier rol).
+- **Aislamiento multi-tenant:** el workspace se obtiene siempre del JWT, nunca de la URL ni del body; no existe
+  ruta para leer o modificar otro workspace. `workspace-isolation.integration.spec.ts` lo verifica contra
+  PostgreSQL para workspaces, miembros, conexiones y bitácora.
+- `camposSensibles` queda almacenado para el enmascaramiento configurable (RF-20, issue #34).
 
 ---
 
@@ -165,6 +179,7 @@ en los controladores y `hasPermission()` en los servicios (defensa en profundida
 | `MANAGE_REPORTS` · Disparar / programar reportes | ✅ | ✅ | ❌ | ❌ |
 | `READ_AUDIT` · Consultar la bitácora de auditoría | ✅ | ❌ | ❌ | ✅ |
 | `MANAGE_MEMBERS` · Invitar miembros y cambiar roles | ✅ | ❌ | ❌ | ❌ |
+| `MANAGE_WORKSPACE` · Editar datos y configuración del workspace | ✅ | ❌ | ❌ | ❌ |
 | `VIEW_UNMASKED_DATA` · Ver datos sin enmascarar | ✅ | ✅ | ❌ | ❌ |
 
 - El `MaskingService` es *fail-closed*: cualquier rol sin `VIEW_UNMASKED_DATA` (LECTOR, AUDITOR o un rol desconocido)

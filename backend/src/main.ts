@@ -48,6 +48,7 @@ async function bootstrap() {
     .addTag('Auth', 'Autenticación y generación de tokens JWT')
     .addTag('Connections', 'Gestión y administración de conexiones DB encriptadas con AES-256')
     .addTag('Users', 'Gestión de usuarios y roles dentro del workspace')
+    .addTag('Workspaces', 'Gestión del espacio de trabajo: datos, configuración y estadísticas')
     .addTag('Engine - Cross-Join & Analytics', 'Motor de Cross-Joins en memoria, enmascaramiento y exportación')
     .addTag('Audit', 'Bitácora y consulta de logs de auditoría con paginación y filtros')
     .addTag('Reports - Automation', 'Automatización de reportes periódicos y despacho por correo electrónico')
