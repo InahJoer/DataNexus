@@ -44,6 +44,8 @@ export const ROLE_PERMISSIONS = {
   MANAGE_QUERIES: ['ADMIN', 'OPERADOR'],
   /** Ejecutar consultas guardadas. El LECTOR solo accede a las publicadas. */
   RUN_SAVED_QUERIES: ['ADMIN', 'OPERADOR', 'LECTOR'],
+  /** Editar celdas en registros de fuentes externas (issue #36). */
+  MODIFY_RECORDS: ['ADMIN', 'OPERADOR'],
   /** Recibir datos de negocio sin enmascarar. El resto de roles siempre recibe datos enmascarados. */
   VIEW_UNMASKED_DATA: ['ADMIN', 'OPERADOR'],
 } as const satisfies Record<string, readonly UserRole[]>;

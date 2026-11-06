@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, PayloadTooLargeException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, PayloadTooLargeException } from '@nestjs/common';
 import sql from 'mssql';
 import type { ConnectionPool } from 'mssql';
 import { DataSourceClientPool } from '../pool/data-source-client-pool.js';
@@ -13,7 +13,10 @@ import type {
   DataSourceConnection,
   ExtractOptions,
   IDataSourceAdapter,
+  UpdateRecordInput,
+  UpdateRecordResult,
 } from './data-source-adapter.interface.js';
+import { assertExactPrimaryKey, assertExpectedCellValue, decodeBase64CellValue, normalizeCellValue } from './cell-update.js';
 import { buildSqlFilterClauses, uniqueColumnName } from './sql-filters.js';
 import {
   NO_PRIMARY_KEY_MESSAGE,
@@ -192,6 +195,109 @@ export class SqlServerAdapter implements IDataSourceAdapter {
         }
         return normalized;
       });
+    });
+  }
+
+  async updateRecord(connection: DataSourceConnection, input: UpdateRecordInput): Promise<UpdateRecordResult> {
+    const qualifiedTable = this.qualifyTable(input.entityName, input.schema);
+
+    return await this.withPool(connection, async (pool) => {
+      const transaction = new sql.Transaction(pool);
+      let inTransaction = false;
+      try {
+        await transaction.begin();
+        inTransaction = true;
+
+        const objectResult = await new sql.Request(transaction)
+          .input('objectName', sql.NVarChar(260), qualifiedTable)
+          .query<{ type: string }>(`SELECT [type] FROM sys.objects WHERE [object_id] = OBJECT_ID(@objectName) AND [type] IN ('U', 'V')`);
+        const objectType = objectResult.recordset[0]?.type;
+        if (!objectType) throw new NotFoundException('La tabla no existe en la conexión');
+        if (objectType !== 'U') throw new BadRequestException('Solo se pueden editar tablas base');
+
+        const columnResult = await new sql.Request(transaction)
+          .input('objectName', sql.NVarChar(260), qualifiedTable)
+          .query<{ name: string; typeName: string; isIdentity: boolean; isComputed: boolean; generatedAlwaysType: number }>(`
+            SELECT c.[name], TYPE_NAME(c.system_type_id) AS [typeName],
+                   c.is_identity AS [isIdentity], c.is_computed AS [isComputed],
+                   c.generated_always_type AS [generatedAlwaysType]
+            FROM sys.columns c WHERE c.[object_id] = OBJECT_ID(@objectName)
+          `);
+        const column = columnResult.recordset.find((candidate) => candidate.name === input.field);
+        if (!column) throw new BadRequestException('El campo no existe en la tabla');
+        if (column.isIdentity || column.isComputed || column.generatedAlwaysType !== 0 || column.typeName === 'timestamp') {
+          throw new BadRequestException('No se pueden editar campos generados');
+        }
+
+        const keyResult = await new sql.Request(transaction)
+          .input('objectName', sql.NVarChar(260), qualifiedTable)
+          .query<{ name: string }>(`
+            SELECT c.[name] AS [name]
+            FROM sys.indexes i
+            JOIN sys.index_columns ic ON ic.[object_id] = i.[object_id] AND ic.index_id = i.index_id
+            JOIN sys.columns c ON c.[object_id] = ic.[object_id] AND c.column_id = ic.column_id
+            WHERE i.[object_id] = OBJECT_ID(@objectName) AND i.is_primary_key = 1
+            ORDER BY ic.key_ordinal
+          `);
+        const primaryKey = keyResult.recordset.map((row) => String(row.name));
+        if (primaryKey.length === 0) throw new BadRequestException(NO_PRIMARY_KEY_MESSAGE);
+        if (primaryKey.includes(input.field)) throw new BadRequestException('No se puede editar una columna de llave primaria');
+        const key = assertExactPrimaryKey(input.primaryKey, primaryKey);
+
+        const request = new sql.Request(transaction);
+        const clauses = primaryKey.map((name, index) => {
+          const parameter = `key_${index}`;
+          request.input(parameter, key[name]);
+          return `${this.quoteIdentifier(name, 'llave primaria')} = @${parameter}`;
+        });
+        const selected = await request.query<Record<string, unknown>>(
+          `SELECT ${this.quoteIdentifier(input.field, 'campo')} AS [__dn_value]
+           FROM ${qualifiedTable} WITH (UPDLOCK, ROWLOCK, HOLDLOCK) WHERE ${clauses.join(' AND ')}`,
+        );
+        const row = selected.recordset[0];
+        if (!row) throw new NotFoundException('El registro no existe en la tabla');
+        const valueBefore = assertExpectedCellValue(row.__dn_value, input.expectedValue);
+
+        const binaryTypes = new Set(['binary', 'varbinary', 'image']);
+        const nextValue = binaryTypes.has(column.typeName)
+          ? decodeBase64CellValue(input.nextValue)
+          : input.nextValue;
+        const updateRequest = new sql.Request(transaction).input('nextValue', nextValue);
+        const updateClauses = primaryKey.map((name, index) => {
+          const parameter = `update_key_${index}`;
+          updateRequest.input(parameter, key[name]);
+          return `${this.quoteIdentifier(name, 'llave primaria')} = @${parameter}`;
+        });
+        await updateRequest.query(
+          `UPDATE ${qualifiedTable} SET ${this.quoteIdentifier(input.field, 'campo')} = @nextValue WHERE ${updateClauses.join(' AND ')}`,
+        );
+
+        const persistedRequest = new sql.Request(transaction);
+        const persistedClauses = primaryKey.map((name, index) => {
+          const parameter = `persisted_key_${index}`;
+          persistedRequest.input(parameter, key[name]);
+          return `${this.quoteIdentifier(name, 'llave primaria')} = @${parameter}`;
+        });
+        const persisted = await persistedRequest.query<Record<string, unknown>>(
+          `SELECT ${this.quoteIdentifier(input.field, 'campo')} AS [__dn_value] FROM ${qualifiedTable}
+           WHERE ${persistedClauses.join(' AND ')}`,
+        );
+        if (!persisted.recordset[0]) throw new NotFoundException('El registro ya no existe en la tabla');
+        const valueAfter = normalizeCellValue(persisted.recordset[0].__dn_value);
+
+        await transaction.commit();
+        inTransaction = false;
+        return { valueBefore, valueAfter };
+      } catch (error) {
+        if (inTransaction) {
+          try {
+            await transaction.rollback();
+          } catch {
+            // Preserve the source or domain error that caused the rollback.
+          }
+        }
+        throw error;
+      }
     });
   }
 

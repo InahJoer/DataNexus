@@ -1,5 +1,5 @@
-import { BadRequestException, Injectable, PayloadTooLargeException } from '@nestjs/common';
-import { FieldPath, Firestore, type Query, type WhereFilterOp } from '@google-cloud/firestore';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, PayloadTooLargeException } from '@nestjs/common';
+import { FieldPath, Firestore, Timestamp, type Query, type WhereFilterOp } from '@google-cloud/firestore';
 import { toDataPage, type DataPage, type DataPageOptions } from '../pagination/keyset.js';
 import { DataSourceClientPool } from '../pool/data-source-client-pool.js';
 import {
@@ -21,7 +21,10 @@ import type {
   DataSourceConnection,
   ExtractOptions,
   IDataSourceAdapter,
+  UpdateRecordInput,
+  UpdateRecordResult,
 } from './data-source-adapter.interface.js';
+import { assertExpectedCellValue, decodeBase64CellValue, normalizeCellValue } from './cell-update.js';
 
 /** Operadores que Firestore ejecuta en el servidor; contains, startsWith y los grupos OR se evalúan en memoria. */
 const WHERE_FILTER_OPERATORS: Partial<Record<FilterOperator, WhereFilterOp>> = {
@@ -150,6 +153,49 @@ export class FirestoreAdapter implements IDataSourceAdapter {
     });
   }
 
+  async updateRecord(connection: DataSourceConnection, input: UpdateRecordInput): Promise<UpdateRecordResult> {
+    this.validateCollectionName(input.entityName);
+    if (input.schema !== undefined) throw new BadRequestException('Firestore no admite esquemas');
+    if (typeof input.primaryKey !== 'string' || !input.primaryKey || input.primaryKey.includes('/') || input.primaryKey.includes('\0')) {
+      throw new BadRequestException('Firestore requiere un ID de documento válido');
+    }
+    if (!input.field || input.field.length > 128 || input.field.includes('\0')) {
+      throw new BadRequestException('El nombre del campo no es válido');
+    }
+
+    return await this.withClient(connection, async (firestore) => {
+      const document = firestore.collection(input.entityName).doc(input.primaryKey as string);
+      return await firestore.runTransaction(async (transaction) => {
+        const snapshot = await transaction.get(document);
+        if (!snapshot.exists) throw new NotFoundException('El documento no existe en la colección');
+        const data = snapshot.data() ?? {};
+        if (!Object.prototype.hasOwnProperty.call(data, input.field)) {
+          throw new ConflictException('El valor de la celda cambió desde la última lectura');
+        }
+        const currentValue = data[input.field];
+        const valueBefore = assertExpectedCellValue(currentValue, input.expectedValue);
+        let nextValue: unknown = input.nextValue;
+        const isBytes = currentValue instanceof Uint8Array || (
+          typeof currentValue === 'object' && currentValue !== null &&
+          'toBase64' in currentValue && typeof currentValue.toBase64 === 'function'
+        );
+        if (isBytes && typeof nextValue === 'string') {
+          nextValue = decodeBase64CellValue(input.nextValue);
+        } else if (currentValue instanceof Timestamp && typeof nextValue === 'string') {
+          const date = new Date(nextValue);
+          if (Number.isNaN(date.getTime())) throw new BadRequestException('El valor de fecha debe ser ISO 8601 válido');
+          nextValue = Timestamp.fromDate(date);
+        } else if (currentValue instanceof Date && typeof nextValue === 'string') {
+          const date = new Date(nextValue);
+          if (Number.isNaN(date.getTime())) throw new BadRequestException('El valor de fecha debe ser ISO 8601 válido');
+          nextValue = date;
+        }
+        transaction.update(document, new FieldPath(input.field), nextValue);
+        return { valueBefore, valueAfter: normalizeCellValue(nextValue) };
+      });
+    });
+  }
+
   private withClient<R>(connection: DataSourceConnection, use: (firestore: Firestore) => Promise<R>): Promise<R> {
     return this.clients.withClient(
       { connectionId: connection.id, connectionString: connection.connectionString, variant: connection.dbName },
@@ -195,7 +241,7 @@ export class FirestoreAdapter implements IDataSourceAdapter {
   }
 
   private validateCollectionName(collectionName: string): void {
-    if (!collectionName || collectionName.length > 150 || collectionName.includes('/')) {
+    if (!collectionName || collectionName.length > 150 || collectionName.includes('/') || collectionName.includes('\0')) {
       throw new BadRequestException('Solo se admiten colecciones raíz con nombre válido');
     }
   }

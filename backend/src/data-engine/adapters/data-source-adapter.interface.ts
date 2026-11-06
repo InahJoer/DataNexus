@@ -27,6 +27,23 @@ export interface ExtractOptions {
   filters?: FilterNode[];
 }
 
+export type JsonScalar = string | number | boolean | null;
+
+export interface UpdateRecordInput {
+  entityName: string;
+  schema?: string;
+  /** SQL primary-key columns and values, or the Firestore document ID. */
+  primaryKey: Record<string, JsonScalar> | string;
+  field: string;
+  expectedValue: JsonScalar;
+  nextValue: JsonScalar;
+}
+
+export interface UpdateRecordResult {
+  valueBefore: JsonScalar;
+  valueAfter: JsonScalar;
+}
+
 /** Qué operaciones implementa un adaptador. */
 export interface DataSourceCapabilities {
   /** Listar tablas, vistas o colecciones. */
@@ -60,6 +77,8 @@ export interface IDataSourceAdapter {
    * cargar la tabla completa (RNF-06). Sin implementar = el motor no admite exploración paginada.
    */
   readPage?(connection: DataSourceConnection, entityName: string, options: DataPageOptions): Promise<DataPage>;
+  /** Conditionally changes one cell. Adapters without this method remain read-only. */
+  updateRecord?(connection: DataSourceConnection, input: UpdateRecordInput): Promise<UpdateRecordResult>;
   /** Si el motor puede ejecutar grupos AND/OR anidados. Sin declarar = sí. */
   readonly pushesFilterGroups?: boolean;
 }
