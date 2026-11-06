@@ -35,10 +35,13 @@ const DATA_ACCESS_STRING_FIELDS = [
   'esquemaSql',
   'tablaSql',
   'coleccionNoSql',
+  'entidades',
+  'conexiones',
+  'tiposJoin',
   'formato',
   'error',
 ] as const;
-const DATA_ACCESS_NUMBER_FIELDS = ['totalFilas', 'filtrosSql', 'filtrosNoSql'] as const;
+const DATA_ACCESS_NUMBER_FIELDS = ['totalFilas', 'filtrosSql', 'filtrosNoSql', 'fuentes', 'filtros'] as const;
 const DATA_ACCESS_BOOLEAN_FIELDS = ['enmascarado', 'agregado'] as const;
 
 /** Máximo de registros por archivo exportado de la bitácora. */

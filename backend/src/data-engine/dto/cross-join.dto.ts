@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   ArrayUnique,
   IsArray,
   IsIn,
@@ -9,6 +10,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   MaxLength,
   Max,
   Min,
@@ -20,6 +22,14 @@ import {
   type ValidatorConstraintInterface,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import {
+  JOIN_ALIAS_PATTERN,
+  JOIN_TYPES,
+  MAX_JOIN_KEYS,
+  MAX_JOIN_SOURCES,
+  MIN_JOIN_SOURCES,
+  type JoinType,
+} from '../join/join-plan.js';
 
 export const FILTER_OPERATORS = [
   'eq',
@@ -123,31 +133,154 @@ export class AggregationMetricDto {
   as: string;
 }
 
-export class CrossJoinDto {
+export class JoinSourceDto {
   @ApiProperty({
-    description: 'UUID de la conexión SQL origen',
-    example: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
-  })
-  @IsUUID('4', { message: 'conexionSqlId debe ser un UUID v4 válido' })
-  @IsNotEmpty()
-  conexionSqlId: string;
-
-  @ApiProperty({
-    description: 'UUID de la conexión NoSQL origen',
-    example: 'b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e',
-  })
-  @IsUUID('4', { message: 'conexionNoSqlId debe ser un UUID v4 válido' })
-  @IsNotEmpty()
-  conexionNoSqlId: string;
-
-  @ApiProperty({
-    description: 'Nombre de la tabla SQL a consultar',
+    description: 'Alias único de la fuente; se usa en las relaciones y para calificar columnas repetidas',
     example: 'clientes',
+    pattern: JOIN_ALIAS_PATTERN.source,
   })
+  @Matches(JOIN_ALIAS_PATTERN, {
+    message: 'alias debe tener de 1 a 32 letras, números o _ y empezar por letra',
+  })
+  alias: string;
+
+  @ApiProperty({ description: 'UUID de la conexión', example: 'a1b2c3d4-e5f6-4a8b-9c0d-1e2f3a4b5c6d' })
+  @IsUUID('4', { message: 'conexionId debe ser un UUID v4 válido' })
+  conexionId: string;
+
+  @ApiProperty({ description: 'Tabla, vista o colección de la conexión', example: 'clientes' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(150)
+  entidad: string;
+
+  @ApiPropertyOptional({ description: 'Esquema SQL de la tabla', example: 'public', maxLength: 128 })
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
   @MaxLength(128)
-  tablaSql: string;
+  esquema?: string;
+
+  @ApiPropertyOptional({ description: 'Filtros AND aplicados en el origen (filter pushdown)', type: [DataFilterDto] })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => DataFilterDto)
+  filtros?: DataFilterDto[];
+}
+
+export class JoinKeyPairDto {
+  @ApiProperty({ description: 'Campo de la fuente izquierda', example: 'cliente_id' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(150)
+  izquierda: string;
+
+  @ApiProperty({ description: 'Campo de la fuente derecha', example: 'cliente_ref' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(150)
+  derecha: string;
+}
+
+export class JoinRelationDto {
+  @ApiProperty({ description: 'Alias de una fuente ya unida', example: 'clientes' })
+  @IsString()
+  @IsNotEmpty()
+  izquierda: string;
+
+  @ApiProperty({ description: 'Alias de la fuente que se añade', example: 'pedidos' })
+  @IsString()
+  @IsNotEmpty()
+  derecha: string;
+
+  @ApiPropertyOptional({ enum: JOIN_TYPES, default: 'INNER' })
+  @IsOptional()
+  @IsIn(JOIN_TYPES, { message: `tipo debe ser uno de: ${JOIN_TYPES.join(', ')}` })
+  tipo: JoinType = 'INNER';
+
+  @ApiProperty({ description: `De 1 a ${MAX_JOIN_KEYS} pares de llaves (llave compuesta)`, type: [JoinKeyPairDto] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(MAX_JOIN_KEYS)
+  @ValidateNested({ each: true })
+  @Type(() => JoinKeyPairDto)
+  llaves: JoinKeyPairDto[];
+}
+
+/** Los campos del formato original (una tabla SQL × una colección NoSQL) solo son obligatorios si no se envía `fuentes`. */
+const usesLegacyFormat = (dto: CrossJoinDto) => dto.fuentes === undefined;
+
+/**
+ * Cross-join en memoria. Acepta dos formatos:
+ * - **N fuentes** (`fuentes` + `relaciones`): de 2 a 5 tablas o colecciones de cualquier motor, con INNER, LEFT,
+ *   RIGHT o FULL y llaves compuestas.
+ * - **Original** (`conexionSqlId`, `tablaSql`, `conexionNoSqlId`, `coleccionNoSql`, `llaveSql`, `llaveNoSql`):
+ *   se sigue aceptando igual que antes y ahora admite `tipoJoin`.
+ */
+export class CrossJoinDto {
+  @ApiPropertyOptional({
+    description: `Formato de N fuentes: de ${MIN_JOIN_SOURCES} a ${MAX_JOIN_SOURCES} tablas o colecciones`,
+    type: [JoinSourceDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(MIN_JOIN_SOURCES)
+  @ArrayMaxSize(MAX_JOIN_SOURCES)
+  @ValidateNested({ each: true })
+  @Type(() => JoinSourceDto)
+  fuentes?: JoinSourceDto[];
+
+  @ApiPropertyOptional({
+    description:
+      'Formato de N fuentes: una relación por cada fuente que se añade. La primera une dos fuentes y cada una de las siguientes une una fuente nueva (derecha) a una ya unida (izquierda).',
+    type: [JoinRelationDto],
+  })
+  @ValidateIf((dto: CrossJoinDto) => dto.fuentes !== undefined)
+  @IsArray()
+  @ArrayMinSize(MIN_JOIN_SOURCES - 1)
+  @ArrayMaxSize(MAX_JOIN_SOURCES - 1)
+  @ValidateNested({ each: true })
+  @Type(() => JoinRelationDto)
+  relaciones?: JoinRelationDto[];
+
+  @ApiPropertyOptional({
+    description: 'Formato original: tipo de join entre la tabla SQL y la colección NoSQL',
+    enum: JOIN_TYPES,
+    default: 'INNER',
+  })
+  @IsOptional()
+  @IsIn(JOIN_TYPES, { message: `tipoJoin debe ser uno de: ${JOIN_TYPES.join(', ')}` })
+  tipoJoin?: JoinType;
+
+  @ApiPropertyOptional({
+    description: 'Formato original: UUID de la conexión SQL origen',
+    example: 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d',
+  })
+  @ValidateIf(usesLegacyFormat)
+  @IsUUID('4', { message: 'conexionSqlId debe ser un UUID v4 válido' })
+  @IsNotEmpty()
+  conexionSqlId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Formato original: UUID de la conexión NoSQL origen',
+    example: 'b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e',
+  })
+  @ValidateIf(usesLegacyFormat)
+  @IsUUID('4', { message: 'conexionNoSqlId debe ser un UUID v4 válido' })
+  @IsNotEmpty()
+  conexionNoSqlId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Formato original: nombre de la tabla SQL a consultar',
+    example: 'clientes',
+  })
+  @ValidateIf(usesLegacyFormat)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  tablaSql?: string;
 
   @ApiPropertyOptional({
     description:
@@ -161,32 +294,35 @@ export class CrossJoinDto {
   @MaxLength(128)
   esquemaSql?: string;
 
-  @ApiProperty({
-    description: 'Nombre de la colección NoSQL a consultar',
+  @ApiPropertyOptional({
+    description: 'Formato original: nombre de la colección NoSQL a consultar',
     example: 'pedidos',
   })
+  @ValidateIf(usesLegacyFormat)
   @IsString()
   @IsNotEmpty()
   @MaxLength(150)
-  coleccionNoSql: string;
+  coleccionNoSql?: string;
 
-  @ApiProperty({
-    description: 'Nombre de la llave en la tabla SQL para el Join',
+  @ApiPropertyOptional({
+    description: 'Formato original: nombre de la llave en la tabla SQL para el Join',
     example: 'id',
   })
+  @ValidateIf(usesLegacyFormat)
   @IsString()
   @IsNotEmpty()
   @MaxLength(128)
-  llaveSql: string;
+  llaveSql?: string;
 
-  @ApiProperty({
-    description: 'Nombre de la llave en la colección NoSQL para el Join',
+  @ApiPropertyOptional({
+    description: 'Formato original: nombre de la llave en la colección NoSQL para el Join',
     example: 'cliente_id',
   })
+  @ValidateIf(usesLegacyFormat)
   @IsString()
   @IsNotEmpty()
   @MaxLength(150)
-  llaveNoSql: string;
+  llaveNoSql?: string;
 
   @ApiPropertyOptional({
     description: 'Filtros SQL AND aplicados en la consulta del origen',

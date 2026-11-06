@@ -18,8 +18,33 @@ export function buildDataAccessAuditEvent(
   result: { totalFilas?: number; error?: unknown },
 ): AuditEventInput {
   const user: AuthenticatedUser = request.user;
-  const tabla = payload.esquemaSql ? `${payload.esquemaSql}.${payload.tablaSql}` : payload.tablaSql;
   const failed = result.error !== undefined;
+  const isMultiSource = Array.isArray(payload.fuentes);
+  const tabla = payload.esquemaSql ? `${payload.esquemaSql}.${payload.tablaSql}` : payload.tablaSql;
+  const fuentes = payload.fuentes ?? [];
+  const relaciones = payload.relaciones ?? [];
+  const entidades = fuentes
+    .map((source) => (source.esquema ? `${source.esquema}.${source.entidad}` : source.entidad))
+    .join(' x ');
+
+  const sourceDetails = isMultiSource
+    ? {
+        entidades,
+        conexiones: [...new Set(fuentes.map((source) => source.conexionId))].join(','),
+        fuentes: fuentes.length,
+        tiposJoin: relaciones.map((relation) => relation.tipo ?? 'INNER').join(','),
+        filtros: fuentes.reduce((total, source) => total + (source.filtros?.length ?? 0), 0),
+      }
+    : {
+        conexionSqlId: payload.conexionSqlId,
+        conexionNoSqlId: payload.conexionNoSqlId,
+        esquemaSql: payload.esquemaSql,
+        tablaSql: payload.tablaSql,
+        coleccionNoSql: payload.coleccionNoSql,
+        tiposJoin: payload.tipoJoin ?? 'INNER',
+        filtrosSql: payload.filtrosSql?.length ?? 0,
+        filtrosNoSql: payload.filtrosNoSql?.length ?? 0,
+      };
 
   return {
     eventType,
@@ -28,15 +53,9 @@ export function buildDataAccessAuditEvent(
     actorEmail: user.email,
     workspaceId: user.workspaceId,
     targetType: 'CROSS_JOIN',
-    targetId: `${tabla} x ${payload.coleccionNoSql}`,
+    targetId: isMultiSource ? entidades : `${tabla} x ${payload.coleccionNoSql}`,
     details: {
-      conexionSqlId: payload.conexionSqlId,
-      conexionNoSqlId: payload.conexionNoSqlId,
-      esquemaSql: payload.esquemaSql,
-      tablaSql: payload.tablaSql,
-      coleccionNoSql: payload.coleccionNoSql,
-      filtrosSql: payload.filtrosSql?.length ?? 0,
-      filtrosNoSql: payload.filtrosNoSql?.length ?? 0,
+      ...sourceDetails,
       agregado: Boolean(payload.groupBy?.length || payload.aggregations?.length),
       enmascarado: !hasPermission(user.role, 'VIEW_UNMASKED_DATA'),
       ...('format' in payload ? { formato: payload.format } : {}),

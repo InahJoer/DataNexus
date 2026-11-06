@@ -36,6 +36,8 @@ import {
   getMaxJoinBytes,
   getMaxJoinRows,
 } from './data-engine.constants.js';
+import { createRowFlattener, describeJoinPlan, executeJoinPlan } from './join/join-plan.js';
+import { resolveJoinPlan } from './join/resolve-join-plan.js';
 
 const EXPLORATION_TIMEOUT_MS = 10_000;
 
@@ -259,7 +261,7 @@ export class DataEngineService {
       case 'pdf': {
         const buffer = await this.exportService.exportToPdf(
           securedData,
-          `DataNexus - Join ${payload.tablaSql} x ${payload.coleccionNoSql}`,
+          `DataNexus - Join ${describeJoinPlan(resolveJoinPlan(payload))}`,
         );
         return {
           buffer,
@@ -305,7 +307,7 @@ export class DataEngineService {
 
     await this.exportService.writePdf(
       securedData,
-      `DataNexus - Join ${payload.tablaSql} x ${payload.coleccionNoSql}`,
+      `DataNexus - Join ${describeJoinPlan(resolveJoinPlan(payload))}`,
       destination,
     );
     return {
@@ -324,60 +326,47 @@ export class DataEngineService {
   ): Promise<Record<string, any>[]> {
     this.validateAggregation(payload);
 
-    // 1. Obtener y validar pertenencia al workspace para ambas conexiones
-    const [sqlConnection, noSqlConnection] = await Promise.all([
-      this.connectionsService.getConnectionForExploration(
-        payload.conexionSqlId,
-        user.workspaceId,
-      ),
-      this.connectionsService.getConnectionForExploration(
-        payload.conexionNoSqlId,
-        user.workspaceId,
-      ),
-    ]);
+    const plan = resolveJoinPlan(payload);
 
-    // 2. Aplicar filtros en los adaptadores antes de cargar registros (filter pushdown)
-    const sqlOptions: ExtractOptions = {
-      ...(payload.esquemaSql ? { schema: payload.esquemaSql } : {}),
-      ...(payload.filtrosSql ? { filters: payload.filtrosSql } : {}),
-    };
-    const noSqlOptions: ExtractOptions = payload.filtrosNoSql
-      ? { filters: payload.filtrosNoSql }
-      : {};
-    const [sqlRecords, noSqlRecords] = await Promise.all([
-      this.extract(
-        sqlConnection,
-        payload.tablaSql,
-        Object.keys(sqlOptions).length ? sqlOptions : undefined,
+    // 1. Obtener y validar pertenencia al workspace de cada conexión (una vez por conexión)
+    const connectionIds = [...new Set(plan.sources.map((source) => source.conexionId))];
+    const connections = new Map(
+      await Promise.all(
+        connectionIds.map(
+          async (id) =>
+            [id, await this.connectionsService.getConnectionForExploration(id, user.workspaceId)] as const,
+        ),
       ),
-      this.extract(
-        noSqlConnection,
-        payload.coleccionNoSql,
-        Object.keys(noSqlOptions).length ? noSqlOptions : undefined,
-      ),
-    ]);
+    );
 
-    // 3. Indexar la colección NoSQL por llaveNoSql para búsqueda en O(1)
-    const noSqlIndex = new Map<string, Record<string, any>[]>();
-    for (const doc of noSqlRecords) {
-      const keyValue = doc[payload.llaveNoSql];
-      if (keyValue !== undefined && keyValue !== null) {
-        const normalizedKey = String(keyValue).trim();
-        const existing = noSqlIndex.get(normalizedKey) ?? [];
-        existing.push(doc);
-        noSqlIndex.set(normalizedKey, existing);
-      }
-    }
+    // 2. Extraer cada fuente aplicando sus filtros en el motor (filter pushdown)
+    const extracted = await Promise.all(
+      plan.sources.map(async (source) => {
+        const options: ExtractOptions = {
+          ...(source.esquema ? { schema: source.esquema } : {}),
+          ...(source.filtros?.length ? { filters: source.filtros } : {}),
+        };
+        const records = await this.extract(
+          connections.get(source.conexionId)!,
+          source.entidad,
+          Object.keys(options).length ? options : undefined,
+        );
+        return [source.alias, records] as const;
+      }),
+    );
+    const recordsByAlias = new Map(extracted);
 
-    // 4. Cruzar filas y, cuando se solicita, conservar solo el estado agregado.
+    // 3. Ejecutar las relaciones (INNER/LEFT/RIGHT/FULL) con índices hash y aplanar las filas
+    const tuples = executeJoinPlan(plan, recordsByAlias, getMaxJoinRows());
+    const flatten = createRowFlattener(plan, recordsByAlias);
+
+    // 4. Recorrer las filas unidas y, cuando se solicita, conservar solo el estado agregado.
     const joinedRows: Record<string, any>[] = [];
     const groupBy = payload.groupBy ?? [];
     const aggregations = payload.aggregations ?? [];
     const aggregate = groupBy.length > 0 || aggregations.length > 0;
     const aggregateGroups = new Map<string, AggregateBucket>();
-    const maxJoinRows = getMaxJoinRows();
     const maxJoinBytes = getMaxJoinBytes();
-    let joinedCount = 0;
     let joinedBytes = 0;
     let aggregateBytes = 0;
 
@@ -389,70 +378,57 @@ export class DataEngineService {
       aggregateGroups.set('[]', bucket);
     }
 
-    for (const sqlRow of sqlRecords) {
-      const keyValue = sqlRow[payload.llaveSql];
-      if (keyValue === undefined || keyValue === null) continue;
-      const matches = noSqlIndex.get(String(keyValue).trim());
-      if (!matches?.length) continue;
+    for (const tuple of tuples) {
+      const joinedRow = flatten(tuple);
 
-      for (const match of matches) {
-        if (joinedCount >= maxJoinRows) {
-          throw new PayloadTooLargeException(
-            `El join supera el máximo de ${maxJoinRows} filas configurado`,
-          );
+      if (aggregate) {
+        // Aggregate the secured source row so arbitrary metric aliases cannot
+        // reveal values that are masked for LECTOR users.
+        const aggregationRow = this.maskingService.maskRecordForRole(
+          joinedRow,
+          user.role,
+        );
+        const groupValues = Object.fromEntries(
+          groupBy.map((field) => [
+            field,
+            this.getOwnValue(aggregationRow, field),
+          ]),
+        );
+        const groupKey = this.serializeGroupValues(
+          groupBy.map((field) => this.getOwnValue(aggregationRow, field)),
+        );
+        let bucket = aggregateGroups.get(groupKey);
+        if (!bucket) {
+          bucket = this.createAggregateBucket(groupValues, aggregations);
+          aggregateGroups.set(groupKey, bucket);
         }
-        joinedCount += 1;
-        const joinedRow = this.mergeRows(sqlRow, match);
-
-        if (aggregate) {
-          // Aggregate the secured source row so arbitrary metric aliases cannot
-          // reveal values that are masked for LECTOR users.
-          const aggregationRow = this.maskingService.maskRecordForRole(
-            joinedRow,
-            user.role,
-          );
-          const groupValues = Object.fromEntries(
-            groupBy.map((field) => [
-              field,
-              this.getOwnValue(aggregationRow, field),
-            ]),
-          );
-          const groupKey = this.serializeGroupValues(
-            groupBy.map((field) => this.getOwnValue(aggregationRow, field)),
-          );
-          let bucket = aggregateGroups.get(groupKey);
-          if (!bucket) {
-            bucket = this.createAggregateBucket(groupValues, aggregations);
-            aggregateGroups.set(groupKey, bucket);
-          }
-          const oldBytes = bucket.bytes;
-          this.addToAggregateBucket(
-            bucket,
-            joinedRow,
-            aggregationRow,
-            aggregations,
-            user.role,
-          );
-          bucket.output = this.toAggregateRow(bucket, aggregations);
-          bucket.bytes = getJsonByteLength(bucket.output);
-          aggregateBytes += bucket.bytes - oldBytes;
-          if (aggregateBytes > maxJoinBytes) {
-            throw new PayloadTooLargeException(
-              `El join supera el máximo de ${maxJoinBytes} bytes configurado`,
-            );
-          }
-          continue;
-        }
-
-        const rowBytes = getJsonByteLength(joinedRow);
-        if (joinedBytes + rowBytes > maxJoinBytes) {
+        const oldBytes = bucket.bytes;
+        this.addToAggregateBucket(
+          bucket,
+          joinedRow,
+          aggregationRow,
+          aggregations,
+          user.role,
+        );
+        bucket.output = this.toAggregateRow(bucket, aggregations);
+        bucket.bytes = getJsonByteLength(bucket.output);
+        aggregateBytes += bucket.bytes - oldBytes;
+        if (aggregateBytes > maxJoinBytes) {
           throw new PayloadTooLargeException(
             `El join supera el máximo de ${maxJoinBytes} bytes configurado`,
           );
         }
-        joinedBytes += rowBytes;
-        joinedRows.push(joinedRow);
+        continue;
       }
+
+      const rowBytes = getJsonByteLength(joinedRow);
+      if (joinedBytes + rowBytes > maxJoinBytes) {
+        throw new PayloadTooLargeException(
+          `El join supera el máximo de ${maxJoinBytes} bytes configurado`,
+        );
+      }
+      joinedBytes += rowBytes;
+      joinedRows.push(joinedRow);
     }
 
     return aggregate
@@ -594,49 +570,6 @@ export class DataEngineService {
     return JSON.stringify(values, (_key, value) =>
       typeof value === 'bigint' ? value.toString() : value,
     );
-  }
-
-  private mergeRows(
-    sqlRow: Record<string, any>,
-    noSqlRow: Record<string, any>,
-  ): Record<string, any> {
-    const duplicateKeys = new Set(
-      Object.keys(sqlRow).filter((key) =>
-        Object.prototype.hasOwnProperty.call(noSqlRow, key),
-      ),
-    );
-    const merged: Record<string, any> = {};
-
-    for (const [key, value] of Object.entries(sqlRow)) {
-      this.assignUnique(
-        merged,
-        duplicateKeys.has(key) ? `sql.${key}` : key,
-        value,
-      );
-    }
-    for (const [key, value] of Object.entries(noSqlRow)) {
-      this.assignUnique(
-        merged,
-        duplicateKeys.has(key) ? `nosql.${key}` : key,
-        value,
-      );
-    }
-
-    return merged;
-  }
-
-  private assignUnique(
-    target: Record<string, any>,
-    preferredKey: string,
-    value: any,
-  ): void {
-    let key = preferredKey;
-    let suffix = 2;
-    while (Object.prototype.hasOwnProperty.call(target, key)) {
-      key = `${preferredKey}_${suffix}`;
-      suffix += 1;
-    }
-    target[key] = value;
   }
 
   private async withTimeout<T>(
