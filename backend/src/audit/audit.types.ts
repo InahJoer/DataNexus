@@ -22,6 +22,10 @@ export const AUDIT_EVENT_TYPES = [
   'REFRESH_TOKEN_REUSED',
   'ACCOUNT_LOCKED',
   'WORKSPACE_UPDATED',
+  'INVITATION_RESENT',
+  'INVITATION_REVOKED',
+  'INVITATION_ACCEPTED',
+  'USER_REMOVED',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
@@ -32,7 +36,7 @@ export interface AuditEventInput {
   actorUserId?: string;
   actorEmail?: string;
   workspaceId?: string;
-  targetType?: 'USER' | 'CONNECTION' | 'REPORT' | 'CROSS_JOIN' | 'AUDIT_LOG' | 'RECORD' | 'SESSION' | 'WORKSPACE';
+  targetType?: 'USER' | 'CONNECTION' | 'REPORT' | 'CROSS_JOIN' | 'AUDIT_LOG' | 'RECORD' | 'SESSION' | 'WORKSPACE' | 'INVITATION';
   targetId?: string;
   details?: Record<string, unknown>;
   ipAddress?: string;

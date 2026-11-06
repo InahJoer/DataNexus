@@ -48,6 +48,17 @@ enum AuditEventType {
   REFRESH_TOKEN_REUSED
   ACCOUNT_LOCKED
   WORKSPACE_UPDATED
+  INVITATION_RESENT
+  INVITATION_REVOKED
+  INVITATION_ACCEPTED
+  USER_REMOVED
+}
+
+/// Estado persistido de una invitación. La expiración se calcula con expiresAt (PENDIENTE vencida = EXPIRADA).
+enum InvitationStatus {
+  PENDIENTE
+  ACEPTADA
+  REVOCADA
 }
 
 /// Espacio de trabajo (tenant). Toda consulta de negocio se filtra por su id (RF-05).
@@ -66,6 +77,7 @@ model Workspace {
   fechaActualizacion DateTime     @default(now()) @updatedAt
   users              User[]
   conexiones         ConexionDB[]
+  invitations        Invitation[]
 }
 
 model User {
@@ -82,6 +94,7 @@ model User {
   workspace           Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   passwordResetTokens PasswordResetToken[]
   sessions            UserSession[]
+  invitationsSent     Invitation[]
 
   @@index([workspaceId])
 }
@@ -161,4 +174,26 @@ model RefreshToken {
   rotatedAt DateTime?
 
   @@index([sessionId])
+}
+
+/// Invitación a un workspace por enlace (RF-06). Solo se guarda el hash SHA-256 del token.
+model Invitation {
+  id          String           @id @default(uuid())
+  email       String
+  name        String
+  role        Role
+  tokenHash   String           @unique
+  status      InvitationStatus @default(PENDIENTE)
+  expiresAt   DateTime
+  workspaceId String
+  workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  /// Administrador que invitó. Queda en null si después se da de baja.
+  invitedById String?
+  invitedBy   User?            @relation(fields: [invitedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime         @default(now())
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+
+  @@index([workspaceId, status])
+  @@index([email])
 }

@@ -120,6 +120,14 @@ export class EnvironmentVariables {
   @Max(1440)
   PASSWORD_RESET_TTL_MINUTES?: number;
 
+  /** Horas de validez de un enlace de invitación al workspace (RF-06, por defecto 72). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(720)
+  INVITATION_TTL_HOURS?: number;
+
   /** Minutos sin actividad tras los que se cierra la sesión (RF-04, por defecto 30). */
   @IsOptional()
   @Type(() => Number)

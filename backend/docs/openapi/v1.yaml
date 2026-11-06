@@ -179,6 +179,174 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /users/invite:
+    post:
+      tags: [Users]
+      summary: Invitar a un nuevo miembro por enlace
+      description: >-
+        Solo ADMIN. Crea una invitación de un solo uso y envía el enlace por correo. Respeta los dominios
+        permitidos del workspace.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InviteUserRequest'
+      responses:
+        '201':
+          description: Invitación creada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /users/invitations:
+    get:
+      tags: [Users]
+      summary: Listar invitaciones del workspace
+      description: Solo ADMIN.
+      parameters:
+        - name: estado
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [PENDIENTE, ACEPTADA, REVOCADA, EXPIRADA]
+      responses:
+        '200':
+          description: Invitaciones, de la más reciente a la más antigua.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Invitation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /users/invitations/{id}/resend:
+    parameters:
+      - $ref: '#/components/parameters/UuidPath'
+    post:
+      tags: [Users]
+      summary: Reenviar una invitación pendiente o expirada
+      description: Solo ADMIN. Genera un enlace nuevo y renueva el vencimiento.
+      responses:
+        '200':
+          description: Invitación reenviada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /users/invitations/{id}:
+    parameters:
+      - $ref: '#/components/parameters/UuidPath'
+    delete:
+      tags: [Users]
+      summary: Revocar una invitación pendiente
+      description: Solo ADMIN.
+      responses:
+        '200':
+          description: Invitación revocada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invitation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /users/{id}:
+    parameters:
+      - $ref: '#/components/parameters/UuidPath'
+    delete:
+      tags: [Users]
+      summary: Dar de baja a un miembro del workspace
+      description: >-
+        Solo ADMIN. Elimina la cuenta y sus sesiones. No se permite la baja propia ni dejar el workspace sin ADMIN.
+      responses:
+        '200':
+          description: Miembro dado de baja sin contraseña.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserRoleResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /auth/invitation-preview:
+    post:
+      tags: [Auth]
+      summary: Consultar una invitación antes de aceptarla
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InvitationTokenRequest'
+      responses:
+        '200':
+          description: Datos públicos de la invitación vigente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitationPreview'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /auth/accept-invite:
+    post:
+      tags: [Auth]
+      summary: Aceptar una invitación y definir la contraseña
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcceptInvitationRequest'
+      responses:
+        '200':
+          description: Cuenta activada.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message]
+                properties:
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /users/{id}/role:
     parameters:
       - $ref: '#/components/parameters/UuidPath'
@@ -207,6 +375,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /workspaces/me:
     get:
       tags: [Workspaces]
@@ -537,6 +707,110 @@ components:
           type: string
           writeOnly: true
           description: Nueva credencial; nunca se devuelve ni se audita.
+    InviteUserRequest:
+      type: object
+      additionalProperties: false
+      required: [email, name, role]
+      properties:
+        email:
+          type: string
+          format: email
+          description: Correo corporativo.
+        name:
+          type: string
+          maxLength: 120
+        role:
+          type: string
+          enum: [ADMIN, OPERADOR, LECTOR, AUDITOR]
+    Invitation:
+      type: object
+      required: [id, email, name, role, estado, expiresAt, createdAt, acceptedAt, revokedAt, invitedBy]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        role:
+          type: string
+          enum: [ADMIN, OPERADOR, LECTOR, AUDITOR]
+        estado:
+          type: string
+          enum: [PENDIENTE, ACEPTADA, REVOCADA, EXPIRADA]
+        expiresAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        acceptedAt:
+          type: string
+          format: date-time
+          nullable: true
+        revokedAt:
+          type: string
+          format: date-time
+          nullable: true
+        invitedBy:
+          type: object
+          nullable: true
+          required: [id, name, email]
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+            email:
+              type: string
+              format: email
+        correoEnviado:
+          type: boolean
+          description: Solo al invitar o reenviar.
+    InvitationTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{20,128}$'
+    AcceptInvitationRequest:
+      type: object
+      additionalProperties: false
+      required: [token, password]
+      properties:
+        token:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{20,128}$'
+        password:
+          type: string
+          minLength: 10
+          maxLength: 72
+          description: Debe cumplir la política de contraseñas.
+        name:
+          type: string
+          maxLength: 120
+    InvitationPreview:
+      type: object
+      required: [email, name, role, nombreEmpresa, expiresAt]
+      properties:
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        role:
+          type: string
+          enum: [ADMIN, OPERADOR, LECTOR, AUDITOR]
+        nombreEmpresa:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
     UpdateUserRoleRequest:
       type: object
       required: [role]
@@ -778,6 +1052,12 @@ components:
             $ref: '#/components/schemas/ApiError'
     Forbidden:
       description: El actor no tiene permisos para esta operación.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Conflict:
+      description: Conflicto con el estado actual del recurso.
       content:
         application/json:
           schema:
