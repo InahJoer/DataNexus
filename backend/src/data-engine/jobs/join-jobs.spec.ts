@@ -97,6 +97,25 @@ describe('Ciclo de vida de un join asíncrono', () => {
     );
   });
 
+  it('una actualización de progreso lenta nunca sobrescribe el estado final', async () => {
+    const { service } = setup(60_000);
+    const update = service.store.update.bind(service.store);
+    let slowWrites = 0;
+    vi.spyOn(service.store, 'update').mockImplementation(async (id, patch) => {
+      // Simula Redis lento solo para el progreso: sin la espera, llegaría después de COMPLETADO.
+      if ('progreso' in patch && !('estado' in patch)) {
+        slowWrites += 1;
+        await new Promise((resolve) => setTimeout(resolve, 40));
+      }
+      return update(id, patch);
+    });
+    const job = await service.enqueue(payload(), request());
+    await waitFor(service, job.id, ['COMPLETADO']);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(slowWrites).toBeGreaterThan(0);
+    expect(await service.getStatus(request().user, job.id)).toMatchObject({ estado: 'COMPLETADO', progreso: 100 });
+  });
+
   it('valida el payload al encolar (400) en lugar de fallar después', async () => {
     const { service } = setup();
     await expect(service.enqueue(payload({ llaveNoSql: undefined }), request())).rejects.toBeInstanceOf(BadRequestException);

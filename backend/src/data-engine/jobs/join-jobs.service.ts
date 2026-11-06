@@ -179,12 +179,15 @@ export class JoinJobsService implements OnModuleDestroy {
     }, CANCEL_POLL_MS);
     poll.unref?.();
 
+    // Las actualizaciones de progreso se encadenan y se esperan antes de cerrar el job: si una llegara tarde,
+    // sobrescribiría el estado final (COMPLETADO, CANCELADO o FALLIDO) con EN_PROCESO.
     let lastReported = 0;
+    let progressWrites: Promise<unknown> = Promise.resolve();
     const onProgress = (fraction: number) => {
       const progreso = Math.min(99, Math.floor(fraction * 100));
       if (progreso >= lastReported + 5) {
         lastReported = progreso;
-        void this.store.update(jobId, { progreso });
+        progressWrites = progressWrites.then(() => this.store.update(jobId, { progreso })).catch(() => undefined);
       }
     };
 
@@ -192,11 +195,13 @@ export class JoinJobsService implements OnModuleDestroy {
     const request = this.requestOf(record);
     try {
       const { rows, truncated } = await this.engine.runCrossJoinJob(payload, user, { signal: controller.signal, onProgress });
+      await progressWrites;
       if (await this.store.isCancelRequested(jobId)) throw new JobCancelledError('cancelado');
       await this.store.saveResult(jobId, rows);
       await this.finish(jobId, { estado: 'COMPLETADO', progreso: 100, totalFilas: rows.length, truncado: truncated });
       await this.recordAudit(request, payload, { totalFilas: rows.length });
     } catch (error) {
+      await progressWrites;
       if (error instanceof JobCancelledError || controller.signal.aborted) {
         await this.finish(jobId, { estado: 'CANCELADO' });
         return;

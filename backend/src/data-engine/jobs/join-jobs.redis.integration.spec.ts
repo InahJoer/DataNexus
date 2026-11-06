@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { NotFoundException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import { Redis } from 'ioredis';
@@ -59,8 +59,13 @@ describe.skipIf(!process.env.REDIS_URL)('Joins asíncronos con BullMQ + Redis', 
     throw new Error('timeout');
   };
 
+  // Cada servicio tiene un worker escuchando la misma cola (como varias réplicas): se cierran entre pruebas para
+  // que el worker de una prueba no procese los jobs de la siguiente con otra configuración.
+  afterEach(async () => {
+    await Promise.all(services.splice(0).map((service) => service.onModuleDestroy()));
+  });
+
   afterAll(async () => {
-    await Promise.all(services.map((service) => service.onModuleDestroy()));
     const keys = await inspector.keys('datanexus:join-job*');
     if (keys.length) await inspector.del(...keys);
     await inspector.quit();
