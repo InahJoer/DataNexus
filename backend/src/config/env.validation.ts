@@ -176,6 +176,20 @@ export class EnvironmentVariables {
   @Min(1)
   DATA_ENGINE_MAX_SOURCE_ROWS?: number;
 
+  /** Milisegundos sin uso tras los que se cierra el cliente de una fuente externa (por defecto 300000). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1000)
+  DATA_SOURCE_POOL_IDLE_MS?: number;
+
+  /** Máximo de clientes de fuentes externas abiertos a la vez; se cierran los menos usados (por defecto 50). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  DATA_SOURCE_POOL_MAX_ENTRIES?: number;
+
   @IsOptional()
   @Type(() => Number)
   @IsInt()

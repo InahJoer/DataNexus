@@ -142,8 +142,32 @@ access tokens ya emitidos. Reglas:
 
 ### 4.3 Motor de Datos & Federación (`/engine` o `/data-engine`)
 - `GET /engine/connections/:id/schema`: Introspección de tablas, vistas o colecciones disponibles.
+- `GET /engine/connections/:id/schema/fields`: Campos de una tabla o colección.
 - `POST /engine/join`: Ejecución del Inner Join cruzado SQL $\times$ NoSQL con paginación (`limit`, `offset`) y enmascaramiento dinámico para rol `LECTOR`.
 - `POST /engine/export`: Generación y descarga directa de archivos (`format: excel | pdf | json`) con rate limiting estricto (20 req/min).
+
+**Adaptadores de fuentes de datos (RNF-10, issues #27 y #28).** `DataEngineService` solo conoce la interfaz
+`IDataSourceAdapter` (`listObjects`, `listFields`, `extract` y `capabilities`) y obtiene el adaptador del motor con
+`AdapterRegistry` (acepta alias como "SQL Server" o "Firebase"). Agregar un motor = crear su adaptador y añadirlo a
+`DATA_SOURCE_ADAPTER_CLASSES` en `adapters/adapter-providers.ts`; el servicio no cambia.
+
+| Motor | Explorar | Campos | Extraer (cross-join) |
+| :--- | :---: | :---: | :---: |
+| PostgreSQL | ✅ | ✅ | ❌ (pendiente) |
+| MySQL / MariaDB | ✅ | ✅ | ✅ |
+| SQL Server | ✅ | ✅ | ✅ |
+| Firestore | ✅ | ✅ (muestreo) | ✅ |
+| MongoDB | ❌ (issue #29) | ❌ | ❌ |
+
+- **Pool de clientes (`DataSourceClientPool`):** reutiliza un cliente por conexión y credenciales (pg.Pool, pool de
+  mysql2, ConnectionPool de mssql, instancia de Firestore). Cierra los inactivos tras `DATA_SOURCE_POOL_IDLE_MS`
+  (5 min) y los menos usados si se superan `DATA_SOURCE_POOL_MAX_ENTRIES` (50). `ConnectionsService` lo invalida al
+  editar o eliminar una conexión, el motor lo invalida tras un timeout y al apagar la aplicación
+  (`enableShutdownHooks` + `OnModuleDestroy`) no queda ninguna conexión abierta.
+- **Extractor MySQL:** valida tablas y columnas contra `information_schema`, escapa identificadores con comillas
+  invertidas, traduce los filtros a `WHERE` con parámetros `?` (filter pushdown), limita a `DATA_ENGINE_MAX_SOURCE_ROWS`
+  + 1 filas, corta en el servidor con `MAX_EXECUTION_TIME` y estima el tamaño de cada fila en el servidor para no
+  transferir filas que superen `DATA_ENGINE_MAX_SOURCE_BYTES`. Lee en streaming y descarta la conexión si corta a mitad.
 
 ### 4.4 Auditoría (`/audit`)
 - `GET /audit/logs`: Consulta paginada (`page`, `limit`) con filtros por `fechaInicio`, `fechaFin` y `tipoAccion` (ADMIN o AUDITOR).

@@ -297,6 +297,47 @@ describe('ConnectionsService', () => {
     });
   });
 
+  describe('invalidación del pool de clientes externos', () => {
+    let pool: { invalidate: ReturnType<typeof vi.fn> };
+    beforeEach(() => {
+      pool = { invalidate: vi.fn().mockResolvedValue(undefined) };
+      service = new ConnectionsService(
+        prismaService as unknown as PrismaService,
+        encryptionService as unknown as EncryptionService,
+        auditService as unknown as AuditService,
+        pool as never,
+      );
+      tx.conexionDB.findFirst.mockResolvedValue({
+        id: 'connection-1',
+        tipoMotor: 'POSTGRESQL',
+        dbName: 'analytics',
+        connectionStringEncriptada: `encrypted_${serializeCredentials('POSTGRESQL', { ...pgCredentials, port: 5432, ssl: false })}`,
+      });
+    });
+
+    it('al editar la conexión cierra sus clientes después de guardar', async () => {
+      await service.update(admin, 'connection-1', { credenciales: { password: 'otra' } });
+      expect(pool.invalidate).toHaveBeenCalledWith('connection-1');
+      expect(tx.conexionDB.update.mock.invocationCallOrder[0]).toBeLessThan(pool.invalidate.mock.invocationCallOrder[0]);
+    });
+
+    it('al eliminar la conexión cierra sus clientes', async () => {
+      await service.remove(admin, 'connection-1');
+      expect(pool.invalidate).toHaveBeenCalledWith('connection-1');
+    });
+
+    it('no invalida si la operación falla', async () => {
+      tx.conexionDB.findFirst.mockResolvedValue(null);
+      await expect(service.remove(admin, 'connection-1')).rejects.toThrow(NotFoundException);
+      expect(pool.invalidate).not.toHaveBeenCalled();
+    });
+
+    it('un fallo al cerrar clientes no revierte el cambio guardado', async () => {
+      pool.invalidate.mockRejectedValue(new Error('ya cerrado'));
+      await expect(service.remove(admin, 'connection-1')).resolves.toBeDefined();
+    });
+  });
+
   it('elimina y audita solo metadatos', async () => {
     tx.conexionDB.findFirst.mockResolvedValue({ id: 'connection-1', tipoMotor: 'POSTGRESQL', dbName: 'analytics' });
     const result = await service.remove(admin, 'connection-1');

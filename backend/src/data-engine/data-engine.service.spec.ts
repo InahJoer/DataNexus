@@ -29,10 +29,24 @@ vi.mock('./export/export.service.js', () => ({
 }));
 
 import { DataEngineService } from './data-engine.service.js';
-import type { DataExplorer } from './data-explorer.interface.js';
-import type { ConnectionsService } from '../connections/connections.service.js';
+import type { IDataSourceAdapter } from './adapters/data-source-adapter.interface.js';
+import type { AdapterRegistry } from './adapters/adapter-registry.js';
+import type { DataSourceClientPool } from './pool/data-source-client-pool.js';
 
-const actor = {
+/** Registro falso que devuelve el mismo adaptador para cualquier motor (o ninguno). */
+function registryWith(adapter: Partial<IDataSourceAdapter> | undefined) {
+  return {
+    get: vi.fn(() =>
+      adapter
+        ? { tipoMotor: 'POSTGRESQL', capabilities: { explore: true, fields: true, extract: true }, ...adapter }
+        : undefined,
+    ),
+  } as unknown as AdapterRegistry & { get: ReturnType<typeof vi.fn> };
+}
+import type { ConnectionsService } from '../connections/connections.service.js';
+import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface.js';
+
+const actor: AuthenticatedUser = {
   id: 'user-1',
   email: 'user@example.com',
   name: 'User',
@@ -46,38 +60,31 @@ describe('DataEngineService', () => {
     vi.unstubAllEnvs();
   });
 
-  it('returns only catalog metadata for an authorized connection and closes the explorer', async () => {
-    const explorer: DataExplorer = {
-      tipoMotor: 'PostgreSQL',
+  it('returns only catalog metadata for an authorized connection', async () => {
+    const adapter = {
       listObjects: vi.fn().mockResolvedValue([
         { name: 'customers', schema: 'public', type: 'TABLE' },
         { name: 'monthly_report', schema: 'public', type: 'VIEW' },
       ]),
-      close: vi.fn().mockResolvedValue(undefined),
-      cancel: vi.fn().mockResolvedValue(undefined),
     };
-    const getConnectionForExploration = vi.fn().mockResolvedValue({
+    const connection = {
       id: 'connection-1',
       tipoMotor: 'PostgreSQL',
       dbName: 'analytics',
       connectionString: 'postgres://user:secret@db.internal/analytics',
-    });
-    const createExplorer = vi.fn().mockReturnValue(explorer);
+    };
+    const getConnectionForExploration = vi.fn().mockResolvedValue(connection);
+    const registry = registryWith(adapter);
     const service = new DataEngineService(
       { getConnectionForExploration } as unknown as ConnectionsService,
-      createExplorer,
+      registry,
     );
 
     const result = await service.exploreConnection(actor, 'connection-1');
 
-    expect(getConnectionForExploration).toHaveBeenCalledWith(
-      'connection-1',
-      'workspace-1',
-    );
-    expect(explorer.listObjects).toHaveBeenCalledWith(
-      'postgres://user:secret@db.internal/analytics',
-      'analytics',
-    );
+    expect(getConnectionForExploration).toHaveBeenCalledWith('connection-1', 'workspace-1');
+    expect(registry.get).toHaveBeenCalledWith('PostgreSQL');
+    expect(adapter.listObjects).toHaveBeenCalledWith(connection);
     expect(result).toEqual({
       connectionId: 'connection-1',
       tipoMotor: 'PostgreSQL',
@@ -87,16 +94,9 @@ describe('DataEngineService', () => {
       ],
     });
     expect(JSON.stringify(result)).not.toContain('secret');
-    expect(explorer.close).toHaveBeenCalledOnce();
   });
 
   it('returns an empty catalog when the external database has no objects', async () => {
-    const explorer: DataExplorer = {
-      tipoMotor: 'MySQL',
-      listObjects: vi.fn().mockResolvedValue([]),
-      close: vi.fn().mockResolvedValue(undefined),
-      cancel: vi.fn().mockResolvedValue(undefined),
-    };
     const service = new DataEngineService(
       {
         getConnectionForExploration: vi.fn().mockResolvedValue({
@@ -106,36 +106,27 @@ describe('DataEngineService', () => {
           connectionString: 'mysql://safe',
         }),
       } as unknown as ConnectionsService,
-      () => explorer,
+      registryWith({ listObjects: vi.fn().mockResolvedValue([]) }),
     );
 
-    await expect(
-      service.exploreConnection(actor, 'connection-1'),
-    ).resolves.toMatchObject({
-      objects: [],
-    });
-    expect(explorer.close).toHaveBeenCalledOnce();
+    await expect(service.exploreConnection(actor, 'connection-1')).resolves.toMatchObject({ objects: [] });
   });
 
-  it('does not create an explorer if the connection is outside the actor workspace', async () => {
-    const createExplorer = vi.fn();
+  it('does not look up an adapter if the connection is outside the actor workspace', async () => {
+    const registry = registryWith({});
     const service = new DataEngineService(
       {
-        getConnectionForExploration: vi
-          .fn()
-          .mockRejectedValue(new Error('connection not found')),
+        getConnectionForExploration: vi.fn().mockRejectedValue(new Error('connection not found')),
       } as unknown as ConnectionsService,
-      createExplorer,
+      registry,
     );
 
-    await expect(
-      service.exploreConnection(actor, 'foreign-connection'),
-    ).rejects.toThrow('connection not found');
-    expect(createExplorer).not.toHaveBeenCalled();
+    await expect(service.exploreConnection(actor, 'foreign-connection')).rejects.toThrow('connection not found');
+    expect(registry.get).not.toHaveBeenCalled();
   });
 
-  it('rejects an unsupported engine without returning any credentials', async () => {
-    const createExplorer = vi.fn();
+  it('rejects an engine without adapter without returning any credentials', async () => {
+    const registry = registryWith(undefined);
     const service = new DataEngineService(
       {
         getConnectionForExploration: vi.fn().mockResolvedValue({
@@ -145,24 +136,32 @@ describe('DataEngineService', () => {
           connectionString: 'top-secret',
         }),
       } as unknown as ConnectionsService,
-      createExplorer,
+      registry,
     );
 
-    await expect(
-      service.exploreConnection(actor, 'connection-1'),
-    ).rejects.toThrow(BadRequestException);
-    expect(createExplorer).toHaveBeenCalledWith('Oracle');
+    await expect(service.exploreConnection(actor, 'connection-1')).rejects.toThrow(BadRequestException);
+    expect(registry.get).toHaveBeenCalledWith('Oracle');
   });
 
-  it('normalizes connection errors and closes the explorer', async () => {
-    const explorer: DataExplorer = {
-      tipoMotor: 'SQLServer',
-      listObjects: vi
-        .fn()
-        .mockRejectedValue(new Error('login failed for top-secret')),
-      close: vi.fn().mockResolvedValue(undefined),
-      cancel: vi.fn().mockResolvedValue(undefined),
-    };
+  it('rejects field exploration when the adapter does not support it', async () => {
+    const service = new DataEngineService(
+      {
+        getConnectionForExploration: vi.fn().mockResolvedValue({
+          id: 'connection-1',
+          tipoMotor: 'MONGODB',
+          dbName: 'db',
+          connectionString: 'mongodb://safe',
+        }),
+      } as unknown as ConnectionsService,
+      registryWith({ capabilities: { explore: true, fields: false, extract: false } }),
+    );
+
+    await expect(service.exploreConnectionFields(actor, 'connection-1', 'orders')).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('normalizes connection errors without leaking provider details', async () => {
     const service = new DataEngineService(
       {
         getConnectionForExploration: vi.fn().mockResolvedValue({
@@ -172,7 +171,7 @@ describe('DataEngineService', () => {
           connectionString: 'top-secret',
         }),
       } as unknown as ConnectionsService,
-      () => explorer,
+      registryWith({ listObjects: vi.fn().mockRejectedValue(new Error('login failed for top-secret')) }),
     );
 
     try {
@@ -182,17 +181,11 @@ describe('DataEngineService', () => {
       expect(error).toBeInstanceOf(BadGatewayException);
       expect((error as Error).message).not.toContain('top-secret');
     }
-    expect(explorer.close).toHaveBeenCalledOnce();
   });
 
-  it('times out after ten seconds and cancels the explorer', async () => {
+  it('times out after ten seconds and discards the pooled clients of that connection', async () => {
     vi.useFakeTimers();
-    const explorer: DataExplorer = {
-      tipoMotor: 'Firestore',
-      listObjects: vi.fn().mockReturnValue(new Promise(() => undefined)),
-      close: vi.fn().mockResolvedValue(undefined),
-      cancel: vi.fn().mockResolvedValue(undefined),
-    };
+    const pool = { invalidate: vi.fn().mockResolvedValue(undefined) };
     const service = new DataEngineService(
       {
         getConnectionForExploration: vi.fn().mockResolvedValue({
@@ -202,48 +195,47 @@ describe('DataEngineService', () => {
           connectionString: '{}',
         }),
       } as unknown as ConnectionsService,
-      () => explorer,
+      registryWith({ listObjects: vi.fn().mockReturnValue(new Promise(() => undefined)) }),
+      pool as unknown as DataSourceClientPool,
     );
 
     const request = service.exploreConnection(actor, 'connection-1');
     const rejection = expect(request).rejects.toThrow(GatewayTimeoutException);
     await vi.advanceTimersByTimeAsync(10_000);
     await rejection;
-    expect(explorer.cancel).toHaveBeenCalledOnce();
-    expect(explorer.close).not.toHaveBeenCalled();
+    expect(pool.invalidate).toHaveBeenCalledWith('connection-1');
   });
 
-  it('does not wait beyond the exploration deadline for a stuck close', async () => {
-    vi.useFakeTimers();
-    const explorer: DataExplorer = {
-      tipoMotor: 'PostgreSQL',
-      listObjects: vi
-        .fn()
-        .mockResolvedValue([{ name: 'customers', type: 'TABLE' }]),
-      close: vi.fn().mockReturnValue(new Promise(() => undefined)),
-      cancel: vi.fn().mockResolvedValue(undefined),
+  it('reports UNSUPPORTED, HEALTHY and UNAVAILABLE in the health check', async () => {
+    const adapters: Record<string, Partial<IDataSourceAdapter> | undefined> = {
+      POSTGRESQL: { listObjects: vi.fn().mockResolvedValue([]) },
+      MYSQL: { listObjects: vi.fn().mockRejectedValue(new Error('down')) },
+      MONGODB: undefined,
     };
+    const registry = {
+      get: vi.fn((tipoMotor: string) => {
+        const adapter = adapters[tipoMotor];
+        return adapter ? { capabilities: { explore: true, fields: true, extract: true }, ...adapter } : undefined;
+      }),
+    } as unknown as AdapterRegistry;
     const service = new DataEngineService(
       {
-        getConnectionForExploration: vi.fn().mockResolvedValue({
-          id: 'connection-1',
-          tipoMotor: 'PostgreSQL',
-          dbName: 'db',
-          connectionString: 'postgres://safe',
-        }),
+        findAll: vi.fn().mockResolvedValue(
+          ['POSTGRESQL', 'MYSQL', 'MONGODB'].map((tipoMotor) => ({ id: tipoMotor, tipoMotor, host: 'h', dbName: 'd' })),
+        ),
+        getConnectionForExploration: vi.fn((id: string) =>
+          Promise.resolve({ id, tipoMotor: id, dbName: 'd', connectionString: 'x' }),
+        ),
       } as unknown as ConnectionsService,
-      () => explorer,
+      registry,
     );
 
-    const request = service.exploreConnection(actor, 'connection-1');
-    const response = expect(request).resolves.toMatchObject({
-      objects: [{ name: 'customers', type: 'TABLE' }],
-    });
-    await vi.advanceTimersByTimeAsync(10_000);
-    await response;
-
-    expect(explorer.close).toHaveBeenCalledOnce();
-    expect(explorer.cancel).toHaveBeenCalledOnce();
+    const health = await service.getConnectionsHealth(actor as never);
+    expect(health.connections.map((item) => [item.tipoMotor, item.status])).toEqual([
+      ['POSTGRESQL', 'HEALTHY'],
+      ['MYSQL', 'UNAVAILABLE'],
+      ['MONGODB', 'UNSUPPORTED'],
+    ]);
   });
 
   describe('executeCrossJoin and executeCrossJoinForExport', () => {
@@ -252,17 +244,17 @@ describe('DataEngineService', () => {
         id: 'conn-sql',
         tipoMotor: 'PostgreSQL',
         dbName: 'crm',
-        encryptedConnectionString: 'encrypted-sql',
+        connectionString: 'encrypted-sql',
       };
       const noSqlConn = {
         id: 'conn-nosql',
         tipoMotor: 'Firestore',
         dbName: 'store',
-        encryptedConnectionString: 'encrypted-firestore',
+        connectionString: 'encrypted-firestore',
       };
 
       const connectionsService = {
-        getConnectionForExtraction: vi.fn().mockImplementation((id: string) => {
+        getConnectionForExploration: vi.fn().mockImplementation((id: string) => {
           if (id === 'conn-sql') return Promise.resolve(sqlConn);
           if (id === 'conn-nosql') return Promise.resolve(noSqlConn);
           return Promise.reject(new Error('Not found'));
@@ -304,8 +296,7 @@ describe('DataEngineService', () => {
 
       const service = new DataEngineService(
         connectionsService,
-        () => undefined,
-        mockExtractor as any,
+        registryWith(mockExtractor),
       );
 
       const result = await service.executeCrossJoin(
@@ -333,12 +324,12 @@ describe('DataEngineService', () => {
 
     it('preserves same-named fields from both sources and passes the SQL schema to its adapter', async () => {
       const connectionsService = {
-        getConnectionForExtraction: vi.fn().mockImplementation((id: string) =>
+        getConnectionForExploration: vi.fn().mockImplementation((id: string) =>
           Promise.resolve({
             id,
             tipoMotor: id === 'conn-sql' ? 'SQLServer' : 'Firestore',
             dbName: 'analytics',
-            encryptedConnectionString: 'encrypted-secret',
+            connectionString: 'encrypted-secret',
           }),
         ),
       } as unknown as ConnectionsService;
@@ -359,8 +350,7 @@ describe('DataEngineService', () => {
       };
       const service = new DataEngineService(
         connectionsService,
-        () => undefined,
-        extractor as any,
+        registryWith(extractor),
       );
 
       const result = await service.executeCrossJoin(
@@ -395,11 +385,11 @@ describe('DataEngineService', () => {
     it('rejects a join whose many-to-many matches exceed the output cap', async () => {
       vi.stubEnv('DATA_ENGINE_MAX_JOIN_ROWS', '1');
       const connectionsService = {
-        getConnectionForExtraction: vi.fn().mockResolvedValue({
+        getConnectionForExploration: vi.fn().mockResolvedValue({
           id: 'conn-1',
           tipoMotor: 'SQLServer',
           dbName: 'db',
-          encryptedConnectionString: 'encrypted-secret',
+          connectionString: 'encrypted-secret',
         }),
       } as unknown as ConnectionsService;
       const extractor = {
@@ -415,8 +405,7 @@ describe('DataEngineService', () => {
       };
       const service = new DataEngineService(
         connectionsService,
-        () => undefined,
-        extractor as any,
+        registryWith(extractor),
       );
 
       await expect(
@@ -437,11 +426,11 @@ describe('DataEngineService', () => {
     it('rejects joins that exceed the configured output byte cap', async () => {
       vi.stubEnv('DATA_ENGINE_MAX_JOIN_BYTES', '20');
       const connectionsService = {
-        getConnectionForExtraction: vi.fn().mockResolvedValue({
+        getConnectionForExploration: vi.fn().mockResolvedValue({
           id: 'conn-1',
           tipoMotor: 'SQLServer',
           dbName: 'db',
-          encryptedConnectionString: 'encrypted-secret',
+          connectionString: 'encrypted-secret',
         }),
       } as unknown as ConnectionsService;
       const extractor = {
@@ -451,8 +440,7 @@ describe('DataEngineService', () => {
       };
       const service = new DataEngineService(
         connectionsService,
-        () => undefined,
-        extractor as any,
+        registryWith(extractor),
       );
 
       await expect(
@@ -473,11 +461,11 @@ describe('DataEngineService', () => {
     it('keeps the indexed in-memory join responsive for ten thousand rows per source', async () => {
       const rowCount = 10_000;
       const connectionsService = {
-        getConnectionForExtraction: vi.fn().mockResolvedValue({
+        getConnectionForExploration: vi.fn().mockResolvedValue({
           id: 'conn-1',
           tipoMotor: 'SQLServer',
           dbName: 'db',
-          encryptedConnectionString: 'encrypted-secret',
+          connectionString: 'encrypted-secret',
         }),
       } as unknown as ConnectionsService;
       const sqlRows = Array.from({ length: rowCount }, (_, index) => ({
@@ -497,8 +485,7 @@ describe('DataEngineService', () => {
       };
       const service = new DataEngineService(
         connectionsService,
-        () => undefined,
-        extractor as any,
+        registryWith(extractor),
       );
 
       const startedAt = performance.now();
@@ -522,11 +509,11 @@ describe('DataEngineService', () => {
 
     it('exports cross-join data to Excel and PDF formats', async () => {
       const connectionsService = {
-        getConnectionForExtraction: vi.fn().mockResolvedValue({
+        getConnectionForExploration: vi.fn().mockResolvedValue({
           id: 'conn-1',
           tipoMotor: 'PostgreSQL',
           dbName: 'crm',
-          encryptedConnectionString: 'encrypted-connection',
+          connectionString: 'encrypted-connection',
         }),
       } as unknown as ConnectionsService;
 
@@ -538,8 +525,7 @@ describe('DataEngineService', () => {
 
       const service = new DataEngineService(
         connectionsService,
-        () => undefined,
-        mockExtractor as any,
+        registryWith(mockExtractor),
       );
 
       const excelExport = await service.executeCrossJoinForExport(
@@ -578,7 +564,7 @@ describe('DataEngineService', () => {
 });
 
 describe('DataEngineService aggregation pipeline', () => {
-  const actorWithAccess = { ...actor, role: 'ADMIN' };
+  const actorWithAccess: AuthenticatedUser = { ...actor, role: 'ADMIN' };
   const basePayload = {
     conexionSqlId: 'conn-sql',
     conexionNoSqlId: 'conn-nosql',
@@ -593,12 +579,12 @@ describe('DataEngineService aggregation pipeline', () => {
     noSqlRows: Record<string, any>[],
   ) => {
     const connectionsService = {
-      getConnectionForExtraction: vi.fn().mockImplementation((id: string) =>
+      getConnectionForExploration: vi.fn().mockImplementation((id: string) =>
         Promise.resolve({
           id,
           tipoMotor: id === 'conn-sql' ? 'SQLServer' : 'Firestore',
           dbName: 'analytics',
-          encryptedConnectionString: 'encrypted-secret',
+          connectionString: 'encrypted-secret',
         }),
       ),
     } as unknown as ConnectionsService;
@@ -612,8 +598,7 @@ describe('DataEngineService aggregation pipeline', () => {
     return {
       service: new DataEngineService(
         connectionsService,
-        () => undefined,
-        extractor as any,
+        registryWith(extractor),
       ),
       extractor,
     };
