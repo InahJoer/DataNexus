@@ -265,6 +265,7 @@ enum ScheduledReportFormat {
   EXCEL
   PDF
   JSON
+  WORD
 }
 
 /// Estado de una ejecución de reporte (issue #39). RUNNING incluye los reintentos en curso.
