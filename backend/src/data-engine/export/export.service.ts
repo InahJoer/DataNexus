@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Writable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import {
   AlignmentType,
   BorderStyle,
@@ -415,6 +415,19 @@ export class ExportService {
     );
 
     return new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [header, ...rows] });
+  }
+
+  async writeJson(data: Record<string, unknown>[], destination: Writable): Promise<void> {
+    this.logger.log(`Generando exportación JSON en streaming para ${data.length} registros`);
+    const chunks = (async function* () {
+      yield '[';
+      for (const [index, row] of data.entries()) {
+        if (index > 0) yield ',';
+        yield JSON.stringify(row) ?? '{}';
+      }
+      yield ']';
+    })();
+    await pipeline(Readable.from(chunks), destination);
   }
 
   exportToJson(data: Record<string, any>[]): Buffer {

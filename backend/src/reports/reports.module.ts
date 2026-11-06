@@ -6,8 +6,11 @@ import { AuditModule } from '../audit/audit.module.js';
 import { PrismaModule } from '../prisma/prisma.module.js';
 import { AuthModule } from '../auth/auth.module.js';
 import { ReportStorageModule } from './storage/report-storage.module.js';
+import { QueriesModule } from '../queries/queries.module.js';
 import { ReportsController } from './reports.controller.js';
+import { ScheduledReportsController } from './scheduled-reports.controller.js';
 import { ReportsService } from './reports.service.js';
+import { ScheduledReportsService } from './scheduled-reports.service.js';
 
 @Module({
   imports: [
@@ -18,9 +21,10 @@ import { ReportsService } from './reports.service.js';
     PrismaModule,
     AuthModule,
     ReportStorageModule,
+    QueriesModule,
   ],
-  controllers: [ReportsController],
-  providers: [ReportsService],
+  controllers: [ReportsController, ScheduledReportsController],
+  providers: [ReportsService, ScheduledReportsService],
   exports: [ReportsService],
 })
 export class ReportsModule {}

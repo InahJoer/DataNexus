@@ -27,6 +27,18 @@ const WORKSPACE_FIELDS = new Set([
   'dominiosPermitidos',
   'camposSensibles',
 ]);
+const SCHEDULED_REPORT_FIELDS = new Set([
+  'savedQueryId',
+  'reportTitle',
+  'frequency',
+  'time',
+  'dayOfWeek',
+  'dayOfMonth',
+  'timezone',
+  'format',
+  'recipients',
+  'sendEmail',
+]);
 
 /** Datos de un Cross-Join que se guardan en la bitácora. Nunca se guardan filtros ni valores de filas. */
 const DATA_ACCESS_STRING_FIELDS = [
@@ -377,6 +389,35 @@ export class AuditService {
         if (typeof details[key] === 'string') safeDetails[key] = details[key];
       }
       if (typeof details.totalFilas === 'number') safeDetails.totalFilas = details.totalFilas;
+    }
+
+    if (
+      eventType === 'SCHEDULED_REPORT_CREATED' ||
+      eventType === 'SCHEDULED_REPORT_UPDATED' ||
+      eventType === 'SCHEDULED_REPORT_DELETED'
+    ) {
+      for (const key of ['title', 'frequency', 'format', 'status']) {
+        if (typeof details[key] === 'string') safeDetails[key] = details[key].slice(0, 120);
+      }
+      if (typeof details.recipientsCount === 'number' && Number.isFinite(details.recipientsCount)) {
+        safeDetails.recipientsCount = details.recipientsCount;
+      }
+      if (Array.isArray(details.changedFields)) {
+        const changedFields = details.changedFields.filter(
+          (field): field is string => typeof field === 'string' && SCHEDULED_REPORT_FIELDS.has(field),
+        );
+        if (changedFields.length > 0) safeDetails.changedFields = [...new Set(changedFields)];
+      }
+    }
+
+    if (eventType === 'SCHEDULED_REPORT_RUN') {
+      for (const key of ['executionId', 'trigger', 'format', 'error']) {
+        if (typeof details[key] === 'string') safeDetails[key] = details[key].slice(0, 300);
+      }
+      for (const key of ['totalRows']) {
+        if (typeof details[key] === 'number' && Number.isFinite(details[key])) safeDetails[key] = details[key];
+      }
+      if (typeof details.deliveryFailed === 'boolean') safeDetails.deliveryFailed = details.deliveryFailed;
     }
 
     return Object.keys(safeDetails).length > 0 ? JSON.stringify(safeDetails) : null;

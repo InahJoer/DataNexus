@@ -32,10 +32,10 @@ import {
   AGGREGATION_OPERATIONS,
   CrossJoinDto,
   ExportCrossJoinDto,
-  REPORT_FORMATS,
+  EXPORT_FORMATS,
   type AggregationMetricDto,
   type AggregationOperation,
-  type ReportFormat,
+  type ExportFormat,
 } from './dto/cross-join.dto.js';
 import {
   getJsonByteLength,
@@ -425,8 +425,8 @@ export class DataEngineService {
     user: AuthenticatedUser,
     destination: Writable,
   ): Promise<StreamExportResult> {
-    if (!REPORT_FORMATS.includes(payload.format as ReportFormat)) {
-      throw new BadRequestException('Los reportes solo admiten formato Excel, PDF o Word');
+    if (!EXPORT_FORMATS.includes(payload.format as ExportFormat)) {
+      throw new BadRequestException('Formato de reporte no válido');
     }
 
     const { rows: combinedData, rules } = await this.performJoin(payload, user);
@@ -458,14 +458,23 @@ export class DataEngineService {
       };
     }
 
-    await this.exportService.writePdf(
-      securedData,
-      `DataNexus - Join ${describeJoinPlan(resolveJoinPlan(payload))}`,
-      destination,
-    );
+    if (payload.format === 'pdf') {
+      await this.exportService.writePdf(
+        securedData,
+        `DataNexus - Join ${describeJoinPlan(resolveJoinPlan(payload))}`,
+        destination,
+      );
+      return {
+        contentType: 'application/pdf',
+        filename: `datanexus_export_${timestamp}.pdf`,
+        totalRows: securedData.length,
+      };
+    }
+
+    await this.exportService.writeJson(securedData, destination);
     return {
-      contentType: 'application/pdf',
-      filename: `datanexus_export_${timestamp}.pdf`,
+      contentType: 'application/json',
+      filename: `datanexus_export_${timestamp}.json`,
       totalRows: securedData.length,
     };
   }

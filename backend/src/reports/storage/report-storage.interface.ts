@@ -21,14 +21,15 @@ export interface ReportStorageAdapter {
   ): Promise<LocalReportDownload>;
 }
 
-/** Tipos de archivo que admite un reporte, por extensión (Excel, PDF y Word, RF-21). */
+/** Tipos de archivo que admite un reporte, por extensión. */
 export const REPORT_CONTENT_TYPES_BY_EXTENSION = {
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   pdf: 'application/pdf',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  json: 'application/json',
 } as const;
 
-export const REPORT_FILENAME_PATTERN = /^datanexus_export_[0-9TZ-]+\.(xlsx|pdf|docx)$/;
+export const REPORT_FILENAME_PATTERN = /^datanexus_export_[0-9TZ-]+\.(xlsx|pdf|docx|json)$/;
 
 export function isReportContentType(contentType: string): boolean {
   return (Object.values(REPORT_CONTENT_TYPES_BY_EXTENSION) as string[]).includes(contentType);

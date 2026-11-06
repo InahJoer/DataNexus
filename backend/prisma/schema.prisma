@@ -56,6 +56,10 @@ enum AuditEventType {
   SAVED_QUERY_CREATED
   SAVED_QUERY_UPDATED
   SAVED_QUERY_DELETED
+  SCHEDULED_REPORT_CREATED
+  SCHEDULED_REPORT_UPDATED
+  SCHEDULED_REPORT_DELETED
+  SCHEDULED_REPORT_RUN
 }
 
 /// Estado persistido de una invitación. La expiración se calcula con expiresAt (PENDIENTE vencida = EXPIRADA).
@@ -84,6 +88,8 @@ model Workspace {
   camposSensiblesReglas SensitiveField[]
   invitations           Invitation[]
   consultasGuardadas    SavedQuery[]
+  reportesProgramados   ScheduledReport[]
+  ejecucionesReportesProgramados ScheduledReportRun[]
 }
 
 model User {
@@ -103,6 +109,7 @@ model User {
   invitationsSent     Invitation[]
   consultasGuardadas  SavedQuery[]
   versionesConsultas  SavedQueryVersion[]
+  programacionesCreadas ScheduledReport[]
 
   @@index([workspaceId])
 }
@@ -242,6 +249,35 @@ enum SavedQueryVisibility {
   PUBLICADA
 }
 
+enum ScheduledReportFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum ScheduledReportStatus {
+  ACTIVE
+  PAUSED
+  ERROR
+}
+
+enum ScheduledReportFormat {
+  EXCEL
+  PDF
+  JSON
+}
+
+enum ScheduledReportRunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+enum ScheduledReportTrigger {
+  SCHEDULED
+  MANUAL
+}
+
 /// Consulta guardada / vista unificada del Query Builder (UC4/UC7, issue #35).
 /// `definicion` es el cuerpo de POST /engine/join sin la paginación (limit/offset), que se decide al ejecutar.
 model SavedQuery {
@@ -260,6 +296,7 @@ model SavedQuery {
   createdAt   DateTime             @default(now())
   updatedAt   DateTime             @default(now()) @updatedAt
   versiones   SavedQueryVersion[]
+  programaciones ScheduledReport[]
 
   @@unique([workspaceId, nombre])
   @@index([workspaceId, visibilidad])
@@ -277,4 +314,58 @@ model SavedQueryVersion {
   createdAt    DateTime   @default(now())
 
   @@unique([savedQueryId, version])
+}
+
+/// Programación recurrente de un reporte basado en una consulta guardada (issue #38).
+model ScheduledReport {
+  id            String                   @id @default(uuid())
+  workspaceId   String
+  workspace     Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  savedQueryId  String
+  savedQuery    SavedQuery               @relation(fields: [savedQueryId], references: [id], onDelete: Restrict)
+  createdById   String?
+  createdBy     User?                    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  nombre        String
+  frecuencia    ScheduledReportFrequency
+  hora          String
+  diaSemana     Int?
+  diaMes        Int?
+  zonaHoraria   String
+  formato       ScheduledReportFormat
+  destinatarios String[]                 @default([])
+  enviarCorreo  Boolean                  @default(true)
+  estado        ScheduledReportStatus    @default(ACTIVE)
+  lastRunAt     DateTime?
+  lastError     String?
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @default(now()) @updatedAt
+  runs          ScheduledReportRun[]
+
+  @@index([workspaceId, estado])
+  @@index([savedQueryId])
+}
+
+/// Registro de una ejecución programada o manual, sin guardar filas del reporte.
+model ScheduledReportRun {
+  id                String                   @id @default(uuid())
+  workspaceId       String
+  workspace         Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  scheduledReportId String
+  scheduledReport   ScheduledReport          @relation(fields: [scheduledReportId], references: [id], onDelete: Cascade)
+  trigger           ScheduledReportTrigger
+  status            ScheduledReportRunStatus @default(RUNNING)
+  scheduledFor      DateTime?
+  idempotencyKey    String?                  @unique
+  startedAt         DateTime                 @default(now())
+  leaseExpiresAt    DateTime?
+  finishedAt        DateTime?
+  totalRows         Int?
+  error             String?
+  downloadUrl       String?
+  expiresAt         DateTime?
+  messageId         String?
+
+  @@index([workspaceId, startedAt])
+  @@index([scheduledReportId, startedAt])
+  @@index([status, leaseExpiresAt])
 }

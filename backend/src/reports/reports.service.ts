@@ -4,38 +4,44 @@ import {
   ForbiddenException,
   Inject,
 } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import { randomUUID } from 'node:crypto';
 import type { LocalReportDownload, ReportStorageAdapter } from './storage/report-storage.interface.js';
 import { REPORT_STORAGE_ADAPTER } from './storage/report-storage.interface.js';
 import { DataEngineService } from '../data-engine/data-engine.service.js';
+import type { ExportFormat } from '../data-engine/dto/cross-join.dto.js';
 import { MailService } from '../mailer/mail.service.js';
 import { renderReportEmail } from './templates/report-email.template.js';
 import { AuditService } from '../audit/audit.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface.js';
-import { hasPermission } from '../auth/interfaces/user-role.js';
+import { hasPermission, type UserRole } from '../auth/interfaces/user-role.js';
 import { TriggerReportDto } from './dto/trigger-report.dto.js';
-import type { ReportFormat } from '../data-engine/dto/cross-join.dto.js';
 import { REPORT_CONTENT_TYPES_BY_EXTENSION } from './storage/report-storage.interface.js';
 
-const REPORT_CONTENT_TYPES: Record<ReportFormat, string> = {
+const REPORT_CONTENT_TYPES: Record<ExportFormat, string> = {
   excel: REPORT_CONTENT_TYPES_BY_EXTENSION.xlsx,
   pdf: REPORT_CONTENT_TYPES_BY_EXTENSION.pdf,
   word: REPORT_CONTENT_TYPES_BY_EXTENSION.docx,
+  json: REPORT_CONTENT_TYPES_BY_EXTENSION.json,
 };
 
 export interface ReportExecutionResult {
   reportTitle: string;
   recipients: string[];
-  format: ReportFormat;
+  format: ExportFormat;
   filename: string;
   totalRows: number;
   fileSizeBytes: number;
   downloadUrl: string;
   expiresAt: string;
-  messageId: string;
-  sentAt: string;
+  messageId?: string;
+  sentAt?: string;
+  deliveryError?: string;
+}
+
+export interface ScheduledReportGenerationOptions {
+  maskAsRole: UserRole;
+  sendEmail: boolean;
 }
 
 @Injectable()
@@ -52,73 +58,39 @@ export class ReportsService {
   ) {}
 
   /**
-   * Tarea programada ejecutada automáticamente a la medianoche (CronJob).
-   * Cumple con RF-22 y RF-23 (Issue #4).
-   */
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, {
-    name: 'daily-midnight-reports',
-    timeZone: 'UTC',
-  })
-  async handleMidnightCron(): Promise<void> {
-    this.logger.log('Iniciando ejecución programada diaria de reportes automáticos (Medianoche UTC)...');
-
-    // Consultamos los workspaces activos
-    const workspaces = await this.prisma.workspace.findMany({
-      include: {
-        conexiones: { take: 2 },
-        users: { where: { role: 'ADMIN' }, take: 1 },
-      },
-    });
-
-    for (const ws of workspaces) {
-      if (ws.conexiones.length >= 2 && ws.users.length > 0) {
-        const adminUser: AuthenticatedUser = {
-          id: ws.users[0].id,
-          email: ws.users[0].email,
-          name: ws.users[0].name,
-          role: 'ADMIN',
-          workspaceId: ws.id,
-        };
-
-        const sqlConn = ws.conexiones.find(
-          (c) => !['FIRESTORE', 'FIREBASE', 'MONGODB'].includes(c.tipoMotor.toUpperCase()),
-        ) ?? ws.conexiones[0];
-        const noSqlConn = ws.conexiones.find(
-          (c) => ['FIRESTORE', 'FIREBASE', 'MONGODB'].includes(c.tipoMotor.toUpperCase()),
-        ) ?? ws.conexiones[1];
-
-        try {
-          await this.triggerReport(adminUser, {
-            reportTitle: `Reporte Diario Consolidado - ${ws.nombreEmpresa}`,
-            recipients: [adminUser.email],
-            format: 'excel',
-            crossJoinParams: {
-              conexionSqlId: sqlConn.id,
-              conexionNoSqlId: noSqlConn.id,
-              tablaSql: 'clientes',
-              coleccionNoSql: 'pedidos',
-              llaveSql: 'id',
-              llaveNoSql: 'cliente_id',
-              limit: 500,
-              offset: 0,
-            },
-            customMessage: 'Reporte diario programado generado automáticamente a la medianoche.',
-          });
-        } catch (error) {
-          this.logger.error(
-            `Error al generar reporte programado para Workspace ${ws.nombreEmpresa}: ${String(error)}`,
-          );
-        }
-      }
-    }
-  }
-
-  /**
    * Ejecución y despacho de reportes bajo demanda o por disparador.
    */
   async triggerReport(
     actor: AuthenticatedUser,
     dto: TriggerReportDto,
+  ): Promise<ReportExecutionResult> {
+    return this.generateReport(actor, dto, {
+      maskAsRole: actor.role,
+      sendEmail: true,
+      recordAudit: true,
+      keepFileWhenEmailFails: false,
+    });
+  }
+
+  async triggerScheduledReport(
+    actor: AuthenticatedUser,
+    dto: TriggerReportDto,
+    options: ScheduledReportGenerationOptions,
+  ): Promise<ReportExecutionResult> {
+    return this.generateReport(actor, dto, {
+      ...options,
+      recordAudit: false,
+      keepFileWhenEmailFails: true,
+    });
+  }
+
+  private async generateReport(
+    actor: AuthenticatedUser,
+    dto: TriggerReportDto,
+    options: ScheduledReportGenerationOptions & {
+      recordAudit: boolean;
+      keepFileWhenEmailFails: boolean;
+    },
   ): Promise<ReportExecutionResult> {
     if (!hasPermission(actor.role, 'MANAGE_REPORTS')) {
       throw new ForbiddenException('Se requiere rol ADMIN u OPERADOR para automatizar y enviar reportes');
@@ -131,6 +103,7 @@ export class ReportsService {
     const reportId = randomUUID();
     const contentType = REPORT_CONTENT_TYPES[dto.format];
     const writeTarget = await this.reportStorage.createWriteTarget(reportId, contentType);
+    const executionActor = options.maskAsRole === actor.role ? actor : { ...actor, role: options.maskAsRole };
 
     let exportResult: Awaited<ReturnType<DataEngineService['executeCrossJoinToStream']>>;
     let fileSizeBytes: number;
@@ -141,7 +114,7 @@ export class ReportsService {
             ...dto.crossJoinParams,
             format: dto.format,
           },
-          actor,
+          executionActor,
           writeTarget.writable,
         ),
         writeTarget.completed,
@@ -155,47 +128,66 @@ export class ReportsService {
     }
 
     const download = await this.reportStorage.createDownloadUrl(reportId, exportResult.filename);
-    const generatedAt = new Date().toLocaleString('es');
-    const expiresAt = new Date(download.expiresAt).toLocaleString('es');
-    const customMessage =
-      dto.customMessage ?? 'Se generó un nuevo informe consolidado de DataNexus.';
-    const email = renderReportEmail({
-      reportTitle: dto.reportTitle,
-      customMessage,
-      filename: exportResult.filename,
-      fileSizeBytes,
-      fileSizeLabel: `${(fileSizeBytes / 1024).toFixed(2)} KB`,
-      generatedAt,
-      expiresAt,
-      downloadUrl: download.url,
-    });
-
-    // El reporte se entrega mediante un enlace temporal; no se adjunta el archivo en memoria.
-    const emailResult = await this.mailService.sendReportEmail({
-      to: dto.recipients,
-      subject: `[DataNexus] ${dto.reportTitle}`,
-      text: email.text,
-      html: email.html,
-    });
-
-    // 3. Auditoría de la acción
-    await this.auditService.record({
-      eventType: 'REPORT_GENERATED_AND_SENT',
-      outcome: 'SUCCESS',
-      actorUserId: actor.id,
-      actorEmail: actor.email,
-      workspaceId: actor.workspaceId,
-      targetType: 'REPORT',
-      targetId: reportId,
-      details: {
-        title: dto.reportTitle,
-        format: dto.format,
-        recipientsCount: dto.recipients.length,
+    let messageId: string | undefined;
+    let sentAt: string | undefined;
+    let deliveryError: string | undefined;
+    if (options.sendEmail) {
+      const generatedAt = new Date().toLocaleString('es');
+      const expiresAt = new Date(download.expiresAt).toLocaleString('es');
+      const email = renderReportEmail({
+        reportTitle: dto.reportTitle,
+        customMessage: dto.customMessage ?? 'Se generó un nuevo informe consolidado de DataNexus.',
         filename: exportResult.filename,
-        totalRows: exportResult.totalRows,
         fileSizeBytes,
-      },
-    });
+        fileSizeLabel: `${(fileSizeBytes / 1024).toFixed(2)} KB`,
+        generatedAt,
+        expiresAt,
+        downloadUrl: download.url,
+      });
+
+      try {
+        const emailResult = await this.mailService.sendReportEmail({
+          to: dto.recipients,
+          subject: `[DataNexus] ${dto.reportTitle}`,
+          text: email.text,
+          html: email.html,
+        });
+        if (emailResult.rejected.length > 0 || emailResult.accepted.length === 0) {
+          if (!options.keepFileWhenEmailFails) {
+            throw new Error('No se pudo entregar el reporte a todos los destinatarios');
+          }
+          deliveryError = 'El reporte se generó, pero falló la entrega por correo.';
+          this.logger.error('No se pudo entregar un reporte programado a todos sus destinatarios');
+        } else {
+          messageId = emailResult.messageId;
+          sentAt = new Date().toISOString();
+        }
+      } catch (error) {
+        if (!options.keepFileWhenEmailFails) throw error;
+        deliveryError ??= 'El reporte se generó, pero falló la entrega por correo.';
+        this.logger.error('No se pudo enviar un reporte programado por correo');
+      }
+    }
+
+    if (options.recordAudit) {
+      await this.auditService.record({
+        eventType: 'REPORT_GENERATED_AND_SENT',
+        outcome: 'SUCCESS',
+        actorUserId: actor.id,
+        actorEmail: actor.email,
+        workspaceId: actor.workspaceId,
+        targetType: 'REPORT',
+        targetId: reportId,
+        details: {
+          title: dto.reportTitle,
+          format: dto.format,
+          recipientsCount: dto.recipients.length,
+          filename: exportResult.filename,
+          totalRows: exportResult.totalRows,
+          fileSizeBytes,
+        },
+      });
+    }
 
     return {
       reportTitle: dto.reportTitle,
@@ -206,8 +198,9 @@ export class ReportsService {
       fileSizeBytes,
       downloadUrl: download.url,
       expiresAt: download.expiresAt,
-      messageId: emailResult.messageId,
-      sentAt: new Date().toISOString(),
+      ...(messageId ? { messageId } : {}),
+      ...(sentAt ? { sentAt } : {}),
+      ...(deliveryError ? { deliveryError } : {}),
     };
   }
 

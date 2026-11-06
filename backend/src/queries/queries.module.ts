@@ -11,5 +11,6 @@ import { SavedQueriesService } from './saved-queries.service.js';
   imports: [PrismaModule, AuthModule, AuditModule, DataEngineModule],
   controllers: [SavedQueriesController],
   providers: [SavedQueriesService],
+  exports: [SavedQueriesService],
 })
 export class QueriesModule {}
