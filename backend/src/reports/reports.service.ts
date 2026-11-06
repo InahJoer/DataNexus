@@ -16,11 +16,19 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface.js';
 import { hasPermission } from '../auth/interfaces/user-role.js';
 import { TriggerReportDto } from './dto/trigger-report.dto.js';
+import type { ReportFormat } from '../data-engine/dto/cross-join.dto.js';
+import { REPORT_CONTENT_TYPES_BY_EXTENSION } from './storage/report-storage.interface.js';
+
+const REPORT_CONTENT_TYPES: Record<ReportFormat, string> = {
+  excel: REPORT_CONTENT_TYPES_BY_EXTENSION.xlsx,
+  pdf: REPORT_CONTENT_TYPES_BY_EXTENSION.pdf,
+  word: REPORT_CONTENT_TYPES_BY_EXTENSION.docx,
+};
 
 export interface ReportExecutionResult {
   reportTitle: string;
   recipients: string[];
-  format: 'excel' | 'pdf';
+  format: ReportFormat;
   filename: string;
   totalRows: number;
   fileSizeBytes: number;
@@ -121,10 +129,7 @@ export class ReportsService {
     );
 
     const reportId = randomUUID();
-    const contentType =
-      dto.format === 'excel'
-        ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        : 'application/pdf';
+    const contentType = REPORT_CONTENT_TYPES[dto.format];
     const writeTarget = await this.reportStorage.createWriteTarget(reportId, contentType);
 
     let exportResult: Awaited<ReturnType<DataEngineService['executeCrossJoinToStream']>>;

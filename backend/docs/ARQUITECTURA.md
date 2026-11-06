@@ -6,7 +6,7 @@
 ---
 
 ## 1. Visión del Sistema
-DataNexus es una plataforma empresarial diseñada para unificar silos relacionales (PostgreSQL, MySQL, SQL Server) y no relacionales (Firebase Firestore, MongoDB) en una experiencia unificada. Permite a perfiles técnicos y de negocio visualizar datos consolidados, realizar cruces entre bases heterogéneas (*Cross-Joins*), anonimizar información sensible según el rol del usuario, exportar informes corporativos (Excel, PDF, JSON) y programar despachos automatizados por correo electrónico.
+DataNexus es una plataforma empresarial diseñada para unificar silos relacionales (PostgreSQL, MySQL, SQL Server) y no relacionales (Firebase Firestore, MongoDB) en una experiencia unificada. Permite a perfiles técnicos y de negocio visualizar datos consolidados, realizar cruces entre bases heterogéneas (*Cross-Joins*), anonimizar información sensible según el rol del usuario, exportar informes corporativos (Excel, PDF, Word, JSON) y programar despachos automatizados por correo electrónico.
 
 ---
 
@@ -18,7 +18,7 @@ DataNexus es una plataforma empresarial diseñada para unificar silos relacional
 | **Fase 2** | **Seguridad & Conexiones Cifradas** | Autenticación basada en JWT, encriptación simétrica AES-256-GCM para cadenas de conexión y CRUD seguro de `ConexionDB` (`ConnectionsModule`). | ✅ Completada (PR #1) |
 | **Fase 3** | **Auditoría & Exploración de Esquemas** | Bitácora de eventos inmutable (`RegistroAuditoria`), control de roles (`ADMIN` / `LECTOR`) e introspección de esquemas externos mediante adaptadores. | ✅ Completada (PR #2) |
 | **Fase 4** | **Motor de Cross-Joins en Memoria** | Algoritmo de unión relacional (*Inner Join*) en memoria con indexación hash $O(N + M)$ sobre tablas SQL y colecciones NoSQL con paginación nativa (`limit`, `offset`). | ✅ Completada (PR #3) |
-| **Fase 5** | **Data Masking & Exportación** | Anonimización dinámica de correos, teléfonos y secretos para rol `LECTOR` (`MaskingService`) y generación de archivos binarios descargables en Excel (`exceljs`), PDF (`pdfkit`) y JSON (`ExportService`). | ✅ Completada (PR #3) |
+| **Fase 5** | **Data Masking & Exportación** | Anonimización dinámica de correos, teléfonos y secretos para rol `LECTOR` (`MaskingService`) y generación de archivos binarios descargables en Excel (`exceljs`), PDF (`pdfkit`), Word (`docx`, RF-21) y JSON (`ExportService`). | ✅ Completada (PR #3) |
 | **Fase 6** | **Automatización de Reportes & Cron** | Programación periódica a la medianoche con `@nestjs/schedule` (CronJobs), servicio de despacho por correo (`nodemailer`) con reportes adjuntos para analistas. | ✅ Completada (Issue #4) |
 | **Fase 7** | **Seguridad Perimetral, CORS & Rate Limiting** | Políticas CORS estrictas para Next.js (local y producción) y protección contra sobrecarga de CPU con `@nestjs/throttler` (20 req/min en exportaciones). | ✅ Completada (Issue #6) |
 | **Fase 8** | **Ecosistema Empresarial & Miembros** | Gestión de miembros del Workspace, invitaciones con roles y contraseñas temporales, y aislamiento multi-tenant por Workspace. | ✅ Completada |
@@ -45,7 +45,7 @@ graph TD
         EngineCtrl --> EngineService[DataEngineService]
         EngineService --> CrossJoin[In-Memory Hash Join O N+M]
         EngineService --> Masking[MaskingService: LECTOR Role]
-        EngineService --> Export[ExportService: ExcelJS / PDFKit]
+        EngineService --> Export[ExportService: ExcelJS / PDFKit / docx]
         
         ReportsCtrl --> ReportsService[ReportsService]
         ReportsService --> Cron[ScheduleModule: Daily Midnight UTC]
@@ -153,7 +153,7 @@ access tokens ya emitidos. Reglas:
     - **Pushdown:** PostgreSQL, MySQL, SQL Server y MongoDB ejecutan todos los filtros en el motor (parámetros, `LOWER(...) LIKE ... ESCAPE '!'`, `$or`/`$and`, `$regex` escapado). Firestore ejecuta comparaciones, `in`, `between` e `isNull`; `contains`, `startsWith` y los grupos los evalúa `DataEngineService` en memoria tras la extracción (`IDataSourceAdapter.canPushDown` / `pushesFilterGroups`).
     - **Misma semántica en todos los motores:** `neq` y `not-in` no incluyen nulos (como en SQL). Un test de integración compara PostgreSQL, MongoDB y la evaluación en memoria con los mismos datos y filtros, incluidos intentos de inyección.
   - **`limiteFilas` (RF-16):** `50`, `100`, `500` o `1000`. Recorta el resultado después del join y la respuesta incluye `truncado: true` si había más filas.
-- `POST /engine/export`: Generación y descarga directa de archivos (`format: excel | pdf | json`) con rate limiting estricto (20 req/min).
+- `POST /engine/export`: Generación y descarga directa de archivos (`format: excel | pdf | json | word`) con rate limiting estricto (20 req/min).
 - **Joins asíncronos (issue #33, RNF-04):** para cruces pesados que no conviene esperar en una sola petición. Mismo payload y permiso (`RUN_JOINS`) que `POST /engine/join`.
   - `POST /engine/jobs` valida el payload, lo encola y responde `202` con el `id` (estado `EN_COLA`). `GET /engine/jobs/:id?offset=&limit=` devuelve estado (`EN_COLA`, `EN_PROCESO`, `COMPLETADO`, `FALLIDO`, `CANCELADO`), progreso (0-100) y, al completar, el resultado paginado. `DELETE /engine/jobs/:id` cancela un job en cola (no llega a ejecutarse) o en proceso (se detiene en la siguiente pausa). `GET /engine/jobs` lista los jobs propios (ADMIN ve todos los del workspace).
   - **No bloquea el event loop:** el join, el armado de columnas y el de filas ceden el event loop cada 2.000 filas (`executeJoinPlanAsync`). Con 200.000 x 200.000 filas la pausa máxima del servidor es de ~30 ms, frente a ~900 ms del mismo join síncrono (test).
@@ -263,7 +263,7 @@ en los controladores y `hasPermission()` en los servicios (defensa en profundida
 | `VIEW_CONNECTIONS` · Listar conexiones y su salud | ✅ | ✅ | ❌ | ❌ |
 | `EXPLORE_DATA` · Explorar esquemas y campos externos | ✅ | ✅ | ❌ | ❌ |
 | `RUN_JOINS` · Ejecutar Cross-Joins | ✅ | ✅ | ❌ | ❌ |
-| `EXPORT_DATA` · Exportar a Excel / PDF / JSON | ✅ | ✅ | ❌ | ❌ |
+| `EXPORT_DATA` · Exportar a Excel / PDF / Word / JSON | ✅ | ✅ | ❌ | ❌ |
 | `MANAGE_REPORTS` · Disparar / programar reportes | ✅ | ✅ | ❌ | ❌ |
 | `READ_AUDIT` · Consultar la bitácora de auditoría | ✅ | ❌ | ❌ | ✅ |
 | `MANAGE_MEMBERS` · Invitar miembros y cambiar roles | ✅ | ❌ | ❌ | ❌ |

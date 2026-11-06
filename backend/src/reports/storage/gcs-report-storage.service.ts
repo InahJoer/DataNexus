@@ -5,11 +5,14 @@ import {
   REPORT_LINK_TTL_MS,
   type LocalReportDownload,
 } from './report-storage.interface.js';
-import type { ReportStorageAdapter } from './report-storage.interface.js';
+import {
+  REPORT_FILENAME_PATTERN,
+  isReportContentType,
+  type ReportStorageAdapter,
+} from './report-storage.interface.js';
 import { createReportWriteTarget } from './report-write-target.js';
 
 const REPORT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const REPORT_FILENAME_PATTERN = /^datanexus_export_[0-9TZ-]+\.(xlsx|pdf)$/;
 
 @Injectable()
 export class GcsReportStorageService implements ReportStorageAdapter {
@@ -75,10 +78,7 @@ export class GcsReportStorageService implements ReportStorageAdapter {
   }
 
   private assertContentType(contentType: string): void {
-    if (
-      contentType !== 'application/pdf' &&
-      contentType !== 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    ) {
+    if (!isReportContentType(contentType)) {
       throw new BadRequestException('Tipo de archivo de reporte no válido');
     }
   }

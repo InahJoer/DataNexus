@@ -12,11 +12,15 @@ import {
   REPORT_LINK_TTL_MS,
   type LocalReportDownload,
 } from './report-storage.interface.js';
-import type { ReportStorageAdapter } from './report-storage.interface.js';
+import {
+  REPORT_FILENAME_PATTERN,
+  isReportContentType,
+  reportContentTypeFor,
+  type ReportStorageAdapter,
+} from './report-storage.interface.js';
 import { createReportWriteTarget } from './report-write-target.js';
 
 const REPORT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const REPORT_FILENAME_PATTERN = /^datanexus_export_[0-9TZ-]+\.(xlsx|pdf)$/;
 
 @Injectable()
 export class LocalReportStorageService implements ReportStorageAdapter {
@@ -77,9 +81,7 @@ export class LocalReportStorageService implements ReportStorageAdapter {
       throw new NotFoundException('El reporte no existe o ya no está disponible');
     }
 
-    const contentType = filename.endsWith('.xlsx')
-      ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      : 'application/pdf';
+    const contentType = reportContentTypeFor(filename);
 
     return { stream: createReadStream(path), filename, contentType };
   }
@@ -97,10 +99,7 @@ export class LocalReportStorageService implements ReportStorageAdapter {
   }
 
   private assertContentType(contentType: string): void {
-    if (
-      contentType !== 'application/pdf' &&
-      contentType !== 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    ) {
+    if (!isReportContentType(contentType)) {
       throw new Error('Tipo de archivo de reporte no válido');
     }
   }

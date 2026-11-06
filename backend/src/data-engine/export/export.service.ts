@@ -1,8 +1,71 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { Readable } from 'node:stream';
+import {
+  AlignmentType,
+  BorderStyle,
+  Document,
+  Footer,
+  Header,
+  HeadingLevel,
+  Packer,
+  PageNumber,
+  PageOrientation,
+  Paragraph,
+  ShadingType,
+  Table,
+  TableCell,
+  TableRow,
+  TextRun,
+  WidthType,
+} from 'docx';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
+
+export const WORD_CONTENT_TYPE =
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+/** Metadatos que acompañan al documento Word (RF-21). */
+export interface WordExportOptions {
+  title: string;
+  /** Fecha de generación; por defecto, ahora. */
+  generatedAt?: Date;
+  /** true si los datos llegaron enmascarados por el rol de quien exporta. */
+  masked?: boolean;
+  /** Zona horaria IANA para mostrar la fecha. Por defecto UTC. */
+  timeZone?: string;
+}
+
+const BRAND_COLOR = '1F4E78';
+const CELL_BORDER = { style: BorderStyle.SINGLE, size: 4, color: 'D9D9D9' } as const;
+
+/** Columnas en orden de aparición, aunque no todas las filas tengan las mismas claves. */
+function columnsOf(data: Record<string, unknown>[]): string[] {
+  const columns = new Set<string>();
+  for (const row of data) for (const key of Object.keys(row)) columns.add(key);
+  return [...columns];
+}
+
+function cellText(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'object') return JSON.stringify(value) ?? String(value);
+  return String(value);
+}
+
+/** Encabezado de página: la marca una sola vez aunque el título ya empiece por "DataNexus". */
+function pageHeaderText(title: string): string {
+  return /^datanexus\b/i.test(title.trim()) ? title : `DataNexus · ${title}`;
+}
+
+function formatDate(date: Date, timeZone = 'UTC'): string {
+  try {
+    return new Intl.DateTimeFormat('es', { dateStyle: 'long', timeStyle: 'short', timeZone }).format(date);
+  } catch {
+    return new Intl.DateTimeFormat('es', { dateStyle: 'long', timeStyle: 'short', timeZone: 'UTC' }).format(date);
+  }
+}
 
 @Injectable()
 export class ExportService {
@@ -217,6 +280,141 @@ export class ExportService {
       await transfer.catch(() => undefined);
       throw error;
     }
+  }
+
+  /**
+   * Documento Word (.docx) con encabezado, metadatos, fecha y una tabla con los datos (RF-21).
+   * Recibe los datos ya enmascarados según el rol: aquí no se decide qué se muestra.
+   */
+  async exportToWord(data: Record<string, unknown>[], options: WordExportOptions): Promise<Buffer> {
+    this.logger.log(`Generando exportación Word para ${data.length} registros`);
+
+    const generatedAt = options.generatedAt ?? new Date();
+    const columns = columnsOf(data);
+    const generatedLabel = formatDate(generatedAt, options.timeZone);
+
+    const metadata: Array<[string, string]> = [
+      ['Generado', generatedLabel],
+      ['Registros', data.length.toLocaleString('es')],
+      ['Columnas', String(columns.length)],
+    ];
+    if (options.masked !== undefined) {
+      metadata.push(['Datos sensibles', options.masked ? 'Enmascarados según el rol' : 'Sin enmascarar']);
+    }
+
+    const children: Array<Paragraph | Table> = [
+      new Paragraph({ heading: HeadingLevel.TITLE, children: [new TextRun({ text: options.title, color: BRAND_COLOR })] }),
+      ...metadata.map(
+        ([label, value]) =>
+          new Paragraph({
+            spacing: { after: 40 },
+            children: [new TextRun({ text: `${label}: `, bold: true }), new TextRun({ text: value })],
+          }),
+      ),
+      new Paragraph({ text: '', spacing: { after: 120 } }),
+    ];
+
+    if (data.length === 0 || columns.length === 0) {
+      children.push(
+        new Paragraph({ children: [new TextRun({ text: 'No hay registros disponibles para exportar.', italics: true })] }),
+      );
+    } else {
+      children.push(this.buildWordTable(data, columns));
+    }
+
+    const document = new Document({
+      creator: 'DataNexus BI Platform',
+      title: options.title,
+      subject: 'Exportación de Cross-Join',
+      description: `${data.length} registros generados el ${generatedLabel}`,
+      styles: { default: { document: { run: { font: 'Calibri', size: 20 } } } },
+      sections: [
+        {
+          properties: {
+            page: {
+              // Horizontal: las tablas de un join suelen tener muchas columnas.
+              size: { orientation: PageOrientation.LANDSCAPE },
+              margin: { top: 720, bottom: 720, left: 720, right: 720 },
+            },
+          },
+          headers: {
+            default: new Header({
+              children: [
+                new Paragraph({
+                  alignment: AlignmentType.RIGHT,
+                  children: [new TextRun({ text: pageHeaderText(options.title), size: 16, color: '666666' })],
+                }),
+              ],
+            }),
+          },
+          footers: {
+            default: new Footer({
+              children: [
+                new Paragraph({
+                  alignment: AlignmentType.CENTER,
+                  children: [
+                    new TextRun({
+                      size: 16,
+                      color: '666666',
+                      children: ['Página ', PageNumber.CURRENT, ' de ', PageNumber.TOTAL_PAGES],
+                    }),
+                  ],
+                }),
+              ],
+            }),
+          },
+          children,
+        },
+      ],
+    });
+
+    return Packer.toBuffer(document);
+  }
+
+  /** Igual que exportToWord, escrito en el destino del reporte (almacenamiento local, S3 o GCS). */
+  async writeWord(
+    data: Record<string, unknown>[],
+    options: WordExportOptions,
+    destination: Writable,
+  ): Promise<void> {
+    const buffer = await this.exportToWord(data, options);
+    await pipeline(Readable.from([buffer]), destination);
+  }
+
+  private buildWordTable(data: Record<string, unknown>[], columns: string[]): Table {
+    const borders = { top: CELL_BORDER, bottom: CELL_BORDER, left: CELL_BORDER, right: CELL_BORDER };
+    const header = new TableRow({
+      // Se repite en cada página.
+      tableHeader: true,
+      children: columns.map(
+        (column) =>
+          new TableCell({
+            borders,
+            shading: { type: ShadingType.CLEAR, color: 'auto', fill: BRAND_COLOR },
+            children: [
+              new Paragraph({ children: [new TextRun({ text: column.toUpperCase(), bold: true, color: 'FFFFFF' })] }),
+            ],
+          }),
+      ),
+    });
+
+    const rows = data.map(
+      (row, index) =>
+        new TableRow({
+          cantSplit: true,
+          children: columns.map(
+            (column) =>
+              new TableCell({
+                borders,
+                shading:
+                  index % 2 === 1 ? { type: ShadingType.CLEAR, color: 'auto', fill: 'F2F6FA' } : undefined,
+                children: [new Paragraph({ children: [new TextRun({ text: cellText(row[column]) })] })],
+              }),
+          ),
+        }),
+    );
+
+    return new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: [header, ...rows] });
   }
 
   exportToJson(data: Record<string, any>[]): Buffer {
