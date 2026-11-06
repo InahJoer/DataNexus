@@ -404,8 +404,12 @@ export class CrossJoinDto {
   limiteFilas?: RowLimitOption;
 }
 
-export const EXPORT_FORMATS = ['excel', 'pdf', 'json'] as const;
+export const EXPORT_FORMATS = ['excel', 'pdf', 'json', 'word'] as const;
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
+
+/** Formatos de los reportes enviados por correo (se generan en streaming hacia el almacenamiento). */
+export const REPORT_FORMATS = ['excel', 'pdf', 'word'] as const satisfies readonly ExportFormat[];
+export type ReportFormat = (typeof REPORT_FORMATS)[number];
 
 export class ExportCrossJoinDto extends CrossJoinDto {
   @ApiProperty({
@@ -414,7 +418,7 @@ export class ExportCrossJoinDto extends CrossJoinDto {
     example: 'excel',
   })
   @IsIn(EXPORT_FORMATS, {
-    message: 'El formato debe ser uno de: excel, pdf, json',
+    message: `El formato debe ser uno de: ${EXPORT_FORMATS.join(', ')}`,
   })
   @IsNotEmpty()
   format: ExportFormat;

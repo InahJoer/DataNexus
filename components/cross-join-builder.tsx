@@ -14,6 +14,10 @@ type CrossJoinPayload = components['schemas']['CrossJoinDto'];
 type CrossJoinResult = components['schemas']['PaginatedCrossJoinResultDto'];
 type ExportFormat = components['schemas']['ExportCrossJoinDto']['format'];
 
+const EXPORT_FORMATS: readonly ExportFormat[] = ['excel', 'word', 'pdf', 'json'];
+const EXPORT_LABELS: Record<ExportFormat, string> = { excel: 'Excel', word: 'Word', pdf: 'PDF', json: 'JSON' };
+const EXPORT_EXTENSIONS: Record<ExportFormat, string> = { excel: 'xlsx', word: 'docx', pdf: 'pdf', json: 'json' };
+
 const SQL_ENGINES = new Set(['SQLSERVER', 'MSSQL']);
 const NOSQL_ENGINES = new Set(['FIRESTORE', 'FIREBASE', 'CLOUDFIRESTORE']);
 const PAGE_SIZES = [25, 50, 100, 250];
@@ -371,7 +375,7 @@ export function CrossJoinBuilder() {
         return;
       }
 
-      const extension = format === 'excel' ? 'xlsx' : format;
+      const extension = EXPORT_EXTENSIONS[format];
       const filename = response.headers.get('content-disposition')?.match(/filename="?([^";]+)"?/i)?.[1]
         ?? `datanexus-cross-join.${extension}`;
       const objectUrl = URL.createObjectURL(await response.blob());
@@ -538,16 +542,16 @@ export function CrossJoinBuilder() {
               {result && result.total > 0 && (
                 <div className="join-export-actions" aria-label="Exportar resultados">
                   <span>Exportar</span>
-                  {(['excel', 'pdf', 'json'] as const).map((format) => (
+                  {EXPORT_FORMATS.map((format) => (
                     <button
                       className="join-export-button"
                       type="button"
                       key={format}
                       onClick={() => void exportResults(format)}
                       disabled={isExporting !== null}
-                      aria-label={`Exportar a ${format.toUpperCase()}`}
+                      aria-label={`Exportar a ${EXPORT_LABELS[format]}`}
                     >
-                      {isExporting === format ? '…' : format === 'excel' ? 'Excel' : format.toUpperCase()}
+                      {isExporting === format ? '…' : EXPORT_LABELS[format]}
                     </button>
                   ))}
                 </div>

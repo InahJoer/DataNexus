@@ -134,4 +134,36 @@ describe('ReportsService', () => {
     expect(result.totalRows).toBe(12);
     expect(result.downloadUrl).toBe('http://localhost:3001/reports/download/mock');
   });
+  it('genera reportes en Word con el tipo de contenido de .docx (RF-21)', async () => {
+    dataEngineService.executeCrossJoinToStream.mockResolvedValue({
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      filename: 'datanexus_export_2026-11-06T18-30-00-000Z.docx',
+      totalRows: 3,
+    });
+
+    const result = await service.triggerReport(adminUser, {
+      reportTitle: 'Reporte en Word',
+      recipients: ['analista@corp.com'],
+      format: 'word',
+      crossJoinParams: {
+        conexionSqlId: 'sql-1',
+        conexionNoSqlId: 'nosql-1',
+        tablaSql: 'clientes',
+        coleccionNoSql: 'pedidos',
+        llaveSql: 'id',
+        llaveNoSql: 'cliente_id',
+      },
+    });
+
+    expect(reportStorage.createWriteTarget).toHaveBeenCalledWith(
+      expect.any(String),
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    );
+    expect(dataEngineService.executeCrossJoinToStream).toHaveBeenCalledWith(
+      expect.objectContaining({ format: 'word' }),
+      adminUser,
+      expect.any(PassThrough),
+    );
+    expect(result).toMatchObject({ format: 'word', filename: 'datanexus_export_2026-11-06T18-30-00-000Z.docx' });
+  });
 });

@@ -25,15 +25,17 @@ import { DataSourceClientPool } from './pool/data-source-client-pool.js';
 import { MaskingService, type SensitiveRule } from './masking/masking.service.js';
 import { SensitiveFieldsService, type SensitiveSource } from './masking/sensitive-fields.service.js';
 import { hasPermission } from '../auth/interfaces/user-role.js';
-import { ExportService } from './export/export.service.js';
+import { ExportService, WORD_CONTENT_TYPE } from './export/export.service.js';
 import type { ConnectionHealthItemDto, ConnectionHealthResponseDto } from './dto/connection-health.dto.js';
 import type { ConnectionFieldsResponseDto } from './dto/connection-schema.dto.js';
 import {
   AGGREGATION_OPERATIONS,
   CrossJoinDto,
   ExportCrossJoinDto,
+  REPORT_FORMATS,
   type AggregationMetricDto,
   type AggregationOperation,
+  type ReportFormat,
 } from './dto/cross-join.dto.js';
 import {
   getJsonByteLength,
@@ -359,7 +361,7 @@ export class DataEngineService {
   }
 
   /**
-   * Fase 5: Exportación de datos combinados en Excel, PDF o JSON.
+   * Fase 5: Exportación de datos combinados en Excel, PDF, Word o JSON.
    */
   async executeCrossJoinForExport(
     payload: ExportCrossJoinDto,
@@ -393,6 +395,18 @@ export class DataEngineService {
           totalRows: securedData.length,
         };
       }
+      case 'word': {
+        const buffer = await this.exportService.exportToWord(securedData, {
+          title: `DataNexus - Join ${describeJoinPlan(resolveJoinPlan(payload))}`,
+          masked: !hasPermission(user.role, 'VIEW_UNMASKED_DATA'),
+        });
+        return {
+          buffer,
+          contentType: WORD_CONTENT_TYPE,
+          filename: `datanexus_export_${timestamp}.docx`,
+          totalRows: securedData.length,
+        };
+      }
       case 'json':
       default: {
         const buffer = this.exportService.exportToJson(securedData);
@@ -411,8 +425,8 @@ export class DataEngineService {
     user: AuthenticatedUser,
     destination: Writable,
   ): Promise<StreamExportResult> {
-    if (payload.format !== 'excel' && payload.format !== 'pdf') {
-      throw new BadRequestException('Los reportes solo admiten formato Excel o PDF');
+    if (!REPORT_FORMATS.includes(payload.format as ReportFormat)) {
+      throw new BadRequestException('Los reportes solo admiten formato Excel, PDF o Word');
     }
 
     const { rows: combinedData, rules } = await this.performJoin(payload, user);
@@ -424,6 +438,22 @@ export class DataEngineService {
       return {
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         filename: `datanexus_export_${timestamp}.xlsx`,
+        totalRows: securedData.length,
+      };
+    }
+
+    if (payload.format === 'word') {
+      await this.exportService.writeWord(
+        securedData,
+        {
+          title: `DataNexus - Join ${describeJoinPlan(resolveJoinPlan(payload))}`,
+          masked: !hasPermission(user.role, 'VIEW_UNMASKED_DATA'),
+        },
+        destination,
+      );
+      return {
+        contentType: WORD_CONTENT_TYPE,
+        filename: `datanexus_export_${timestamp}.docx`,
         totalRows: securedData.length,
       };
     }

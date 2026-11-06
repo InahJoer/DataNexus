@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { performance } from 'node:perf_hooks';
 const exportMocks = vi.hoisted(() => ({
   datasets: [] as Array<Record<string, any>[]>,
+  wordOptions: [] as Array<{ title: string; masked?: boolean }>,
 }));
 
 import {
@@ -10,7 +11,14 @@ import {
   GatewayTimeoutException,
 } from '@nestjs/common';
 vi.mock('./export/export.service.js', () => ({
+  WORD_CONTENT_TYPE: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   ExportService: class {
+    async exportToWord(rows: Record<string, any>[], options: { title: string; masked?: boolean }) {
+      exportMocks.datasets.push(rows);
+      exportMocks.wordOptions.push(options);
+      return Buffer.from('word');
+    }
+
     async exportToExcel(rows: Record<string, any>[]) {
       exportMocks.datasets.push(rows);
       return Buffer.from('excel');
@@ -763,6 +771,35 @@ describe('DataEngineService aggregation pipeline', () => {
     );
 
     expect(exportMocks.datasets.at(-1)).toEqual([{ value: '********' }]);
+  });
+
+  it('exporta a Word con los datos enmascarados según el rol (RF-21)', async () => {
+    exportMocks.datasets.length = 0;
+    exportMocks.wordOptions.length = 0;
+    const { service } = createEngine(
+      [{ client_id: 'C1' }],
+      [{ client_ref: 'C1', phone: 87654321 }],
+    );
+
+    const lectorExport = await service.executeCrossJoinForExport(
+      { ...basePayload, aggregations: [{ operation: 'SUM', field: 'phone', as: 'value' }], format: 'word' } as any,
+      { ...actor, role: 'LECTOR' },
+    );
+
+    expect(lectorExport.contentType).toBe(
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    );
+    expect(lectorExport.filename).toMatch(/^datanexus_export_[0-9TZ-]+\.docx$/);
+    expect(exportMocks.datasets.at(-1)).toEqual([{ value: '********' }]);
+    expect(exportMocks.wordOptions.at(-1)).toMatchObject({ masked: true, title: expect.stringContaining('DataNexus') });
+
+    await service.executeCrossJoinForExport(
+      { ...basePayload, aggregations: [{ operation: 'SUM', field: 'phone', as: 'value' }], format: 'word' } as any,
+      actorWithAccess,
+    );
+
+    expect(exportMocks.datasets.at(-1)).toEqual([{ value: 87654321 }]);
+    expect(exportMocks.wordOptions.at(-1)).toMatchObject({ masked: false });
   });
 
   it('preserves special metric aliases and ignores inherited source fields', async () => {

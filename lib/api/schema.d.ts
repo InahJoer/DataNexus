@@ -1407,7 +1407,7 @@ export interface components {
              * @example excel
              * @enum {string}
              */
-            format: "excel" | "pdf" | "json";
+            format: "excel" | "pdf" | "json" | "word";
         };
         TriggerReportDto: {
             /**
@@ -1428,7 +1428,7 @@ export interface components {
              * @example excel
              * @enum {string}
              */
-            format: "excel" | "pdf";
+            format: "excel" | "pdf" | "word";
             /** @description Parámetros del Cross-Join para extraer y combinar los datos */
             crossJoinParams: components["schemas"]["CrossJoinDto"];
             /**
