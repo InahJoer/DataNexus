@@ -13,6 +13,12 @@ import {
   type ConnectionTesterFactory,
 } from './testing/connection-tester.interface.js';
 import { connectionError, normalizeConnectionError } from './testing/connection-error.normalizer.js';
+import {
+  describeCredentials,
+  serializeCredentials,
+  toDriverConnectionString,
+  validateCredentials,
+} from './credentials/connection-credentials.js';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
@@ -36,9 +42,15 @@ export class ConnectionTestService {
     private readonly createTester: ConnectionTesterFactory,
   ) {}
 
-  /** Prueba credenciales enviadas en el cuerpo de la petición. */
-  testCredentials(input: TestConnectionDto): Promise<ConnectionTestResultDto> {
-    return this.run(input.tipoMotor, input.connectionString, input.dbName, input.timeoutMs);
+  /**
+   * Prueba credenciales estructuradas enviadas en el cuerpo (mismo formato que el alta). Se validan con el
+   * DTO del motor (400 si no son válidas) y se traducen al formato del driver sin guardarlas.
+   */
+  async testCredentials(input: TestConnectionDto): Promise<ConnectionTestResultDto> {
+    const credentials = await validateCredentials(input.tipoMotor, input.credenciales);
+    const connectionString = toDriverConnectionString(serializeCredentials(input.tipoMotor, credentials));
+    const { dbName } = describeCredentials(input.tipoMotor, credentials);
+    return this.run(input.tipoMotor, connectionString, dbName, input.timeoutMs);
   }
 
   /** Prueba una conexión guardada del workspace. Lanza 404 si no le pertenece. */

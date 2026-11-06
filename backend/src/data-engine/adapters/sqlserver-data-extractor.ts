@@ -14,6 +14,7 @@ import {
   getMaxSourceBytes,
   getMaxSourceRows,
 } from '../data-engine.constants.js';
+import { toDriverConnectionString } from '../../connections/credentials/connection-credentials.js';
 
 export class SqlServerDataExtractor implements DataExtractorAdapter {
   private readonly maxRows: number;
@@ -33,8 +34,8 @@ export class SqlServerDataExtractor implements DataExtractorAdapter {
   ): Promise<Record<string, any>[]> {
     const qualifiedTable = this.qualifyTable(tableName, options.schema);
 
-    const decryptedConnectionString = this.encryptionService.decrypt(
-      connection.encryptedConnectionString,
+    const decryptedConnectionString = toDriverConnectionString(
+      this.encryptionService.decrypt(connection.encryptedConnectionString),
     );
     const config = sql.ConnectionPool.parseConnectionString(
       decryptedConnectionString,

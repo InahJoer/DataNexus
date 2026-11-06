@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { ConnectionTestService, getDefaultConnectionTestTimeoutMs } from './connection-test.service.js';
 import type { ConnectionsService } from './connections.service.js';
 import type { ConnectionTester } from './testing/connection-tester.interface.js';
@@ -13,7 +13,9 @@ const actor = {
   workspaceId: 'workspace-1',
 } as unknown as AuthenticatedUser;
 
-const SECRET = 'postgres://admin:SuperSecret@db.internal:5432/analytics';
+const SECRET = 'postgresql://admin:SuperSecret@db.internal:5432/analytics';
+const PG_CREDENTIALS = { host: 'db.internal', database: 'analytics', username: 'admin', password: 'SuperSecret' };
+const MYSQL_CREDENTIALS = { host: 'h', database: 'shop', username: 'u', password: 'p' };
 const CONNECTION_ID = '6f1c2b7e-1d1a-4c5e-9f3a-2b1c0d9e8f7a';
 
 function makeTester(ping: ConnectionTester['ping']): ConnectionTester {
@@ -38,11 +40,7 @@ describe('ConnectionTestService (RF-10)', () => {
     const tester = makeTester(async () => ({ serverVersion: 'PostgreSQL 16.2' }));
     const { service, factory } = makeService(tester);
 
-    const result = await service.testCredentials({
-      tipoMotor: 'POSTGRESQL',
-      dbName: 'analytics',
-      connectionString: SECRET,
-    });
+    const result = await service.testCredentials({ tipoMotor: 'POSTGRESQL', credenciales: PG_CREDENTIALS });
 
     expect(Object.keys(result).sort()).toEqual(['error', 'latencyMs', 'ok', 'serverVersion']);
     expect(result).toMatchObject({ ok: true, serverVersion: 'PostgreSQL 16.2', error: null });
@@ -50,6 +48,17 @@ describe('ConnectionTestService (RF-10)', () => {
     expect(factory).toHaveBeenCalledWith('POSTGRESQL');
     expect(tester.ping).toHaveBeenCalledWith(SECRET, 'analytics', 10_000);
     expect(tester.close).toHaveBeenCalledOnce();
+  });
+
+  it('valida las credenciales con el DTO del motor antes de contactar al servidor (400)', async () => {
+    const tester = makeTester(async () => ({ serverVersion: 'x' }));
+    const { service, factory } = makeService(tester);
+
+    await expect(
+      service.testCredentials({ tipoMotor: 'POSTGRESQL', credenciales: { host: 'db', uri: 'mongodb://x' } }),
+    ).rejects.toThrow(BadRequestException);
+    expect(factory).not.toHaveBeenCalled();
+    expect(tester.ping).not.toHaveBeenCalled();
   });
 
   it('no persiste nada al probar credenciales nuevas', async () => {
@@ -61,7 +70,7 @@ describe('ConnectionTestService (RF-10)', () => {
     };
     const { service } = makeService(tester, connectionsService as unknown as ConnectionsService);
 
-    await service.testCredentials({ tipoMotor: 'MYSQL', dbName: 'shop', connectionString: 'mysql://u:p@h/shop' });
+    await service.testCredentials({ tipoMotor: 'MYSQL', credenciales: MYSQL_CREDENTIALS });
 
     expect(connectionsService.create).not.toHaveBeenCalled();
     expect(connectionsService.update).not.toHaveBeenCalled();
@@ -102,7 +111,7 @@ describe('ConnectionTestService (RF-10)', () => {
     });
     const { service } = makeService(tester);
 
-    const result = await service.testCredentials({ tipoMotor: 'POSTGRESQL', dbName: 'a', connectionString: SECRET });
+    const result = await service.testCredentials({ tipoMotor: 'POSTGRESQL', credenciales: PG_CREDENTIALS });
 
     expect(result).toEqual({
       ok: false,
@@ -120,8 +129,7 @@ describe('ConnectionTestService (RF-10)', () => {
 
     const pending = service.testCredentials({
       tipoMotor: 'MYSQL',
-      dbName: 'shop',
-      connectionString: 'mysql://u:p@h/shop',
+      credenciales: MYSQL_CREDENTIALS,
       timeoutMs: 2000,
     });
     await vi.advanceTimersByTimeAsync(2001);
@@ -148,7 +156,7 @@ describe('ConnectionTestService (RF-10)', () => {
   it('responde UNSUPPORTED_ENGINE para motores sin probador', async () => {
     const { service } = makeService(undefined);
 
-    const result = await service.testCredentials({ tipoMotor: 'MONGODB', dbName: 'x', connectionString: 'mongodb://x' });
+    const result = await service.testCredentials({ tipoMotor: 'MONGODB', credenciales: { uri: 'mongodb://x', database: 'x' } });
 
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe('UNSUPPORTED_ENGINE');

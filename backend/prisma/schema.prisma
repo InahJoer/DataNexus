@@ -105,7 +105,11 @@ model ConexionDB {
   tipoMotor                  TipoMotor
   host                       String
   dbName                     String
+  /// Credenciales cifradas (AES-256). Versión 1: cadena de conexión libre (legado). Versión 2: JSON estructurado por motor (RF-08/RF-09).
   connectionStringEncriptada String
+  credencialesVersion        Int       @default(1)
+  /// Metadatos NO secretos de las credenciales (puerto, usuario, ssl, projectId...). Nunca contiene contraseñas ni claves.
+  detalles                   Json?
   workspaceId                String
   workspace                  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 

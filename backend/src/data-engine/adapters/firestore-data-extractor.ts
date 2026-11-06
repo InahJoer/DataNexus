@@ -23,6 +23,7 @@ import {
   getMaxSourceBytes,
   getMaxSourceRows,
 } from '../data-engine.constants.js';
+import { toDriverConnectionString } from '../../connections/credentials/connection-credentials.js';
 
 const WHERE_FILTER_OPERATORS: Record<FilterOperator, WhereFilterOp> = {
   eq: '==',
@@ -59,7 +60,7 @@ export class FirestoreDataExtractor implements DataExtractorAdapter {
   ): Promise<Record<string, any>[]> {
     this.validateCollectionName(collectionName);
     const account = this.parseServiceAccount(
-      this.encryptionService.decrypt(connection.encryptedConnectionString),
+      toDriverConnectionString(this.encryptionService.decrypt(connection.encryptedConnectionString)),
     );
     const app = initializeApp(
       {

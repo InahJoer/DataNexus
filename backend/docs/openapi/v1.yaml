@@ -100,7 +100,8 @@ paths:
     post:
       tags: [Connections]
       summary: Crear una conexión para el workspace autenticado
-      description: Solo ADMIN. connectionString se acepta al crear, pero nunca se devuelve.
+      description: >-
+        Solo ADMIN. `credenciales` depende de `tipoMotor`; se cifran con AES-256 y nunca se devuelven.
       requestBody:
         required: true
         content:
@@ -120,6 +121,122 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /connections/test:
+    post:
+      tags: [Connections]
+      summary: Probar credenciales antes de guardar la conexión (RF-10)
+      description: >-
+        Solo ADMIN. Mismo `tipoMotor` + `credenciales` que POST /connections. No persiste nada; un fallo de red o
+        de credenciales responde 200 con ok=false y un error normalizado. Máximo 10 pruebas por minuto.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TestConnectionRequest'
+      responses:
+        '200':
+          description: Resultado de la prueba.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionTestResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /connections/{id}/test:
+    parameters:
+      - $ref: '#/components/parameters/UuidPath'
+    post:
+      tags: [Connections]
+      summary: Probar una conexión guardada y medir su latencia (RF-10)
+      description: ADMIN u OPERADOR. Usa las credenciales cifradas de la conexión sin exponerlas.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                timeoutMs:
+                  type: integer
+                  minimum: 1000
+                  maximum: 30000
+      responses:
+        '200':
+          description: Resultado de la prueba.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionTestResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /connections/firestore:
+    post:
+      tags: [Connections]
+      summary: Crear una conexión Firestore subiendo el JSON de Service Account
+      description: >-
+        Solo ADMIN. multipart/form-data con el archivo `serviceAccount` (máx. 64 KB, .json). Se procesa en memoria
+        y nunca se escribe en disco.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ServiceAccountUpload'
+      responses:
+        '201':
+          description: Conexión creada sin credenciales.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Connection'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+  /connections/{id}/service-account:
+    parameters:
+      - $ref: '#/components/parameters/UuidPath'
+    put:
+      tags: [Connections]
+      summary: Reemplazar el Service Account de una conexión Firestore
+      description: Solo ADMIN. Rotación de claves; mismo formato multipart que la creación.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ServiceAccountUpload'
+      responses:
+        '200':
+          description: Conexión actualizada sin credenciales.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Connection'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
   /connections/{id}:
     parameters:
       - $ref: '#/components/parameters/UuidPath'
@@ -657,14 +774,17 @@ components:
           description: ID del workspace.
     Connection:
       type: object
-      required: [id, tipoMotor, host, dbName, workspaceId]
+      required: [id, nombre, tipoMotor, host, dbName, workspaceId, formatoCredenciales, detalles]
       properties:
         id:
           type: string
           format: uuid
+        nombre:
+          type: string
+          nullable: true
         tipoMotor:
           type: string
-          example: PostgreSQL
+          enum: [POSTGRESQL, MYSQL, SQLSERVER, FIRESTORE, MONGODB]
         host:
           type: string
           example: db.example.internal
@@ -674,39 +794,200 @@ components:
         workspaceId:
           type: string
           format: uuid
+        formatoCredenciales:
+          type: string
+          enum: [ESTRUCTURADO, LEGADO]
+          description: LEGADO = cadena de conexión libre anterior a RF-08.
+        detalles:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: Metadatos no secretos (puerto, usuario, ssl, projectId, clientEmail). Nunca contiene secretos.
     CreateConnectionRequest:
       type: object
-      required: [tipoMotor, host, dbName, connectionString]
+      additionalProperties: false
+      required: [tipoMotor, credenciales]
       properties:
+        nombre:
+          type: string
+          maxLength: 120
         tipoMotor:
           type: string
-          description: Motor; la exploración soporta SQLServer, PostgreSQL, MySQL y Firebase/Firestore.
-        host:
-          type: string
-        dbName:
-          type: string
-        connectionString:
-          type: string
-          writeOnly: true
-          description: >-
-            Credenciales para el motor. Firestore espera JSON de cuenta de servicio
-            con project_id, client_email y private_key. No se devuelve ni se audita.
+          enum: [POSTGRESQL, MYSQL, SQLSERVER, FIRESTORE, MONGODB]
+          description: Se aceptan alias ("SQL Server", "Firebase", "postgres") que se normalizan.
+        credenciales:
+          $ref: '#/components/schemas/ConnectionCredentials'
     UpdateConnectionRequest:
       type: object
       minProperties: 1
       additionalProperties: false
       properties:
+        nombre:
+          type: string
+          maxLength: 120
         tipoMotor:
           type: string
-          description: Motor; la exploración soporta SQLServer, PostgreSQL, MySQL y Firebase/Firestore.
+          enum: [POSTGRESQL, MYSQL, SQLSERVER, FIRESTORE, MONGODB]
+          description: Cambiar de motor exige `credenciales` completas.
+        credenciales:
+          description: Con el mismo motor puede traer solo los campos que cambian (p. ej. `password`).
+          allOf:
+            - $ref: '#/components/schemas/ConnectionCredentials'
+    ConnectionCredentials:
+      description: Credenciales según `tipoMotor`. Se cifran y nunca se devuelven ni se auditan.
+      writeOnly: true
+      oneOf:
+        - $ref: '#/components/schemas/SqlCredentials'
+        - $ref: '#/components/schemas/SqlServerCredentials'
+        - $ref: '#/components/schemas/MongoCredentials'
+        - $ref: '#/components/schemas/FirestoreCredentials'
+    SqlCredentials:
+      title: POSTGRESQL / MYSQL
+      type: object
+      additionalProperties: false
+      required: [host, database, username, password]
+      properties:
         host:
           type: string
-        dbName:
+          description: Nombre de servidor o IP, sin protocolo.
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          description: 5432 (PostgreSQL) o 3306 (MySQL) por defecto.
+        database:
           type: string
-        connectionString:
+          maxLength: 128
+        username:
           type: string
+          maxLength: 128
+        password:
+          type: string
+          maxLength: 1024
           writeOnly: true
-          description: Nueva credencial; nunca se devuelve ni se audita.
+        ssl:
+          type: boolean
+          default: false
+    SqlServerCredentials:
+      title: SQLSERVER
+      type: object
+      additionalProperties: false
+      required: [host, database, username, password]
+      properties:
+        host:
+          type: string
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          default: 1433
+        database:
+          type: string
+          maxLength: 128
+        username:
+          type: string
+          maxLength: 128
+        password:
+          type: string
+          maxLength: 1024
+          writeOnly: true
+        encrypt:
+          type: boolean
+          default: true
+        trustServerCertificate:
+          type: boolean
+          default: false
+    MongoCredentials:
+      title: MONGODB
+      type: object
+      additionalProperties: false
+      required: [uri, database]
+      properties:
+        uri:
+          type: string
+          pattern: '^mongodb(\+srv)?://'
+          maxLength: 2048
+          writeOnly: true
+        database:
+          type: string
+          maxLength: 64
+    FirestoreCredentials:
+      title: FIRESTORE
+      type: object
+      additionalProperties: false
+      required: [serviceAccount]
+      properties:
+        serviceAccount:
+          type: object
+          writeOnly: true
+          required: [type, project_id, private_key, client_email]
+          additionalProperties: true
+          properties:
+            type:
+              type: string
+              enum: [service_account]
+            project_id:
+              type: string
+            private_key:
+              type: string
+              description: Clave privada PEM.
+            client_email:
+              type: string
+              format: email
+        databaseId:
+          type: string
+          default: '(default)'
+    TestConnectionRequest:
+      type: object
+      additionalProperties: false
+      required: [tipoMotor, credenciales]
+      properties:
+        tipoMotor:
+          type: string
+          enum: [POSTGRESQL, MYSQL, SQLSERVER, FIRESTORE, MONGODB]
+        credenciales:
+          $ref: '#/components/schemas/ConnectionCredentials'
+        timeoutMs:
+          type: integer
+          minimum: 1000
+          maximum: 30000
+          description: Por defecto CONNECTION_TEST_TIMEOUT_MS (10000).
+    ConnectionTestResult:
+      type: object
+      required: [ok, latencyMs, serverVersion, error]
+      properties:
+        ok:
+          type: boolean
+        latencyMs:
+          type: integer
+          nullable: true
+        serverVersion:
+          type: string
+          nullable: true
+        error:
+          type: object
+          nullable: true
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              example: AUTH_FAILED
+            message:
+              type: string
+    ServiceAccountUpload:
+      type: object
+      required: [serviceAccount]
+      properties:
+        serviceAccount:
+          type: string
+          format: binary
+          description: Archivo JSON de Service Account (máx. 64 KB).
+        nombre:
+          type: string
+          maxLength: 120
+        databaseId:
+          type: string
+          default: '(default)'
     InviteUserRequest:
       type: object
       additionalProperties: false

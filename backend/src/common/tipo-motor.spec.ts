@@ -27,7 +27,7 @@ describe('normalizeTipoMotor', () => {
 });
 
 describe('CreateConnectionDto.tipoMotor', () => {
-  const base = { host: 'db.internal', dbName: 'analytics', connectionString: 'secret' };
+  const base = { credenciales: { host: 'db.internal', database: 'analytics', username: 'u', password: 'secret' } };
 
   it('acepta alias y guarda el valor canónico', () => {
     const dto = plainToInstance(CreateConnectionDto, { ...base, tipoMotor: 'SQL Server' });

@@ -1,18 +1,20 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsIn, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 import {
   normalizeTipoMotor,
   TIPO_MOTOR_MESSAGE,
   TIPOS_MOTOR,
   type TipoMotor,
 } from '../../common/tipo-motor.js';
+import { CREDENTIALS_SCHEMA } from './create-connection.dto.js';
 
+/**
+ * Cambio parcial de una conexión. Con el mismo motor, `credenciales` puede traer solo los campos que cambian
+ * (p. ej. solo `password`); al cambiar `tipoMotor` deben enviarse completas.
+ */
 export class UpdateConnectionDto {
-  @ApiPropertyOptional({
-    example: 'Ventas producción',
-    description: 'Nombre descriptivo de la conexión',
-  })
+  @ApiPropertyOptional({ example: 'Ventas producción', description: 'Nombre descriptivo de la conexión' })
   @IsOptional()
   @IsString({ message: 'El nombre debe ser un texto' })
   @MaxLength(120, { message: 'El nombre no puede superar 120 caracteres' })
@@ -21,7 +23,7 @@ export class UpdateConnectionDto {
   @ApiPropertyOptional({
     enum: [...TIPOS_MOTOR],
     example: 'SQLSERVER',
-    description: 'Tipo de motor de base de datos (acepta alias que se normalizan)',
+    description: 'Nuevo motor (acepta alias). Requiere enviar `credenciales` completas.',
   })
   @IsOptional()
   @Transform(({ value }) => normalizeTipoMotor(value))
@@ -29,27 +31,10 @@ export class UpdateConnectionDto {
   tipoMotor?: TipoMotor;
 
   @ApiPropertyOptional({
-    example: 'sqlserver.datanexus.internal',
-    description: 'Dirección o nombre de host del servidor de base de datos',
+    ...CREDENTIALS_SCHEMA,
+    description: 'Credenciales nuevas o solo los campos que cambian (mismo motor). Se vuelven a cifrar.',
   })
   @IsOptional()
-  @IsString({ message: 'El host debe ser un texto' })
-  host?: string;
-
-  @ApiPropertyOptional({
-    example: 'analytics_db_v2',
-    description: 'Nombre de la base de datos a conectar',
-  })
-  @IsOptional()
-  @IsString({ message: 'El nombre de la base de datos debe ser un texto' })
-  dbName?: string;
-
-  @ApiPropertyOptional({
-    example: 'Server=sqlserver.datanexus.internal;Database=analytics_db_v2;User Id=sa;Password=NewP@ssw0rd2026;',
-    description: 'Nueva cadena de conexión en texto plano (será re-encriptada con AES-256)',
-  })
-  @IsOptional()
-  @IsString({ message: 'La cadena de conexión debe ser un texto' })
-  connectionString?: string;
-
+  @IsObject({ message: 'credenciales debe ser un objeto con los datos de conexión del motor' })
+  credenciales?: Record<string, unknown>;
 }

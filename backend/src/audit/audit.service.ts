@@ -11,7 +11,7 @@ import type { AuditEventInput, AuditEventType, AuditTransactionClient } from './
 import { QueryAuditLogsDto } from './dto/query-audit-logs.dto.js';
 import type { AuditExportFormat, ExportAuditLogsDto } from './dto/export-audit-logs.dto.js';
 
-const CONNECTION_FIELDS = new Set(['nombre', 'tipoMotor', 'host', 'dbName', 'connectionString']);
+const CONNECTION_FIELDS = new Set(['nombre', 'tipoMotor', 'host', 'dbName', 'connectionString', 'credenciales']);
 /** Eventos de alta/baja de miembros: guardan rol, correo afectado y vencimiento de la invitación. */
 const MEMBERSHIP_EVENTS: ReadonlySet<AuditEventType> = new Set([
   'USER_INVITED',
