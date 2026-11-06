@@ -15,6 +15,7 @@ import { AuditModule } from './audit/audit.module.js';
 import { MailerModule } from './mailer/mailer.module.js';
 import { ReportsModule } from './reports/reports.module.js';
 import { WorkspacesModule } from './workspaces/workspaces.module.js';
+import { QueriesModule } from './queries/queries.module.js';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { WorkspacesModule } from './workspaces/workspaces.module.js';
     MailerModule,
     ReportsModule,
     WorkspacesModule,
+    QueriesModule,
   ],
   controllers: [AppController],
   providers: [
