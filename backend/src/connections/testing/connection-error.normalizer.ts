@@ -19,13 +19,14 @@ export interface NormalizedConnectionError {
   message: string;
 }
 
-type Motor = 'POSTGRESQL' | 'MYSQL' | 'SQLSERVER' | 'FIRESTORE' | 'OTHER';
+type Motor = 'POSTGRESQL' | 'MYSQL' | 'SQLSERVER' | 'FIRESTORE' | 'MONGODB' | 'OTHER';
 
 const ENGINE_LABEL: Record<Motor, string> = {
   POSTGRESQL: 'PostgreSQL',
   MYSQL: 'MySQL',
   SQLSERVER: 'SQL Server',
   FIRESTORE: 'Firestore',
+  MONGODB: 'MongoDB',
   OTHER: 'la base de datos',
 };
 
@@ -66,6 +67,7 @@ function toMotor(tipoMotor: string): Motor {
   if (motor === 'mysql' || motor === 'mariadb') return 'MYSQL';
   if (motor === 'sqlserver' || motor === 'mssql') return 'SQLSERVER';
   if (motor === 'firestore' || motor === 'firebase' || motor === 'cloudfirestore') return 'FIRESTORE';
+  if (motor === 'mongodb' || motor === 'mongo') return 'MONGODB';
   return 'OTHER';
 }
 
@@ -157,6 +159,19 @@ function classifyFirestore(signals: ErrorSignals): ConnectionErrorCode | undefin
   return undefined;
 }
 
+/** Códigos del servidor de MongoDB (18 AuthenticationFailed, 13 Unauthorized) y errores del driver. */
+function classifyMongo(signals: ErrorSignals): ConnectionErrorCode | undefined {
+  const { numbers, text } = signals;
+  if (numbers.has(18) || /authentication failed|auth failed/.test(text)) return 'AUTH_FAILED';
+  if (numbers.has(13) || /not authorized|requires authentication/.test(text)) return 'PERMISSION_DENIED';
+  if (/invalid scheme|uri must include|invalid connection string|mongoparseerror/.test(text)) {
+    return 'INVALID_CONFIGURATION';
+  }
+  if (/querysrv|enotfound|getaddrinfo/.test(text)) return 'HOST_NOT_FOUND';
+  if (/econnrefused/.test(text)) return 'CONNECTION_REFUSED';
+  return undefined;
+}
+
 function messageFor(code: ConnectionErrorCode, motor: Motor, timeoutMs?: number, rawMotor = ''): string {
   const engine = ENGINE_LABEL[motor];
   const isFirestore = motor === 'FIRESTORE';
@@ -226,6 +241,7 @@ export function normalizeConnectionError(
     MYSQL: classifyMysql,
     SQLSERVER: classifySqlServer,
     FIRESTORE: classifyFirestore,
+    MONGODB: classifyMongo,
     OTHER: () => undefined,
   }[motor](signals);
   const code = engineSpecific ?? classifyNetwork(signals) ?? 'UNKNOWN';

@@ -13,8 +13,8 @@ vi.mock('pg', () => ({
   }),
 }));
 
-import { PostgresAdapter } from './postgres.adapter.js';
-import { UnsupportedOperationError } from './data-source-adapter.interface.js';
+import { BadRequestException } from '@nestjs/common';
+import { PostgresAdapter, buildPostgresSelect, quotePostgresIdentifier } from './postgres.adapter.js';
 import { DataSourceClientPool } from '../pool/data-source-client-pool.js';
 
 const connection = {
@@ -66,14 +66,71 @@ describe('PostgresAdapter', () => {
     expect(mocks.end).toHaveBeenCalledOnce();
   });
 
-  it('declara que aún no extrae datos', async () => {
-    expect(adapter.capabilities.extract).toBe(false);
-    await expect(adapter.extract()).rejects.toBeInstanceOf(UnsupportedOperationError);
+  it('declara que extrae datos y valida los nombres antes de consultar', async () => {
+    expect(adapter.capabilities.extract).toBe(true);
+    await expect(adapter.extract(connection, '')).rejects.toBeInstanceOf(BadRequestException);
+    await expect(adapter.extract(connection, 'x'.repeat(64))).rejects.toBeInstanceOf(BadRequestException);
+    await expect(adapter.extract(connection, 'clientes', { schema: 'a\0b' })).rejects.toBeInstanceOf(BadRequestException);
+    expect(mocks.query).not.toHaveBeenCalled();
   });
 
   it('rechaza cadenas que no son de PostgreSQL', async () => {
     await expect(adapter.listObjects({ ...connection, connectionString: 'mysql://x' })).rejects.toThrow(
       'Invalid PostgreSQL connection configuration',
     );
+  });
+
+  it('rechaza una tabla que no existe en ningún esquema', async () => {
+    mocks.query.mockResolvedValueOnce({ rows: [] });
+    await expect(adapter.extract(connection, 'fantasma')).rejects.toThrow('La tabla no existe o no tiene columnas visibles');
+  });
+});
+
+describe('buildPostgresSelect', () => {
+  const COLUMNS = ['id', 'cliente_id', 'total', 'foto'];
+
+  it('limita filas, calcula el tamaño de fila en el servidor y escapa identificadores', () => {
+    const select = buildPostgresSelect('pedidos', 'ventas', COLUMNS, [], 100, 1_000_000);
+    expect(select.text).toContain('FROM "ventas"."pedidos" AS "__dn_src"');
+    expect(select.text).toMatch(/LIMIT 101$/);
+    expect(select.text).toContain('octet_length("__dn_src"."foto"::text)');
+    expect(select.text).toContain('> 1000000');
+    expect(select.values).toEqual([]);
+    expect(select.oversizedKey).toBe('__dn_oversized');
+  });
+
+  it('traduce los filtros a parámetros $n sin concatenar valores (filter pushdown)', () => {
+    const malicious = "x'; DROP TABLE pedidos; --";
+    const select = buildPostgresSelect(
+      'pedidos',
+      'public',
+      COLUMNS,
+      [
+        { campo: 'cliente_id', operador: 'eq', valor: malicious },
+        { campo: 'total', operador: 'gte', valor: 10 },
+        { campo: 'id', operador: 'in', valor: [1, 2] },
+        { campo: 'foto', operador: 'eq', valor: null },
+      ],
+      100,
+      1_000_000,
+    );
+    expect(select.text).toContain(
+      'WHERE "__dn_src"."cliente_id" = $1 AND "__dn_src"."total" >= $2 AND "__dn_src"."id" IN ($3, $4) AND "__dn_src"."foto" IS NULL',
+    );
+    expect(select.values).toEqual([malicious, 10, 1, 2]);
+    expect(select.text).not.toContain('DROP TABLE');
+  });
+
+  it('escapa comillas dobles en nombres y rechaza campos de filtro que no existen', () => {
+    expect(quotePostgresIdentifier('a"b', 'tabla')).toBe('"a""b"');
+    expect(() =>
+      buildPostgresSelect('pedidos', 'public', COLUMNS, [{ campo: 'id; --', operador: 'eq', valor: 1 }], 10, 100),
+    ).toThrow(BadRequestException);
+  });
+
+  it('elige nombres de columnas auxiliares que no chocan con columnas reales', () => {
+    const select = buildPostgresSelect('t', 'public', ['__dn_row_bytes', '__dn_oversized'], [], 10, 100);
+    expect(select.oversizedKey).toBe('__dn_oversized_2');
+    expect(select.text).toContain('"__dn_row_bytes_2"');
   });
 });
