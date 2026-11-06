@@ -20,6 +20,8 @@ const EXPECTED: Record<Permission, UserRole[]> = {
   READ_AUDIT: ['ADMIN', 'AUDITOR'],
   MANAGE_MEMBERS: ['ADMIN'],
   MANAGE_WORKSPACE: ['ADMIN'],
+  MANAGE_QUERIES: ['ADMIN', 'OPERADOR'],
+  RUN_SAVED_QUERIES: ['ADMIN', 'OPERADOR', 'LECTOR'],
   VIEW_UNMASKED_DATA: ['ADMIN', 'OPERADOR'],
 };
 
@@ -47,10 +49,11 @@ describe('Matriz RBAC de 4 roles', () => {
     expect(permissions).toEqual(['READ_AUDIT']);
   });
 
-  it('LECTOR no tiene permisos de escritura ni de datos sin enmascarar', () => {
-    for (const permission of Object.keys(ROLE_PERMISSIONS) as Permission[]) {
-      expect(hasPermission('LECTOR', permission)).toBe(false);
-    }
+  it('LECTOR solo consume consultas publicadas: sin escritura ni datos sin enmascarar', () => {
+    const permissions = (Object.keys(ROLE_PERMISSIONS) as Permission[]).filter((p) =>
+      hasPermission('LECTOR', p),
+    );
+    expect(permissions).toEqual(['RUN_SAVED_QUERIES']);
   });
 
   it('rechaza roles desconocidos, en minúsculas o vacíos', () => {

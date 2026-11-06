@@ -53,6 +53,9 @@ enum AuditEventType {
   INVITATION_ACCEPTED
   USER_REMOVED
   BROWSE_DATA
+  SAVED_QUERY_CREATED
+  SAVED_QUERY_UPDATED
+  SAVED_QUERY_DELETED
 }
 
 /// Estado persistido de una invitación. La expiración se calcula con expiresAt (PENDIENTE vencida = EXPIRADA).
@@ -80,6 +83,7 @@ model Workspace {
   conexiones            ConexionDB[]
   camposSensiblesReglas SensitiveField[]
   invitations           Invitation[]
+  consultasGuardadas    SavedQuery[]
 }
 
 model User {
@@ -97,6 +101,8 @@ model User {
   passwordResetTokens PasswordResetToken[]
   sessions            UserSession[]
   invitationsSent     Invitation[]
+  consultasGuardadas  SavedQuery[]
+  versionesConsultas  SavedQueryVersion[]
 
   @@index([workspaceId])
 }
@@ -228,4 +234,47 @@ model SensitiveField {
 
   @@unique([workspaceId, conexionId, entidad, campo])
   @@index([workspaceId])
+}
+
+/// Visibilidad de una consulta guardada (issue #35). El LECTOR solo ve y ejecuta las PUBLICADA.
+enum SavedQueryVisibility {
+  PRIVADA
+  PUBLICADA
+}
+
+/// Consulta guardada / vista unificada del Query Builder (UC4/UC7, issue #35).
+/// `definicion` es el cuerpo de POST /engine/join sin la paginación (limit/offset), que se decide al ejecutar.
+model SavedQuery {
+  id          String               @id @default(uuid())
+  workspaceId String
+  workspace   Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  nombre      String
+  descripcion String?
+  definicion  Json
+  /// Versión vigente de la definición. Cada cambio de `definicion` la incrementa y guarda una copia en SavedQueryVersion.
+  version     Int                  @default(1)
+  visibilidad SavedQueryVisibility @default(PRIVADA)
+  /// Autor de la consulta. Queda en null si se da de baja al usuario.
+  autorId     String?
+  autor       User?                @relation(fields: [autorId], references: [id], onDelete: SetNull)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @default(now()) @updatedAt
+  versiones   SavedQueryVersion[]
+
+  @@unique([workspaceId, nombre])
+  @@index([workspaceId, visibilidad])
+}
+
+/// Historial de definiciones de una consulta guardada (versionado simple, issue #35).
+model SavedQueryVersion {
+  id           String     @id @default(uuid())
+  savedQueryId String
+  savedQuery   SavedQuery @relation(fields: [savedQueryId], references: [id], onDelete: Cascade)
+  version      Int
+  definicion   Json
+  autorId      String?
+  autor        User?      @relation(fields: [autorId], references: [id], onDelete: SetNull)
+  createdAt    DateTime   @default(now())
+
+  @@unique([savedQueryId, version])
 }

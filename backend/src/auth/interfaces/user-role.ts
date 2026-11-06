@@ -40,6 +40,10 @@ export const ROLE_PERMISSIONS = {
   MANAGE_MEMBERS: ['ADMIN'],
   /** Editar nombre, logo, zona horaria y configuración del workspace (RF-05). */
   MANAGE_WORKSPACE: ['ADMIN'],
+  /** Crear, editar y eliminar consultas guardadas y ver las privadas (issue #35). */
+  MANAGE_QUERIES: ['ADMIN', 'OPERADOR'],
+  /** Ejecutar consultas guardadas. El LECTOR solo accede a las publicadas. */
+  RUN_SAVED_QUERIES: ['ADMIN', 'OPERADOR', 'LECTOR'],
   /** Recibir datos de negocio sin enmascarar. El resto de roles siempre recibe datos enmascarados. */
   VIEW_UNMASKED_DATA: ['ADMIN', 'OPERADOR'],
 } as const satisfies Record<string, readonly UserRole[]>;
