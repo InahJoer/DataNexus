@@ -834,7 +834,9 @@ export class ScheduledReportsService implements OnModuleInit {
     const jobs = this.schedulerRegistry.getCronJobs();
     const job = jobs.get(name);
     if (job) {
-      job.stop();
+      // cron 4.x: stop() devuelve una promesa que se resuelve cuando termina la ejecución en curso.
+      // No se espera para no bloquear; la ejecución ya registrada valida la configuración vigente.
+      void job.stop();
       this.schedulerRegistry.deleteCronJob(name);
     }
     this.registeredJobConfigs.delete(id);
