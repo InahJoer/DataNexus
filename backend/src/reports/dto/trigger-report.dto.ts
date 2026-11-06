@@ -9,7 +9,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { CrossJoinDto, REPORT_FORMATS, type ReportFormat } from '../../data-engine/dto/cross-join.dto.js';
+import { CrossJoinDto, EXPORT_FORMATS, type ExportFormat } from '../../data-engine/dto/cross-join.dto.js';
 
 export class TriggerReportDto {
   @ApiProperty({
@@ -29,12 +29,12 @@ export class TriggerReportDto {
   recipients: string[];
 
   @ApiProperty({
-    description: 'Formato del archivo del reporte (excel, pdf o word)',
-    enum: REPORT_FORMATS,
+    description: 'Formato del archivo de reporte (Excel, PDF, JSON o Word)',
+    enum: EXPORT_FORMATS,
     example: 'excel',
   })
-  @IsIn(REPORT_FORMATS, { message: 'El formato debe ser excel, pdf o word' })
-  format: ReportFormat;
+  @IsIn(EXPORT_FORMATS, { message: 'El formato debe ser excel, pdf, json o word' })
+  format: ExportFormat;
 
   @ApiProperty({
     description: 'Parámetros del Cross-Join para extraer y combinar los datos',

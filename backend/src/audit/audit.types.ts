@@ -32,6 +32,10 @@ export const AUDIT_EVENT_TYPES = [
   'SAVED_QUERY_CREATED',
   'SAVED_QUERY_UPDATED',
   'SAVED_QUERY_DELETED',
+  'SCHEDULED_REPORT_CREATED',
+  'SCHEDULED_REPORT_UPDATED',
+  'SCHEDULED_REPORT_DELETED',
+  'SCHEDULED_REPORT_RUN',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
@@ -42,7 +46,7 @@ export interface AuditEventInput {
   actorUserId?: string;
   actorEmail?: string;
   workspaceId?: string;
-  targetType?: 'USER' | 'CONNECTION' | 'REPORT' | 'CROSS_JOIN' | 'AUDIT_LOG' | 'RECORD' | 'SESSION' | 'WORKSPACE' | 'INVITATION' | 'SAVED_QUERY';
+  targetType?: 'USER' | 'CONNECTION' | 'REPORT' | 'CROSS_JOIN' | 'AUDIT_LOG' | 'RECORD' | 'SESSION' | 'WORKSPACE' | 'INVITATION' | 'SAVED_QUERY' | 'SCHEDULED_REPORT';
   targetId?: string;
   details?: Record<string, unknown>;
   ipAddress?: string;

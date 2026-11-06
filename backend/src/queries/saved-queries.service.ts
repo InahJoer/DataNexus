@@ -266,6 +266,15 @@ export class SavedQueriesService {
     const current = await this.findVisible(actor, id);
     this.assertCanEdit(actor, current);
 
+    const scheduledReports = await this.prisma.scheduledReport.count({
+      where: { savedQueryId: id },
+    });
+    if (scheduledReports > 0) {
+      throw new ConflictException(
+        'Elimine o cambie las programaciones de reportes que usan esta consulta antes de eliminarla',
+      );
+    }
+
     await this.prisma.$transaction(async (tx) => {
       await tx.savedQuery.delete({ where: { id } });
       await this.auditService.record(
