@@ -26,6 +26,6 @@ import { ReportExecutionsService } from './report-executions.service.js';
   ],
   controllers: [ReportsController, ScheduledReportsController],
   providers: [ReportsService, ScheduledReportsService, ReportExecutionsService],
-  exports: [ReportsService],
+  exports: [ReportsService, ScheduledReportsService],
 })
 export class ReportsModule {}

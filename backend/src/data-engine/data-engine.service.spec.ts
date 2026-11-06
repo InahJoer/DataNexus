@@ -246,6 +246,54 @@ describe('DataEngineService', () => {
     ]);
   });
 
+  it('guarda el último health check de cada conexión para el dashboard (issue #40)', async () => {
+    const recordHealthChecks = vi.fn().mockResolvedValue(undefined);
+    const service = new DataEngineService(
+      {
+        findAll: vi.fn().mockResolvedValue([
+          { id: 'ok', tipoMotor: 'POSTGRESQL', host: 'h', dbName: 'd' },
+          { id: 'down', tipoMotor: 'MYSQL', host: 'h', dbName: 'd' },
+        ]),
+        getConnectionForExploration: vi.fn((id: string) =>
+          Promise.resolve({ id, tipoMotor: id, dbName: 'd', connectionString: 'x' }),
+        ),
+        recordHealthChecks,
+      } as unknown as ConnectionsService,
+      {
+        get: vi.fn((tipoMotor: string) => ({
+          capabilities: { explore: true, fields: true, extract: true },
+          listObjects: tipoMotor === 'MYSQL' ? vi.fn().mockRejectedValue(new Error('down')) : vi.fn().mockResolvedValue([]),
+        })),
+      } as unknown as AdapterRegistry,
+    );
+
+    await service.getConnectionsHealth(actor as never);
+
+    expect(recordHealthChecks).toHaveBeenCalledWith('workspace-1', [
+      { id: 'ok', status: 'HEALTHY', latencyMs: expect.any(Number) },
+      { id: 'down', status: 'UNAVAILABLE', latencyMs: expect.any(Number) },
+    ]);
+  });
+
+  it('el health check responde aunque no se pueda guardar el resultado', async () => {
+    const service = new DataEngineService(
+      {
+        findAll: vi.fn().mockResolvedValue([{ id: 'ok', tipoMotor: 'POSTGRESQL', host: 'h', dbName: 'd' }]),
+        getConnectionForExploration: vi.fn((id: string) =>
+          Promise.resolve({ id, tipoMotor: id, dbName: 'd', connectionString: 'x' }),
+        ),
+        recordHealthChecks: vi.fn(() => {
+          throw new Error('db caída');
+        }),
+      } as unknown as ConnectionsService,
+      registryWith({ listObjects: vi.fn().mockResolvedValue([]) }),
+    );
+
+    await expect(service.getConnectionsHealth(actor as never)).resolves.toMatchObject({
+      connections: [{ status: 'HEALTHY' }],
+    });
+  });
+
   describe('executeCrossJoin and executeCrossJoinForExport', () => {
     it('executes in-memory cross join, applies LECTOR masking and paginates result', async () => {
       const sqlConn = {
@@ -800,6 +848,29 @@ describe('DataEngineService aggregation pipeline', () => {
 
     expect(exportMocks.datasets.at(-1)).toEqual([{ value: 87654321 }]);
     expect(exportMocks.wordOptions.at(-1)).toMatchObject({ masked: false });
+  });
+
+  it('registra los bytes extraídos de las fuentes como datos procesados (issue #40)', async () => {
+    const sqlRows = [{ client_id: 'C1', name: 'Ana' }];
+    const noSqlRows = [{ client_ref: 'C1', total: 10 }];
+    const { service: base } = createEngine(sqlRows, noSqlRows);
+    const usageMeter = { recordBytesProcessed: vi.fn() };
+    const service = new DataEngineService(
+      (base as unknown as { connectionsService: ConnectionsService }).connectionsService,
+      (base as unknown as { adapters: AdapterRegistry }).adapters,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      usageMeter as never,
+    );
+
+    await service.executeCrossJoin(basePayload as any, actorWithAccess);
+
+    expect(usageMeter.recordBytesProcessed).toHaveBeenCalledWith(
+      'workspace-1',
+      Buffer.byteLength(JSON.stringify(sqlRows)) + Buffer.byteLength(JSON.stringify(noSqlRows)),
+    );
   });
 
   it('preserves special metric aliases and ignores inherited source fields', async () => {

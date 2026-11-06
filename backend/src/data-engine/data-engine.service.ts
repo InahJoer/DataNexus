@@ -25,6 +25,7 @@ import { DataSourceClientPool } from './pool/data-source-client-pool.js';
 import { MaskingService, type SensitiveRule } from './masking/masking.service.js';
 import { SensitiveFieldsService, type SensitiveSource } from './masking/sensitive-fields.service.js';
 import { hasPermission } from '../auth/interfaces/user-role.js';
+import { UsageMeterService } from '../usage/usage-meter.service.js';
 import { ExportService, WORD_CONTENT_TYPE } from './export/export.service.js';
 import type { ConnectionHealthItemDto, ConnectionHealthResponseDto } from './dto/connection-health.dto.js';
 import type { ConnectionFieldsResponseDto } from './dto/connection-schema.dto.js';
@@ -118,6 +119,7 @@ export class DataEngineService {
     private readonly maskingService: MaskingService = new MaskingService(),
     private readonly exportService: ExportService = new ExportService(),
     @Optional() private readonly sensitiveFields?: SensitiveFieldsService,
+    @Optional() private readonly usageMeter?: UsageMeterService,
   ) {}
 
   /**
@@ -162,6 +164,16 @@ export class DataEngineService {
         }
       }),
     );
+
+    // Se guarda el último resultado para el dashboard (issue #40); un fallo aquí no afecta la respuesta.
+    await Promise.resolve()
+      .then(() =>
+        this.connectionsService.recordHealthChecks(
+          actor.workspaceId,
+          healthItems.map((item) => ({ id: item.connectionId, status: item.status, latencyMs: item.latencyMs })),
+        ),
+      )
+      .catch(() => undefined);
 
     return { checkedAt: new Date().toISOString(), connections: healthItems };
   }
@@ -542,6 +554,11 @@ export class DataEngineService {
       }),
     );
     const recordsByAlias = new Map(extracted);
+    // Datos procesados del dashboard (issue #40): bytes extraídos de las fuentes, antes del join.
+    this.usageMeter?.recordBytesProcessed(
+      user.workspaceId,
+      extracted.reduce((total, [, records]) => total + getJsonByteLength(records), 0),
+    );
 
     // 3. Ejecutar las relaciones (INNER/LEFT/RIGHT/FULL) con índices hash y aplanar las filas
     options.signal?.throwIfAborted();
