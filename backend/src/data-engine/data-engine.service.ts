@@ -2,21 +2,24 @@ import {
   BadGatewayException,
   BadRequestException,
   GatewayTimeoutException,
+  HttpException,
   NotFoundException,
   PayloadTooLargeException,
-  Inject,
   Injectable,
+  Logger,
+  Optional,
 } from '@nestjs/common';
 import type { Writable } from 'node:stream';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface.js';
 import { ConnectionsService } from '../connections/connections.service.js';
+import { AdapterRegistry } from './adapters/adapter-registry.js';
 import {
-  DATA_EXPLORER_FACTORY,
+  UnsupportedOperationError,
   type CatalogObject,
-  type DataExplorer,
-  type DataExplorerFactory,
-} from './data-explorer.interface.js';
-import { DataExtractorService } from './adapters/data-extractor.adapter.js';
+  type DataSourceConnection,
+  type ExtractOptions,
+} from './adapters/data-source-adapter.interface.js';
+import { DataSourceClientPool } from './pool/data-source-client-pool.js';
 import { MaskingService } from './masking/masking.service.js';
 import { ExportService } from './export/export.service.js';
 import type { ConnectionHealthItemDto, ConnectionHealthResponseDto } from './dto/connection-health.dto.js';
@@ -28,7 +31,6 @@ import {
   type AggregationMetricDto,
   type AggregationOperation,
 } from './dto/cross-join.dto.js';
-import type { DataExtractorOptions } from './adapters/data-extractor.adapter.js';
 import {
   getJsonByteLength,
   getMaxJoinBytes,
@@ -73,11 +75,16 @@ interface AggregateBucket {
 
 @Injectable()
 export class DataEngineService {
+  private readonly logger = new Logger(DataEngineService.name);
+
+  /**
+   * El servicio solo conoce IDataSourceAdapter a través de AdapterRegistry (RNF-10): agregar un motor no lo
+   * modifica. El pool se usa para descartar los clientes de una conexión que excedió el tiempo.
+   */
   constructor(
     private readonly connectionsService: ConnectionsService,
-    @Inject(DATA_EXPLORER_FACTORY)
-    private readonly createExplorer: DataExplorerFactory,
-    private readonly dataExtractor: DataExtractorService = new DataExtractorService(),
+    private readonly adapters: AdapterRegistry,
+    @Optional() private readonly clientPool?: DataSourceClientPool,
     private readonly maskingService: MaskingService = new MaskingService(),
     private readonly exportService: ExportService = new ExportService(),
   ) {}
@@ -90,51 +97,28 @@ export class DataEngineService {
     const healthItems = await Promise.all(
       connections.map(async (connection): Promise<ConnectionHealthItemDto> => {
         const startedAt = Date.now();
-        const explorer = this.createExplorer(connection.tipoMotor);
+        const adapter = this.adapters.get(connection.tipoMotor);
+        const base = {
+          connectionId: connection.id,
+          tipoMotor: connection.tipoMotor,
+          host: connection.host,
+          dbName: connection.dbName,
+        };
 
-        if (!explorer) {
-          return {
-            connectionId: connection.id,
-            tipoMotor: connection.tipoMotor,
-            host: connection.host,
-            dbName: connection.dbName,
-            status: 'UNSUPPORTED',
-            latencyMs: null,
-          };
+        if (!adapter?.capabilities.explore) {
+          return { ...base, status: 'UNSUPPORTED', latencyMs: null };
         }
 
         const deadline = startedAt + EXPLORATION_TIMEOUT_MS;
         try {
           const credentials = await this.withTimeout(
-            this.connectionsService.getConnectionForExploration(
-              connection.id,
-              actor.workspaceId,
-            ),
+            this.connectionsService.getConnectionForExploration(connection.id, actor.workspaceId),
             deadline,
           );
-          await this.withTimeout(
-            explorer.listObjects(credentials.connectionString, credentials.dbName),
-            deadline,
-          );
-          return {
-            connectionId: connection.id,
-            tipoMotor: connection.tipoMotor,
-            host: connection.host,
-            dbName: connection.dbName,
-            status: 'HEALTHY',
-            latencyMs: Date.now() - startedAt,
-          };
+          await this.runWithDeadline(credentials, deadline, () => adapter.listObjects(credentials));
+          return { ...base, status: 'HEALTHY', latencyMs: Date.now() - startedAt };
         } catch {
-          return {
-            connectionId: connection.id,
-            tipoMotor: connection.tipoMotor,
-            host: connection.host,
-            dbName: connection.dbName,
-            status: 'UNAVAILABLE',
-            latencyMs: Date.now() - startedAt,
-          };
-        } finally {
-          await this.closeWithinDeadline(explorer, deadline);
+          return { ...base, status: 'UNAVAILABLE', latencyMs: Date.now() - startedAt };
         }
       }),
     );
@@ -149,16 +133,13 @@ export class DataEngineService {
         actor.workspaceId,
       );
 
-    const explorer = this.createExplorer(connection.tipoMotor);
-    if (!explorer)
+    const adapter = this.adapters.get(connection.tipoMotor);
+    if (!adapter?.capabilities.explore)
       throw new BadRequestException('Motor de base de datos no soportado');
 
     const deadline = Date.now() + EXPLORATION_TIMEOUT_MS;
     try {
-      const objects = await this.withTimeout(
-        explorer.listObjects(connection.connectionString, connection.dbName),
-        deadline,
-      );
+      const objects = await this.runWithDeadline(connection, deadline, () => adapter.listObjects(connection));
 
       return {
         connectionId: connection.id,
@@ -175,8 +156,6 @@ export class DataEngineService {
       throw new BadGatewayException(
         'No fue posible explorar el esquema de la conexión',
       );
-    } finally {
-      await this.closeWithinDeadline(explorer, deadline);
     }
   }
 
@@ -190,25 +169,21 @@ export class DataEngineService {
       connectionId,
       actor.workspaceId,
     );
-    const explorer = this.createExplorer(connection.tipoMotor);
-    if (!explorer?.listFields) {
+    const adapter = this.adapters.get(connection.tipoMotor);
+    if (!adapter?.capabilities.fields) {
       throw new BadRequestException('La exploración de campos no está disponible para este motor');
     }
 
     const deadline = Date.now() + EXPLORATION_TIMEOUT_MS;
     try {
-      const objects = await this.withTimeout(
-        explorer.listObjects(connection.connectionString, connection.dbName),
-        deadline,
-      );
+      const objects = await this.runWithDeadline(connection, deadline, () => adapter.listObjects(connection));
       const objectExists = objects.some((object) =>
         object.name === objectName && (!schema || object.schema === schema),
       );
       if (!objectExists) throw new NotFoundException('Tabla o colección no encontrada en la conexión');
 
-      const fields = await this.withTimeout(
-        explorer.listFields(connection.connectionString, connection.dbName, objectName, schema),
-        deadline,
+      const fields = await this.runWithDeadline(connection, deadline, () =>
+        adapter.listFields(connection, objectName, schema),
       );
       return {
         connectionId: connection.id,
@@ -223,8 +198,6 @@ export class DataEngineService {
         throw new GatewayTimeoutException('La exploración de campos excedió el límite de 10 segundos');
       }
       throw new BadGatewayException('No fue posible explorar los campos de la fuente');
-    } finally {
-      await this.closeWithinDeadline(explorer, deadline);
     }
   }
 
@@ -353,31 +326,31 @@ export class DataEngineService {
 
     // 1. Obtener y validar pertenencia al workspace para ambas conexiones
     const [sqlConnection, noSqlConnection] = await Promise.all([
-      this.connectionsService.getConnectionForExtraction(
+      this.connectionsService.getConnectionForExploration(
         payload.conexionSqlId,
         user.workspaceId,
       ),
-      this.connectionsService.getConnectionForExtraction(
+      this.connectionsService.getConnectionForExploration(
         payload.conexionNoSqlId,
         user.workspaceId,
       ),
     ]);
 
-    // 2. Aplicar filtros en los adaptadores antes de cargar registros
-    const sqlOptions: DataExtractorOptions = {
+    // 2. Aplicar filtros en los adaptadores antes de cargar registros (filter pushdown)
+    const sqlOptions: ExtractOptions = {
       ...(payload.esquemaSql ? { schema: payload.esquemaSql } : {}),
       ...(payload.filtrosSql ? { filters: payload.filtrosSql } : {}),
     };
-    const noSqlOptions: DataExtractorOptions = payload.filtrosNoSql
+    const noSqlOptions: ExtractOptions = payload.filtrosNoSql
       ? { filters: payload.filtrosNoSql }
       : {};
     const [sqlRecords, noSqlRecords] = await Promise.all([
-      this.dataExtractor.extract(
+      this.extract(
         sqlConnection,
         payload.tablaSql,
         Object.keys(sqlOptions).length ? sqlOptions : undefined,
       ),
-      this.dataExtractor.extract(
+      this.extract(
         noSqlConnection,
         payload.coleccionNoSql,
         Object.keys(noSqlOptions).length ? noSqlOptions : undefined,
@@ -692,30 +665,54 @@ export class DataEngineService {
     }
   }
 
-  private async closeWithinDeadline(
-    explorer: DataExplorer,
-    deadline: number,
-  ): Promise<void> {
-    const remainingMs = deadline - Date.now();
-    if (remainingMs <= 0) {
-      void explorer.cancel().catch(() => undefined);
-      return;
+  /**
+   * Extrae una tabla o colección con el adaptador del motor. Los errores del proveedor no se exponen
+   * (pueden contener datos de conexión): solo los HTTP propios, el timeout y un 502 genérico.
+   */
+  private async extract(
+    connection: DataSourceConnection,
+    entityName: string,
+    options?: ExtractOptions,
+  ): Promise<Record<string, any>[]> {
+    const adapter = this.adapters.get(connection.tipoMotor);
+    if (!adapter?.capabilities.extract) {
+      throw new BadRequestException('El motor de la conexión no tiene un extractor real disponible');
     }
+    this.logger.log(`Extrayendo '${entityName}' de la conexión ${connection.id} (${adapter.tipoMotor})`);
 
-    let cleanupTimedOut = false;
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    const close = explorer.close().catch(() => undefined);
-    await Promise.race([
-      close,
-      new Promise<void>((resolve) => {
-        timeout = setTimeout(() => {
-          cleanupTimedOut = true;
-          resolve();
-        }, remainingMs);
-      }),
-    ]);
-    if (timeout) clearTimeout(timeout);
-    if (cleanupTimedOut) void explorer.cancel().catch(() => undefined);
+    try {
+      return await adapter.extract(connection, entityName, options);
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      if (error instanceof UnsupportedOperationError) {
+        throw new BadRequestException('El motor de la conexión no tiene un extractor real disponible');
+      }
+      if (this.isTimeoutError(error)) {
+        void this.clientPool?.invalidate(connection.id);
+        throw new GatewayTimeoutException('La extracción excedió el tiempo permitido');
+      }
+      this.logger.warn(`Falló la extracción en la conexión ${connection.id} (${adapter.tipoMotor})`);
+      throw new BadGatewayException('No fue posible extraer datos de la fuente externa');
+    }
+  }
+
+  /**
+   * Ejecuta una operación del adaptador con el plazo de exploración. Si se vence, descarta los clientes de la
+   * conexión en el pool para no reutilizar una conexión colgada.
+   */
+  private async runWithDeadline<T>(
+    connection: DataSourceConnection,
+    deadline: number,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await this.withTimeout(operation(), deadline);
+    } catch (error) {
+      if (error instanceof GatewayTimeoutException || this.isTimeoutError(error)) {
+        void this.clientPool?.invalidate(connection.id);
+      }
+      throw error;
+    }
   }
 
   private sanitizeObjects(objects: CatalogObject[]): CatalogObject[] {
@@ -734,6 +731,7 @@ export class DataEngineService {
       code === 'ETIMEOUT' ||
       code === 'ESOCKETTIMEDOUT' ||
       code === 'ER_QUERY_TIMEOUT' ||
+      code === 'DEADLINE_EXCEEDED' ||
       /timeout|deadline exceeded|maximum statement execution time exceeded/i.test(
         error.message,
       )

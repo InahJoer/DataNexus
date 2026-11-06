@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import type {
@@ -12,6 +13,7 @@ import type {
 import { PrismaService } from '../prisma/prisma.service.js';
 import { EncryptionService } from '../common/encryption/encryption.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { DataSourceClientPool } from '../data-engine/pool/data-source-client-pool.js';
 import { CreateConnectionDto } from './dto/create-connection.dto.js';
 import { UpdateConnectionDto } from './dto/update-connection.dto.js';
 import type { ConnectionResponseDto } from './dto/connection-response.dto.js';
@@ -50,6 +52,8 @@ export class ConnectionsService {
     private readonly prisma: PrismaService,
     private readonly encryptionService: EncryptionService,
     private readonly auditService: AuditService,
+    /** Pool de clientes externos: se invalida al editar o eliminar la conexión (RNF-10). */
+    @Optional() private readonly clientPool?: DataSourceClientPool,
   ) {}
 
   /** Alta con credenciales estructuradas por motor (RF-08). */
@@ -110,7 +114,7 @@ export class ConnectionsService {
     );
     if (changedFields.length === 0) throw new BadRequestException('Debe indicar al menos un campo');
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const current = await tx.conexionDB.findFirst({
         where: { id, workspaceId: actor.workspaceId },
         select: { id: true, tipoMotor: true, connectionStringEncriptada: true },
@@ -161,6 +165,8 @@ export class ConnectionsService {
 
       return this.toResponse(connection);
     });
+    await this.invalidateClients(id);
+    return result;
   }
 
   /** Sustituye el Service Account de una conexión Firestore (rotación de claves). */
@@ -174,7 +180,7 @@ export class ConnectionsService {
     this.assertAdmin(actor);
     const serviceAccount = parseServiceAccountFile(this.readUploadedFile(file));
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const current = await tx.conexionDB.findFirst({
         where: { id, workspaceId: actor.workspaceId },
         select: { id: true, tipoMotor: true, dbName: true },
@@ -210,12 +216,14 @@ export class ConnectionsService {
 
       return this.toResponse(connection);
     });
+    await this.invalidateClients(id);
+    return result;
   }
 
   async remove(actor: AuthenticatedUser, id: string, context: RequestAuditContext = {}) {
     this.assertAdmin(actor);
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const current = await tx.conexionDB.findFirst({
         where: { id, workspaceId: actor.workspaceId },
         select: { id: true, tipoMotor: true, dbName: true },
@@ -244,11 +252,14 @@ export class ConnectionsService {
 
       return this.toResponse(connection);
     });
+    await this.invalidateClients(id);
+    return result;
   }
 
   /**
-   * Acceso interno a credenciales para módulos de confianza; nunca exponer por HTTP.
-   * Devuelve la cadena en el formato del driver, tanto para credenciales estructuradas como legado.
+   * Acceso interno a credenciales para módulos de confianza (exploración, extracción y pruebas); nunca
+   * exponer por HTTP. Devuelve la cadena en el formato del driver, tanto para credenciales estructuradas
+   * como legado.
    */
   async getConnectionForExploration(id: string, workspaceId: string) {
     const connection = await this.findConnectionForInternalUse(id, workspaceId);
@@ -263,16 +274,9 @@ export class ConnectionsService {
     };
   }
 
-  /** Credenciales cifradas para adaptadores que descifran por su cuenta (usan toDriverConnectionString). */
-  async getConnectionForExtraction(id: string, workspaceId: string) {
-    const connection = await this.findConnectionForInternalUse(id, workspaceId);
-
-    return {
-      id: connection.id,
-      tipoMotor: connection.tipoMotor,
-      dbName: connection.dbName,
-      encryptedConnectionString: connection.connectionStringEncriptada,
-    };
+  /** Cierra los clientes del pool de la conexión; un fallo aquí no debe revertir el cambio ya guardado. */
+  private async invalidateClients(connectionId: string): Promise<void> {
+    await this.clientPool?.invalidate(connectionId).catch(() => undefined);
   }
 
   private async persistNew(

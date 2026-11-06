@@ -3,7 +3,8 @@ import type { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { EncryptionService } from '../common/encryption/encryption.service.js';
-import { PostgresDataExplorer } from '../data-engine/adapters/postgres-data-explorer.js';
+import { PostgresAdapter } from '../data-engine/adapters/postgres.adapter.js';
+import { DataSourceClientPool } from '../data-engine/pool/data-source-client-pool.js';
 import type { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface.js';
 import { ConnectionsService } from './connections.service.js';
 
@@ -92,12 +93,12 @@ describe.skipIf(!process.env.DATABASE_URL)('Credenciales estructuradas en Postgr
     await connections.update(admin, created.id, { credenciales: { password: decodeURIComponent(target.password) } });
 
     const resolved = await connections.getConnectionForExploration(created.id, admin.workspaceId);
-    const explorer = new PostgresDataExplorer();
+    const pool = new DataSourceClientPool();
     try {
-      const objects = await explorer.listObjects(resolved.connectionString, resolved.dbName);
+      const objects = await new PostgresAdapter(pool).listObjects(resolved);
       expect(objects.some((object) => object.name === 'ConexionDB')).toBe(true);
     } finally {
-      await explorer.close();
+      await pool.onModuleDestroy();
     }
   });
 });

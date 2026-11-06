@@ -6,6 +6,10 @@ import { AppModule } from './app.module.js';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // Ejecuta OnModuleDestroy al recibir SIGTERM/SIGINT (Docker, Railway): cierra el pool de conexiones
+  // externas y Prisma en lugar de dejar conexiones abiertas.
+  app.enableShutdownHooks();
+
   // Validación global de DTOs
   app.useGlobalPipes(
     new ValidationPipe({
