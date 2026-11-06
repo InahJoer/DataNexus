@@ -143,7 +143,10 @@ access tokens ya emitidos. Reglas:
 ### 4.3 Motor de Datos & Federación (`/engine` o `/data-engine`)
 - `GET /engine/connections/:id/schema`: Introspección de tablas, vistas o colecciones disponibles.
 - `GET /engine/connections/:id/schema/fields`: Campos de una tabla o colección.
-- `POST /engine/join`: Ejecución del Inner Join cruzado SQL $\times$ NoSQL con paginación (`limit`, `offset`) y enmascaramiento dinámico para rol `LECTOR`.
+- `POST /engine/join`: Cross-join en memoria con paginación (`limit`, `offset`) y enmascaramiento dinámico para rol `LECTOR`. Acepta dos formatos (issue #30):
+  - **N fuentes** (`fuentes` + `relaciones`): de 2 a 5 tablas o colecciones de cualquier motor; cada relación es `INNER`, `LEFT`, `RIGHT` o `FULL` con 1 a 3 pares de llaves (llave compuesta). La primera relación une dos fuentes y cada una de las siguientes añade una fuente nueva a una ya unida (sin ciclos). Las columnas repetidas entre fuentes se califican con el alias (`clientes.email`).
+  - **Original** (`conexionSqlId`, `tablaSql`, `conexionNoSqlId`, `coleccionNoSql`, `llaveSql`, `llaveNoSql`): sigue igual (columnas repetidas como `sql.campo` / `nosql.campo`) y admite `tipoJoin`.
+  - Las llaves se normalizan antes de comparar (1 y `"1"` coinciden, `ObjectId` como texto) y las nulas nunca cruzan. Benchmark con 100.000 filas por fuente en [`docs/BENCHMARK-CROSS-JOIN.md`](BENCHMARK-CROSS-JOIN.md).
 - `POST /engine/export`: Generación y descarga directa de archivos (`format: excel | pdf | json`) con rate limiting estricto (20 req/min).
 
 **Adaptadores de fuentes de datos (RNF-10, issues #27, #28 y #29).** `DataEngineService` solo conoce la interfaz
