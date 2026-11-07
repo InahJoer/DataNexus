@@ -18,7 +18,7 @@ import {
   BadGatewayException,
   ForbiddenException,
 } from '@nestjs/common';
-import { v1 } from '@google-cloud/firestore';
+import firestore from '@google-cloud/firestore';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
@@ -153,7 +153,7 @@ export class ConnectionsController {
   async listFirestoreDatabases(@Body() input: ListFirestoreDatabasesDto): Promise<FirestoreDatabasesResponseDto> {
     const account = parseServiceAccount(input.serviceAccount);
     const parent = `projects/${account.project_id}`;
-    const client = new v1.FirestoreAdminClient({
+    const client = new firestore.v1.FirestoreAdminClient({
       projectId: account.project_id,
       credentials: { client_email: account.client_email, private_key: account.private_key },
     });

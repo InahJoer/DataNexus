@@ -11,13 +11,15 @@ const { createClient, listDatabases, close } = vi.hoisted(() => ({
 }));
 
 vi.mock('@google-cloud/firestore', () => ({
-  v1: {
-    FirestoreAdminClient: class {
-      constructor(options: unknown) {
-        createClient(options);
-      }
-      listDatabases = listDatabases;
-      close = close;
+  default: {
+    v1: {
+      FirestoreAdminClient: class {
+        constructor(options: unknown) {
+          createClient(options);
+        }
+        listDatabases = listDatabases;
+        close = close;
+      },
     },
   },
 }));
