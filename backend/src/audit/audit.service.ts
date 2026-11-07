@@ -1,5 +1,5 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { eventTypesWithImpact, impactOf } from './audit-impact.js';
+import { eventTypesWithImpact, impactOf, type ImpactLevel } from './audit-impact.js';
 import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -94,7 +94,8 @@ export interface PaginatedAuditLogsResult {
   page: number;
   limit: number;
   totalPages: number;
-  data: AuditLogRow[];
+  /** Cada evento con su nivel de impacto derivado del tipo (#66). */
+  data: (AuditLogRow & { impacto: ImpactLevel })[];
 }
 
 export interface AuditExportResult {
