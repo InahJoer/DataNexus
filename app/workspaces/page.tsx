@@ -1,70 +1,65 @@
 'use client';
 
 import Link from 'next/link';
-import { BrandMark } from '@/components/brand-mark';
+import { useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { initialsOf } from '@/components/app-shell/format';
+import { AuthAlert, AuthHeading, AuthLayout } from '@/components/auth/auth-layout';
 import { Icon } from '@/components/icons';
 import { RequireAuth } from '@/components/require-auth';
+import type { ApiClient } from '@/lib/api/client';
+import { useApiQuery } from '@/lib/api/use-api-query';
 import { roleLabels, useAuth } from '@/lib/auth-context';
 
 function WorkspaceSelection() {
   const { session, logout } = useAuth();
+  const router = useRouter();
+  const workspace = useApiQuery(useCallback((api: ApiClient) => api.GET('/workspaces/me'), []));
   if (!session) return null;
 
   const { user } = session;
   const firstName = user.name.split(' ')[0] ?? user.name;
-  const initials = user.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+  const workspaceName = workspace.data?.nombreEmpresa ?? (workspace.isLoading ? 'Cargando workspace…' : 'Tu workspace');
+
+  function handleLogout() {
+    logout('manual');
+    router.replace('/login');
+  }
 
   return (
-    <main className="onboarding-shell">
-      <aside className="onboarding-aside onboarding-aside--workspace">
-        <div className="onboarding-pattern" aria-hidden="true" />
-        <div className="onboarding-aside-inner">
-          <BrandMark tone="light" />
-          <div className="onboarding-copy">
-            <p className="eyebrow eyebrow--light">UN ESPACIO PARA CADA EQUIPO</p>
-            <h1>Empieza donde tus datos se encuentran.</h1>
-            <p className="onboarding-lede">Tus fuentes, equipos y análisis conviven en un entorno seguro y organizado.</p>
+    <AuthLayout>
+      <div className="workspace-topline">
+        <span className="step-indicator"><span>1</span><i /><span className="step-current">2</span></span>
+        <span className="step-copy">PASO 2 DE 2</span>
+      </div>
+      <AuthHeading eyebrow={`BIENVENIDO, ${firstName.toUpperCase()}`} title="Elige tu workspace activo." description="Estos son los espacios a los que tienes acceso." />
+
+      {workspace.error && <AuthAlert tone="error" title="No pudimos cargar tu workspace">{workspace.error}</AuthAlert>}
+
+      <p className="field-label" id="workspace-label">Workspace activo</p>
+      <Link className="workspace-choice" href="/dashboard" aria-describedby="workspace-label">
+        <div className="workspace-choice-head">
+          <div className="workspace-avatar">{initialsOf(workspace.data?.nombreEmpresa ?? user.name)}</div>
+          <div className="workspace-choice-title">
+            <strong>{workspaceName}</strong>
+            <span>Tu rol en este espacio: {roleLabels[user.role]}</span>
           </div>
-          <div className="workspace-side-note">
-            <span className="workspace-note-icon"><Icon name="layers" size={17} /></span>
-            <div><strong>Un contexto compartido</strong><span>Tu equipo trabaja sobre una sola fuente de verdad.</span></div>
-          </div>
-          <p className="aside-footnote"><Icon name="lock" size={13} /> Acceso protegido por roles y auditoría.</p>
+          <span className="workspace-check"><Icon name="check" size={16} /></span>
         </div>
-      </aside>
-
-      <section className="onboarding-main">
-        <div className="onboarding-mobile-brand"><BrandMark /></div>
-        <div className="workspace-card-wrap">
-          <div className="workspace-topline">
-            <span className="step-indicator"><span>1</span><i /><span className="step-current">2</span></span>
-            <span className="step-copy">PASO 2 DE 2</span>
-          </div>
-          <div className="auth-heading workspace-heading">
-            <p className="eyebrow">BIENVENIDO, {firstName.toUpperCase()}</p>
-            <h2>Tu workspace</h2>
-            <p>Este es el espacio asociado a tu cuenta.</p>
-          </div>
-
-          <Link className="workspace-choice" href="/dashboard">
-            <div className="workspace-choice-head">
-              <div className="workspace-avatar">{initials}</div>
-              <div className="workspace-choice-title"><strong>Workspace asociado</strong><span>ID {user.workspaceId}</span></div>
-              <span className="workspace-check"><Icon name="check" size={16} /></span>
-            </div>
-            <div className="workspace-choice-meta">
-              <span className="plan-pill"><i /> {roleLabels[user.role]}</span>
-              <span><Icon name="mail" size={15} /> {user.email}</span>
-            </div>
-            <div className="workspace-choice-footer"><span>Tu usuario tiene un workspace asociado</span><span className="workspace-open">Abrir workspace <Icon name="arrow-right" size={16} /></span></div>
-          </Link>
-
-          <div className="workspace-hint"><span className="hint-icon"><Icon name="help" size={16} /></span><p>La API actual asocia una cuenta a un solo workspace; la gestión de varios espacios aún no está disponible.</p></div>
-          <Link className="back-to-login" href="/login" onClick={() => logout('manual')}><Icon name="arrow-left" size={15} /> Cerrar sesión</Link>
+        <div className="workspace-choice-meta">
+          <span className="plan-pill"><i /> {roleLabels[user.role]}</span>
+          <span><Icon name="mail" size={15} /> {user.email}</span>
+          {workspace.data?.zonaHoraria && <span><Icon name="clock" size={15} /> {workspace.data.zonaHoraria}</span>}
         </div>
-        <footer className="page-footnote"><span>© 2026 DataNexus</span><span>Privacidad <i /> Seguridad <i /> Estado del sistema</span></footer>
-      </section>
-    </main>
+        <div className="workspace-choice-footer"><span>Entrar con este workspace</span><span className="workspace-open">Abrir workspace <Icon name="arrow-right" size={16} /></span></div>
+      </Link>
+
+      <div className="workspace-hint">
+        <span className="hint-icon"><Icon name="help" size={16} /></span>
+        <p>Por ahora cada cuenta pertenece a un solo workspace. Si necesitas acceso a otro, pide una invitación a su administrador.</p>
+      </div>
+      <button className="back-to-login" type="button" onClick={handleLogout}><Icon name="arrow-left" size={15} /> Cerrar sesión</button>
+    </AuthLayout>
   );
 }
 

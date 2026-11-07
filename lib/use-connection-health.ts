@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createApiClient } from '@/lib/api/client';
+import { withSessionRetry } from '@/lib/api/with-session-retry';
 import { useAuth } from '@/lib/auth-context';
 import type { components } from '@/lib/api/schema';
 
 type ConnectionHealthReport = components['schemas']['ConnectionHealthResponseDto'];
 
 export function useConnectionHealth() {
-  const { session, logout } = useAuth();
+  const { session, refreshSession } = useAuth();
   const role = session?.user.role;
   const canCheckHealth = role === 'ADMIN' || role === 'OPERADOR';
   const router = useRouter();
@@ -28,9 +28,8 @@ export function useConnectionHealth() {
     else setIsLoading(true);
 
     try {
-      const result = await createApiClient(session.accessToken).GET('/engine/connections/health');
+      const result = await withSessionRetry(session.accessToken, refreshSession, (api) => api.GET('/engine/connections/health'));
       if (result.response.status === 401) {
-        logout();
         router.replace('/login');
         return;
       }
@@ -49,7 +48,7 @@ export function useConnectionHealth() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [canCheckHealth, session?.accessToken, logout, router]);
+  }, [canCheckHealth, session?.accessToken, refreshSession, router]);
 
   useEffect(() => {
     if (!canCheckHealth || !session?.accessToken) {

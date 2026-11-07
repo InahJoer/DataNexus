@@ -1,8 +1,6 @@
 /* Login: formulario de acceso. Incluye inputs, .button y mensajes de formulario, que también usan otras pantallas. */
 .login-form { display: flex; flex-direction: column; }
 .field-label { display: block; margin-bottom: 8px; color: #35423e; font-size: 12px; font-weight: 650; }
-.password-label-row { display: flex; align-items: baseline; justify-content: space-between; margin-top: 20px; }
-.field-hint { color: #98a19e; font-size: 10px; }
 .input-wrap { position: relative; display: flex; align-items: center; height: 48px; color: #98a39f; border: 1px solid #dce4df; border-radius: 9px; background: #fff; transition: border-color 160ms ease-out, box-shadow 160ms ease-out; }
 .input-wrap:focus-within { border-color: #54ad9a; box-shadow: 0 0 0 3px rgba(36, 151, 128, .1); }
 .input-icon { position: absolute; left: 14px; color: #8b9893; pointer-events: none; }
@@ -15,15 +13,9 @@
 .button--primary { color: #f8fffc; background: #147e6d; box-shadow: 0 7px 16px rgba(14, 113, 95, .16); }
 .button--primary:hover { background: #106f60; box-shadow: 0 9px 20px rgba(14, 113, 95, .2); }
 .login-submit { margin-top: 25px; }
-.demo-note { margin: 11px 0 0; color: #9aa49f; text-align: center; font-size: 10px; }
 .form-error { margin: 11px 0 0; color: #a33d3d; font-size: 11px; line-height: 1.45; }
-.form-notice { margin: 11px 0 0; color: #7a5a12; font-size: 11px; line-height: 1.45; }
 .login-submit:disabled { cursor: wait; opacity: .75; }
 .auth-route-loading { display: grid; min-height: 100vh; place-items: center; color: #73817b; font-size: 13px; }
-.auth-divider { display: flex; align-items: center; gap: 12px; margin: 27px 0 19px; color: #a0aaa6; font-size: 9px; font-weight: 700; letter-spacing: 1px; }
-.auth-divider::before, .auth-divider::after { height: 1px; flex: 1; background: #e8edeb; content: ""; }
-.security-note { display: flex; align-items: center; gap: 11px; padding: 13px 14px; color: #61706a; border: 1px solid #e6eeea; border-radius: 9px; background: #f7faf8; font-size: 11px; line-height: 1.45; }
-.security-icon { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; color: #238a76; border-radius: 8px; background: #e4f3ed; }
 .auth-support { margin: 24px 0 0; color: #8b9691; text-align: center; font-size: 11px; }
 .auth-support a { color: #187d6c; font-weight: 650; }
 .page-footnote { position: absolute; right: 48px; bottom: 27px; left: 48px; display: flex; justify-content: space-between; gap: 12px; color: #a2aca8; font-size: 10px; }
