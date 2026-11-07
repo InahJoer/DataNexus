@@ -197,7 +197,8 @@ describe('AuditService', () => {
       expect(result.page).toBe(2);
       expect(result.limit).toBe(25);
       expect(result.totalPages).toBe(4);
-      expect(result.data).toEqual(mockLogs);
+      // Cada evento trae su nivel de impacto derivado del tipo (#66).
+      expect(result.data).toEqual(mockLogs.map((log) => ({ ...log, impacto: 'BAJO' })));
     });
 
     it('filters by fechaInicio, fechaFin and tipoAccion', async () => {

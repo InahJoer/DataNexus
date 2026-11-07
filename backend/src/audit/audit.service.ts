@@ -1,4 +1,5 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { eventTypesWithImpact, impactOf } from './audit-impact.js';
 import { randomUUID } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -162,7 +163,45 @@ export class AuditService {
       page,
       limit,
       totalPages: Math.ceil(total / limit),
-      data: actor.role === 'AUDITOR' ? data.map((row) => this.redactModifyRecordForAuditor(row)) : data,
+      data: (actor.role === 'AUDITOR' ? data.map((row) => this.redactModifyRecordForAuditor(row)) : data).map((row) => ({
+        ...row,
+        impacto: impactOf(row.eventType),
+      })),
+    };
+  }
+
+  /** Detalle de un evento para el inspector (#66), de solo lectura y limitado al workspace del actor. */
+  async findOne(actor: AuthenticatedUser, id: string) {
+    this.assertCanRead(actor);
+    const row = await this.prisma.registroAuditoria.findFirst({ where: { id, workspaceId: actor.workspaceId } });
+    if (!row) throw new NotFoundException('Evento no encontrado');
+    const safe = actor.role === 'AUDITOR' ? this.redactModifyRecordForAuditor(row) : row;
+    return { ...safe, impacto: impactOf(safe.eventType) };
+  }
+
+  /** Métricas de la bitácora (#66): eventos, usuarios con actividad, fallos e impacto en los últimos días. */
+  async summary(actor: AuthenticatedUser, days = 30) {
+    this.assertCanRead(actor);
+    const dias = Math.min(Math.max(Math.trunc(days) || 30, 1), 365);
+    const desde = new Date(Date.now() - dias * 86_400_000);
+    const where = { workspaceId: actor.workspaceId, createdAt: { gte: desde } };
+    const [eventos, fallos, actors, byType] = await Promise.all([
+      this.prisma.registroAuditoria.count({ where }),
+      this.prisma.registroAuditoria.count({ where: { ...where, outcome: 'FAILURE' } }),
+      this.prisma.registroAuditoria.findMany({ where: { ...where, actorUserId: { not: null } }, distinct: ['actorUserId'], select: { actorUserId: true } }),
+      this.prisma.registroAuditoria.groupBy({ by: ['eventType'], where, _count: { _all: true } }),
+    ]);
+    const porImpacto = { BAJO: 0, MEDIO: 0, ALTO: 0 };
+    for (const group of byType) porImpacto[impactOf(group.eventType)] += group._count._all;
+    const retention = Number(process.env.AUDIT_RETENTION_DAYS);
+    return {
+      dias,
+      desde: desde.toISOString(),
+      eventos,
+      usuariosActivos: actors.length,
+      fallos,
+      porImpacto,
+      retencionDias: Number.isInteger(retention) && retention > 0 ? retention : 365,
     };
   }
 
@@ -252,7 +291,7 @@ export class AuditService {
 
   private buildWhere(
     actor: AuthenticatedUser,
-    query: Pick<QueryAuditLogsDto, 'tipoAccion' | 'fechaInicio' | 'fechaFin'>,
+    query: Pick<QueryAuditLogsDto, 'tipoAccion' | 'fechaInicio' | 'fechaFin' | 'impacto' | 'buscar'>,
   ): Prisma.RegistroAuditoriaWhereInput {
     const where: Prisma.RegistroAuditoriaWhereInput = {
       workspaceId: actor.workspaceId,
@@ -260,6 +299,18 @@ export class AuditService {
 
     if (query.tipoAccion) {
       where.eventType = query.tipoAccion;
+    }
+    if (query.impacto) {
+      const types = eventTypesWithImpact(query.impacto);
+      where.eventType = query.tipoAccion ? (types.includes(query.tipoAccion) ? query.tipoAccion : { in: [] }) : { in: types };
+    }
+    const term = query.buscar?.trim();
+    if (term) {
+      where.OR = [
+        { actorEmail: { contains: term, mode: 'insensitive' } },
+        { ipAddress: { contains: term } },
+        { targetId: { contains: term } },
+      ];
     }
 
     if (query.fechaInicio || query.fechaFin) {

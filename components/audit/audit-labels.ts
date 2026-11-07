@@ -1,0 +1,46 @@
+/** Nombre legible de cada tipo de evento de la bitácora. */
+export const EVENT_LABELS: Record<string, string> = {
+  LOGIN_SUCCESS: 'Inicio de sesión',
+  LOGIN_FAILURE: 'Intento de acceso fallido',
+  LOGOUT: 'Cierre de sesión',
+  SESSION_EXPIRED: 'Sesión expirada',
+  REFRESH_TOKEN_REUSED: 'Token reutilizado (posible robo)',
+  ACCOUNT_LOCKED: 'Cuenta bloqueada',
+  ACCOUNT_CREATED: 'Cuenta creada',
+  PROFILE_UPDATED: 'Perfil actualizado',
+  PASSWORD_CHANGED: 'Contraseña cambiada',
+  PASSWORD_RESET_REQUESTED: 'Recuperación de contraseña solicitada',
+  PASSWORD_RESET: 'Contraseña restablecida',
+  SESSIONS_REVOKED: 'Sesiones cerradas',
+  USER_INVITED: 'Usuario invitado',
+  INVITATION_RESENT: 'Invitación reenviada',
+  INVITATION_REVOKED: 'Invitación revocada',
+  INVITATION_ACCEPTED: 'Invitación aceptada',
+  USER_ROLE_CHANGED: 'Cambio de rol',
+  USER_REMOVED: 'Miembro quitado',
+  WORKSPACE_UPDATED: 'Workspace actualizado',
+  CONNECTION_CREATED: 'Conexión creada',
+  CONNECTION_UPDATED: 'Conexión actualizada',
+  CONNECTION_DELETED: 'Conexión eliminada',
+  BROWSE_DATA: 'Exploración de datos',
+  MODIFY_RECORD: 'Registro editado',
+  EXECUTE_JOIN: 'Cross-join ejecutado',
+  EXPORT: 'Exportación',
+  SAVED_QUERY_CREATED: 'Consulta guardada',
+  SAVED_QUERY_UPDATED: 'Consulta actualizada',
+  SAVED_QUERY_DELETED: 'Consulta eliminada',
+  SCHEDULED_REPORT_CREATED: 'Tarea programada creada',
+  SCHEDULED_REPORT_UPDATED: 'Tarea programada actualizada',
+  SCHEDULED_REPORT_DELETED: 'Tarea programada eliminada',
+  SCHEDULED_REPORT_RUN: 'Tarea ejecutada',
+  REPORT_GENERATED_AND_SENT: 'Reporte enviado',
+  AUDIT_LOG_EXPORTED: 'Bitácora exportada',
+};
+
+export const IMPACT_VIEW: Record<'BAJO' | 'MEDIO' | 'ALTO', { label: string; tone: string }> = {
+  BAJO: { label: 'Bajo', tone: 'muted' },
+  MEDIO: { label: 'Medio', tone: 'warning' },
+  ALTO: { label: 'Alto', tone: 'error' },
+};
+
+export const eventLabel = (type: string) => EVENT_LABELS[type] ?? type;
