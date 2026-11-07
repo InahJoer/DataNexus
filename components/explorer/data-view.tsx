@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { ENGINES } from '@/components/connections/engines';
+import { DateRangeFilter, dateColumns, describeDateFilter, type DateFilter } from '@/components/explorer/date-range-filter';
 import { objectLabel, type CatalogObject, type ExplorerTarget } from '@/components/explorer/explorer-tree';
 import { Icon } from '@/components/icons';
 import { apiErrorMessage, NETWORK_ERROR_MESSAGE } from '@/lib/api/errors';
@@ -16,17 +17,36 @@ type Page = { rows: Row[]; orden: string[]; nextCursor: string | null };
 type Editing = { rowIndex: number; column: string; draft: string } | null;
 
 const PAGE_SIZES = [25, 50, 100, 250];
-const OPERATORS: { value: string; label: string; needsValue: boolean }[] = [
-  { value: 'eq', label: '=', needsValue: true },
-  { value: 'neq', label: '≠', needsValue: true },
-  { value: 'gt', label: '>', needsValue: true },
-  { value: 'gte', label: '≥', needsValue: true },
-  { value: 'lt', label: '<', needsValue: true },
-  { value: 'lte', label: '≤', needsValue: true },
-  { value: 'contains', label: 'contiene', needsValue: true },
-  { value: 'startsWith', label: 'empieza con', needsValue: true },
-  { value: 'isNull', label: 'está vacío', needsValue: false },
+/** kind: cuántos valores pide el operador (uno, dos para "entre", una lista separada por comas o ninguno). */
+const OPERATORS: { value: string; label: string; kind: 'value' | 'range' | 'list' | 'none' }[] = [
+  { value: 'eq', label: '=', kind: 'value' },
+  { value: 'neq', label: '≠', kind: 'value' },
+  { value: 'gt', label: '>', kind: 'value' },
+  { value: 'gte', label: '≥', kind: 'value' },
+  { value: 'lt', label: '<', kind: 'value' },
+  { value: 'lte', label: '≤', kind: 'value' },
+  { value: 'between', label: 'entre', kind: 'range' },
+  { value: 'in', label: 'está en (lista)', kind: 'list' },
+  { value: 'not-in', label: 'no está en (lista)', kind: 'list' },
+  { value: 'contains', label: 'contiene', kind: 'value' },
+  { value: 'startsWith', label: 'empieza con', kind: 'value' },
+  { value: 'isNull', label: 'está vacío', kind: 'none' },
+  { value: 'notNull', label: 'no está vacío', kind: 'none' },
 ];
+
+/** Texto del chip de un filtro. */
+function describeFilter(filter: Filter) {
+  const date = describeDateFilter(filter);
+  if (date) return `${filter.campo}: ${date}`;
+  if (filter.operador === 'isNull') return `${filter.campo} ${filter.valor ? 'está vacío' : 'no está vacío'}`;
+  const label = OPERATORS.find((operator) => operator.value === filter.operador)?.label ?? filter.operador;
+  if (Array.isArray(filter.valor)) {
+    return filter.operador === 'between'
+      ? `${filter.campo} entre ${JSON.stringify(filter.valor[0])} y ${JSON.stringify(filter.valor[1])}`
+      : `${filter.campo} ${label} ${filter.valor.map((value) => JSON.stringify(value)).join(', ')}`;
+  }
+  return `${filter.campo} ${label} ${JSON.stringify(filter.valor)}`;
+}
 
 const isScalar = (value: unknown): value is Scalar => value === null || ['string', 'number', 'boolean'].includes(typeof value);
 const isInternal = (column: string) => column.startsWith('__');
@@ -85,7 +105,8 @@ export function DataView({ target, subcollections, onOpen }: DataViewProps) {
 
   const [pageSize, setPageSize] = useState(50);
   const [filters, setFilters] = useState<Filter[]>([]);
-  const [draftFilter, setDraftFilter] = useState({ campo: '', operador: 'eq', valor: '' });
+  const [draftFilter, setDraftFilter] = useState({ campo: '', operador: 'eq', valor: '', valor2: '' });
+  const [filterError, setFilterError] = useState<string | null>(null);
   const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   const [page, setPage] = useState<Page | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -159,11 +180,37 @@ export function DataView({ target, subcollections, onOpen }: DataViewProps) {
 
   function addFilter(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!draftFilter.campo) return;
-    const operator = OPERATORS.find((item) => item.value === draftFilter.operador);
-    const valor = operator?.needsValue ? (['contains', 'startsWith'].includes(draftFilter.operador) ? draftFilter.valor : parseInput(draftFilter.valor)) : true;
-    changeFilters([...filters, { campo: draftFilter.campo, operador: draftFilter.operador, valor }]);
-    setDraftFilter((current) => ({ ...current, valor: '' }));
+    const { campo, operador } = draftFilter;
+    if (!campo) return;
+    const kind = OPERATORS.find((item) => item.value === operador)?.kind ?? 'value';
+    let filter: Filter;
+    if (kind === 'none') {
+      filter = { campo, operador: 'isNull', valor: operador === 'isNull' };
+    } else if (kind === 'range') {
+      const [min, max] = [parseInput(draftFilter.valor), parseInput(draftFilter.valor2)];
+      if (typeof min !== typeof max || (typeof min !== 'number' && typeof min !== 'string')) {
+        setFilterError('"entre" necesita dos números o dos textos del mismo tipo');
+        return;
+      }
+      filter = { campo, operador, valor: [min, max] };
+    } else if (kind === 'list') {
+      const values = draftFilter.valor.split(',').map((value) => parseInput(value.trim())).filter((value) => value !== '');
+      if (values.length === 0) {
+        setFilterError('Escribe uno o más valores separados por comas');
+        return;
+      }
+      filter = { campo, operador, valor: values };
+    } else {
+      filter = { campo, operador, valor: ['contains', 'startsWith'].includes(operador) ? draftFilter.valor : parseInput(draftFilter.valor) };
+    }
+    setFilterError(null);
+    changeFilters([...filters, filter]);
+    setDraftFilter((current) => ({ ...current, valor: '', valor2: '' }));
+  }
+
+  /** Un rango de fechas nuevo reemplaza al anterior del mismo campo. */
+  function applyDateFilter(filter: DateFilter) {
+    changeFilters([...filters.filter((current) => !(current.campo === filter.campo && describeDateFilter(current))), filter]);
   }
 
   function primaryKeyOf(row: Row): string | Record<string, Scalar> | null {
@@ -264,18 +311,35 @@ export function DataView({ target, subcollections, onOpen }: DataViewProps) {
         <select className="form-input" value={draftFilter.operador} onChange={(event) => setDraftFilter({ ...draftFilter, operador: event.target.value })} aria-label="Operador">
           {OPERATORS.map((operator) => <option key={operator.value} value={operator.value}>{operator.label}</option>)}
         </select>
-        {OPERATORS.find((operator) => operator.value === draftFilter.operador)?.needsValue && (
-          <input className="form-input" placeholder="Valor" value={draftFilter.valor} onChange={(event) => setDraftFilter({ ...draftFilter, valor: event.target.value })} aria-label="Valor del filtro" />
-        )}
+        {(() => {
+          const kind = OPERATORS.find((operator) => operator.value === draftFilter.operador)?.kind;
+          if (kind === 'none') return null;
+          return (
+            <>
+              <input
+                className="form-input"
+                placeholder={kind === 'list' ? 'valor1, valor2, …' : kind === 'range' ? 'Desde' : 'Valor'}
+                value={draftFilter.valor}
+                onChange={(event) => setDraftFilter({ ...draftFilter, valor: event.target.value })}
+                aria-label={kind === 'range' ? 'Valor mínimo' : 'Valor del filtro'}
+              />
+              {kind === 'range' && (
+                <input className="form-input" placeholder="Hasta" value={draftFilter.valor2} onChange={(event) => setDraftFilter({ ...draftFilter, valor2: event.target.value })} aria-label="Valor máximo" />
+              )}
+            </>
+          );
+        })()}
         <button className="button form-secondary" type="submit" disabled={!draftFilter.campo}>Filtrar</button>
         {filters.map((filter, index) => (
           <span className="filter-chip" key={`${filter.campo}-${index}`}>
-            {filter.campo} {OPERATORS.find((operator) => operator.value === filter.operador)?.label} {filter.operador === 'isNull' ? '' : JSON.stringify(filter.valor)}
+            {describeFilter(filter)}
             <button type="button" aria-label={`Quitar filtro ${filter.campo}`} onClick={() => changeFilters(filters.filter((_, i) => i !== index))}><Icon name="close" size={11} /></button>
           </span>
         ))}
       </form>
 
+      <DateRangeFilter suggested={dateColumns(rows, columns)} onApply={applyDateFilter} />
+      {filterError && <p className="form-error explorer-error" role="alert">{filterError}</p>}
       {error && <p className="form-error explorer-error" role="alert">{error}</p>}
       {editError && <p className="form-error explorer-error" role="alert">No se guardó el cambio: {editError}</p>}
 

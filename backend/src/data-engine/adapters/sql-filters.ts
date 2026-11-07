@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import {
   assertValidFilters,
   escapeLikePattern,
+  parseIsoDate,
   isFilterGroup,
   type DataFilter,
   type FilterNode,
@@ -16,7 +17,7 @@ export interface SqlDialect {
   /** Identificador ya escapado y calificado (p. ej. `src`.`campo`). */
   column(name: string): string;
   /** Marcador del parámetro (`@p` en SQL Server, `?` en MySQL, `$n` en PostgreSQL) y registro del valor. */
-  parameter(value: string | number | boolean): string;
+  parameter(value: string | number | boolean | Date): string;
   /** Convierte la columna a texto para contains/startsWith. Por defecto CAST(... AS VARCHAR(4000)). */
   text?(column: string): string;
 }
@@ -37,6 +38,11 @@ export function buildSqlFilterClauses(
   assertValidFilters(filters);
   const columnSet = new Set(columns);
   const text = (column: string) => (dialect.text ? dialect.text(column) : `CAST(${column} AS VARCHAR(4000))`);
+  // En rangos, una fecha ISO se envía como Date para que el driver la compare como fecha y no como texto.
+  const rangeValue = (value: string | number | boolean) => {
+    const time = parseIsoDate(value);
+    return time === null ? value : new Date(time);
+  };
 
   const leaf = (filter: DataFilter): string => {
     if (!columnSet.has(filter.campo)) throw new BadRequestException('El campo de filtro no existe en la tabla');
@@ -53,7 +59,7 @@ export function buildSqlFilterClauses(
       }
       case 'between': {
         const [min, max] = value as [string | number, string | number];
-        return `${column} BETWEEN ${dialect.parameter(min)} AND ${dialect.parameter(max)}`;
+        return `${column} BETWEEN ${dialect.parameter(rangeValue(min))} AND ${dialect.parameter(rangeValue(max))}`;
       }
       case 'contains':
       case 'startsWith': {
@@ -70,7 +76,7 @@ export function buildSqlFilterClauses(
       default: {
         const operator = COMPARISON_OPERATORS[filter.operador as keyof typeof COMPARISON_OPERATORS];
         if (!operator) throw new BadRequestException('El operador de filtro no está soportado');
-        return `${column} ${operator} ${dialect.parameter(value as string | number | boolean)}`;
+        return `${column} ${operator} ${dialect.parameter(rangeValue(value as string | number | boolean))}`;
       }
     }
   };

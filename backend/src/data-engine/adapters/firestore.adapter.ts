@@ -10,6 +10,7 @@ import {
 } from '../data-engine.constants.js';
 import {
   assertValidFilters,
+  isDateRangeFilter,
   isFilterGroup,
   matchesFilters,
   type DataFilter,
@@ -80,6 +81,8 @@ export class FirestoreAdapter implements IDataSourceAdapter {
   constructor(private readonly clients: DataSourceClientPool) {}
 
   canPushDown(filter: DataFilter): boolean {
+    // Un rango de fechas no se envía: en Firestore un Timestamp no se compara con un texto ISO.
+    if (isDateRangeFilter(filter)) return false;
     return filter.operador in WHERE_FILTER_OPERATORS || filter.operador === 'between' || filter.operador === 'isNull';
   }
 

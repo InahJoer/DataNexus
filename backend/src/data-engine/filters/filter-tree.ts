@@ -57,6 +57,28 @@ export function isScalarFilterValue(value: unknown): value is string | number | 
   return typeof value === 'string' || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value));
 }
 
+/** Fecha ISO 8601: solo fecha (2026-01-31) o fecha y hora con o sin zona (2026-01-31T10:00:00.000Z). */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(Z|[+-]\d{2}:?\d{2})?)?$/;
+
+/**
+ * Instante (ms) de un texto con forma de fecha ISO, o null si no lo es. Sin zona horaria se toma como UTC, igual que
+ * las fechas que normalizan los adaptadores (toISOString), para que el filtro dé lo mismo en todos los motores.
+ */
+export function parseIsoDate(value: unknown): number | null {
+  if (typeof value !== 'string') return null;
+  const match = ISO_DATE.exec(value);
+  if (!match) return null;
+  const text = value.length === 10 ? `${value}T00:00:00Z` : match[1] ? value.replace(' ', 'T') : `${value.replace(' ', 'T')}Z`;
+  const time = Date.parse(text);
+  return Number.isNaN(time) ? null : time;
+}
+
+/** true si es una comparación de rango (gt, gte, lt, lte, between) cuyo valor es una fecha ISO. */
+export function isDateRangeFilter(filter: DataFilter): boolean {
+  if (filter.operador === 'between') return Array.isArray(filter.valor) && filter.valor.every((entry) => parseIsoDate(entry) !== null);
+  return ['gt', 'gte', 'lt', 'lte'].includes(filter.operador) && parseIsoDate(filter.valor) !== null;
+}
+
 /** Motivo por el que una condición no es válida, o null si lo es. */
 function leafError(filter: Partial<DataFilter>): string | null {
   if (
@@ -92,6 +114,8 @@ function leafError(filter: Partial<DataFilter>): string | null {
         (typeof min === 'number' && typeof max === 'number' && Number.isFinite(min) && Number.isFinite(max)) ||
         (typeof min === 'string' && typeof max === 'string');
       if (!sameType) return 'between necesita dos números o dos textos (por ejemplo, fechas ISO)';
+      const [minDate, maxDate] = [parseIsoDate(min), parseIsoDate(max)];
+      if (minDate !== null && maxDate !== null) return minDate <= maxDate ? null : 'la fecha inicial no puede ser posterior a la final';
       return min <= max ? null : 'en between el mínimo no puede ser mayor que el máximo';
     }
     case 'contains':
@@ -189,6 +213,10 @@ function compare(left: unknown, right: unknown): number | null {
     return leftNumber === rightNumber ? 0 : leftNumber < rightNumber ? -1 : 1;
   }
   if (typeof left === 'boolean' || typeof right === 'boolean') return left === right ? 0 : null;
+  // Dos fechas ISO se comparan como instantes (2026-01-31 frente a 2026-01-31T10:00:00.000Z, o con otra zona).
+  const leftDate = left instanceof Date ? left.getTime() : parseIsoDate(left);
+  const rightDate = right instanceof Date ? right.getTime() : parseIsoDate(right);
+  if (leftDate !== null && rightDate !== null) return leftDate === rightDate ? 0 : leftDate < rightDate ? -1 : 1;
   const a = asText(left);
   const b = asText(right);
   // Objetos y listas no se comparan con escalares (como en SQL, no hay coincidencia).

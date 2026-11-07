@@ -6,7 +6,9 @@ import {
   describeFilterError,
   escapeLikePattern,
   escapeRegExp,
+  isDateRangeFilter,
   matchesFilters,
+  parseIsoDate,
   splitFiltersForPushdown,
   type FilterNode,
 } from './filter-tree.js';
@@ -167,5 +169,27 @@ describe('escapes', () => {
   it('escapa comodines de LIKE con ! y metacaracteres de regex', () => {
     expect(escapeLikePattern("50%_off[!]'")).toBe("50!%!_off![!!]'");
     expect(escapeRegExp('a.b*(c)?^$|[x]\\')).toBe('a\\.b\\*\\(c\\)\\?\\^\\$\\|\\[x\\]\\\\');
+  });
+});
+
+describe('rangos de fechas (filtro de fechas del explorador)', () => {
+  const range = (valor: [string, string]) => [{ campo: 'fecha', operador: 'between' as const, valor }];
+  const day = range(['2026-01-31T00:00:00.000Z', '2026-01-31T23:59:59.999Z']);
+
+  it('compara fechas ISO como instantes, con o sin hora y con otra zona horaria', () => {
+    expect(matchesFilters({ fecha: '2026-01-31T10:00:00.000Z' }, day)).toBe(true);
+    expect(matchesFilters({ fecha: '2026-01-31' }, day)).toBe(true);
+    expect(matchesFilters({ fecha: '2026-01-31T20:00:00-06:00' }, day)).toBe(false);
+    expect(matchesFilters({ fecha: '2026-02-01T00:00:00.000Z' }, day)).toBe(false);
+    expect(matchesFilters({ fecha: new Date('2026-01-31T12:00:00Z') }, day)).toBe(true);
+    expect(matchesFilters({ fecha: null }, day)).toBe(false);
+  });
+
+  it('reconoce los rangos de fechas y rechaza uno con la fecha inicial posterior a la final', () => {
+    expect(isDateRangeFilter({ campo: 'fecha', operador: 'between', valor: ['2026-01-01', '2026-01-31'] })).toBe(true);
+    expect(isDateRangeFilter({ campo: 'fecha', operador: 'lte', valor: '2026-01-31T23:59:59Z' })).toBe(true);
+    expect(isDateRangeFilter({ campo: 'nombre', operador: 'between', valor: ['a', 'm'] })).toBe(false);
+    expect(parseIsoDate('2026-13-45')).toBeNull();
+    expect(() => assertValidFilters(range(['2026-02-01', '2026-01-01']))).toThrow(/fecha inicial/);
   });
 });

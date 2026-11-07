@@ -37,7 +37,7 @@ interface PostgresCatalogRow {
 
 export interface PostgresSelect {
   text: string;
-  values: Array<string | number | boolean>;
+  values: Array<string | number | boolean | Date>;
   oversizedKey: string;
 }
 
@@ -71,7 +71,7 @@ export function buildPostgresSelect(
   const bytesKey = quotePostgresIdentifier(uniqueColumnName(columns, '__dn_row_bytes'), 'columna');
   const oversizedKey = uniqueColumnName([...columns, '__dn_row_bytes'], '__dn_oversized');
 
-  const values: Array<string | number | boolean> = [];
+  const values: Array<string | number | boolean | Date> = [];
   const where = buildSqlFilterClauses(columns, filters ?? [], {
     column: (name) => `${SOURCE_ALIAS}.${quotePostgresIdentifier(name, 'filtro')}`,
     text: (column) => `CAST(${column} AS text)`,
