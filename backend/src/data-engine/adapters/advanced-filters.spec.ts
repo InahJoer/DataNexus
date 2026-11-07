@@ -40,8 +40,8 @@ describe('PostgreSQL', () => {
         `LOWER(CAST("__dn_src"."email" AS text)) LIKE $4 ESCAPE '!' OR ` +
         '("__dn_src"."total" >= $5 AND "__dn_src"."email" IS NOT NULL))',
     );
-    // Las fechas ISO de un rango viajan como Date: el driver las compara como fecha, no como texto.
-    expect(select.values).toEqual([new Date('2026-01-01T00:00:00Z'), new Date('2026-03-31T00:00:00Z'), '%ana%', 'ventas%', 100]);
+    // Una fecha sola viaja como texto (el motor la convierte a DATE sin correrse de día).
+    expect(select.values).toEqual(['2026-01-01', '2026-03-31', '%ana%', 'ventas%', 100]);
   });
 
   it.each(INJECTIONS)('el valor %j viaja como parámetro y nunca dentro del SQL', (payload) => {
@@ -68,7 +68,7 @@ describe('MySQL', () => {
     const select = buildMysqlSelect('clientes', undefined, COLUMNS, advanced, 100, 1_000_000);
     expect(select.sql).toContain("LOWER(CAST(`__dn_src`.`nombre` AS CHAR)) LIKE ? ESCAPE '!'");
     expect(select.sql).toContain('`__dn_src`.`alta` BETWEEN ? AND ?');
-    expect(select.params).toEqual([new Date('2026-01-01T00:00:00Z'), new Date('2026-03-31T00:00:00Z'), '%ana%', 'ventas%', 100]);
+    expect(select.params).toEqual(['2026-01-01', '2026-03-31', '%ana%', 'ventas%', 100]);
   });
 
   it('escapa los comodines del texto buscado', () => {
@@ -101,7 +101,7 @@ describe('SQL Server (dialecto @p y NVARCHAR)', () => {
         "LOWER(CAST([src].[email] AS NVARCHAR(4000))) LIKE @filter_3 ESCAPE '!' OR " +
         '([src].[total] >= @filter_4 AND [src].[email] IS NOT NULL))',
     ]);
-    expect(parameters).toEqual({ filter_0: new Date('2026-01-01T00:00:00Z'), filter_1: new Date('2026-03-31T00:00:00Z'), filter_2: '%ana%', filter_3: 'ventas%', filter_4: 100 });
+    expect(parameters).toEqual({ filter_0: '2026-01-01', filter_1: '2026-03-31', filter_2: '%ana%', filter_3: 'ventas%', filter_4: 100 });
   });
 });
 
@@ -161,5 +161,18 @@ describe('Firestore', () => {
     }
     expect(adapter.canPushDown({ campo: 'a', operador: 'contains', valor: 'x' })).toBe(false);
     expect(adapter.canPushDown({ campo: 'a', operador: 'startsWith', valor: 'x' })).toBe(false);
+  });
+});
+
+describe('rango de fechas con hora (filtro de fechas del explorador)', () => {
+  it('en SQL envía las fechas con hora como Date para compararlas como instante', async () => {
+    const { buildSqlFilterClauses } = await import('./sql-filters.js');
+    const values: unknown[] = [];
+    const clauses = buildSqlFilterClauses(['alta'], [{ campo: 'alta', operador: 'between', valor: ['2026-01-01T00:00:00.000Z', '2026-01-31T23:59:59.999Z'] }], {
+      column: (name) => name,
+      parameter: (value) => (values.push(value), '?'),
+    });
+    expect(clauses).toEqual(['alta BETWEEN ? AND ?']);
+    expect(values).toEqual([new Date('2026-01-01T00:00:00.000Z'), new Date('2026-01-31T23:59:59.999Z')]);
   });
 });

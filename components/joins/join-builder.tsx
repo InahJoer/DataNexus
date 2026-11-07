@@ -1,10 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ENGINES, type Connection } from '@/components/connections/engines';
 import { objectLabel, type CatalogObject } from '@/components/explorer/explorer-tree';
 import { Icon } from '@/components/icons';
+import { ColumnManager, mergeColumns, type ColumnSetting } from '@/components/results/column-manager';
 import { ExportModal } from '@/components/results/export-modal';
+import { SaveQueryModal } from '@/components/joins/save-query-modal';
 import { ResultsGrid } from '@/components/results/results-grid';
 import type { ApiClient } from '@/lib/api/client';
 import { apiErrorMessage, NETWORK_ERROR_MESSAGE } from '@/lib/api/errors';
@@ -66,6 +68,9 @@ export function JoinBuilder() {
   const [error, setError] = useState<string | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
+  const [isSaveOpen, setIsSaveOpen] = useState(false);
+  const [columns, setColumns] = useState<ColumnSetting[]>([]);
+  const [showColumns, setShowColumns] = useState(true);
   // Catálogos y campos ya pedidos: evita repetir la petición mientras la primera sigue en curso.
   const requested = useRef(new Set<string>());
 
@@ -146,12 +151,22 @@ export function JoinBuilder() {
       }
       setPayload(body);
       setResult(response.data);
+      const available = [...new Set(response.data.data.flatMap((row) => Object.keys(row)))];
+      setColumns((current) => mergeColumns(current, available));
     } catch {
       setError(NETWORK_ERROR_MESSAGE);
     } finally {
       setIsRunning(false);
     }
   }
+
+  const visibleColumns = useMemo(() => columns.filter((column) => column.visible).map((column) => column.name), [columns]);
+  // Lo que se exporta y se guarda: el cruce más las columnas elegidas (si se ocultó alguna o se cambió el orden).
+  const outputPayload = useMemo<JoinPayload | null>(() => {
+    if (!payload) return null;
+    const changed = columns.some((column, index) => !column.visible || column.name !== Object.keys(result?.data[0] ?? {})[index]);
+    return changed && visibleColumns.length ? { ...payload, columnas: visibleColumns } : payload;
+  }, [payload, columns, visibleColumns, result]);
 
   if (connections.isLoading) return <p className="page-message">Cargando conexiones…</p>;
   const available: Connection[] = connections.data ?? [];
@@ -251,13 +266,22 @@ export function JoinBuilder() {
             <h2>Resultados</h2>
             <span className="results-meta">{result.total.toLocaleString('es')} filas · página {page} de {totalPages}</span>
             {result.total > 0 && (
-              <button className="button button--primary join-export-open" type="button" onClick={() => setIsExportOpen(true)}><Icon name="arrow-up-right" size={15} />Exportar</button>
+              <div className="join-result-actions">
+                <button className="button form-secondary join-export-open" type="button" aria-pressed={showColumns} onClick={() => setShowColumns((value) => !value)}><Icon name="table" size={15} />Columnas ({visibleColumns.length}/{columns.length})</button>
+                <button className="button form-secondary join-export-open" type="button" onClick={() => setIsSaveOpen(true)}><Icon name="file" size={15} />Guardar consulta</button>
+                <button className="button button--primary join-export-open" type="button" disabled={visibleColumns.length === 0} onClick={() => setIsExportOpen(true)}><Icon name="arrow-up-right" size={15} />Exportar</button>
+              </div>
             )}
           </header>
           {result.data.length === 0 ? (
             <p className="page-message">El cruce no encontró coincidencias. Revisa que los campos relacionados tengan los mismos valores (y el mismo tipo).</p>
           ) : (
-            <ResultsGrid rows={result.data} caption={`Resultados del cruce, página ${page} de ${totalPages}`} />
+            <div className="join-results-layout" data-with-columns={showColumns || undefined}>
+              {visibleColumns.length === 0
+                ? <p className="page-message">No hay columnas visibles. Marca al menos una en el panel de columnas.</p>
+                : <ResultsGrid rows={result.data} columns={visibleColumns} caption={`Resultados del cruce, página ${page} de ${totalPages}`} />}
+              {showColumns && <ColumnManager columns={columns} onChange={setColumns} />}
+            </div>
           )}
           <footer className="explorer-footer">
             <span>Mostrando {result.data.length} de {result.total.toLocaleString('es')}</span>
@@ -266,7 +290,8 @@ export function JoinBuilder() {
               <button className="row-action" type="button" disabled={result.offset + result.limit >= result.total || isRunning} onClick={() => void run(result.offset + result.limit, payload)}>Siguiente</button>
             </div>
           </footer>
-          {isExportOpen && <ExportModal payload={payload} total={result.total} onClose={() => setIsExportOpen(false)} />}
+          {isExportOpen && outputPayload && <ExportModal payload={outputPayload} total={result.total} onClose={() => setIsExportOpen(false)} />}
+          {isSaveOpen && outputPayload && <SaveQueryModal definition={outputPayload} columns={visibleColumns.length} onClose={() => setIsSaveOpen(false)} />}
         </section>
       )}
     </section>

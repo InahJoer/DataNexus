@@ -368,6 +368,21 @@ export class CrossJoinDto {
   aggregations?: AggregationMetricDto[];
 
   @ApiPropertyOptional({
+    description:
+      'Columnas de salida en orden (editor de consultas). Se aplican después del enmascaramiento; las que no existen ' +
+      'salen en null. Sin lista, se devuelven todas. También las usan la exportación y los reportes programados.',
+    type: [String],
+    example: ['clientes.nombre', 'total'],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(300)
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
+  @MaxLength(300, { each: true })
+  columnas?: string[];
+
+  @ApiPropertyOptional({
     description: 'Límite de elementos por página',
     default: 50,
     minimum: 1,

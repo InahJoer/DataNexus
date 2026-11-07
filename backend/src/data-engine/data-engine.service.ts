@@ -23,6 +23,7 @@ import {
 } from './adapters/data-source-adapter.interface.js';
 import { DataSourceClientPool } from './pool/data-source-client-pool.js';
 import { MaskingService, type SensitiveRule } from './masking/masking.service.js';
+import { selectColumns } from './join/select-columns.js';
 import { SensitiveFieldsService, type SensitiveSource } from './masking/sensitive-fields.service.js';
 import { hasPermission } from '../auth/interfaces/user-role.js';
 import { UsageMeterService } from '../usage/usage-meter.service.js';
@@ -356,7 +357,7 @@ export class DataEngineService {
     const { rows: combinedData, truncated, rules } = await this.performJoin(payload, user);
 
     // Enmascaramiento si es LECTOR
-    const securedData = this.maskingService.maskDataset(combinedData, user.role, rules);
+    const securedData = selectColumns(this.maskingService.maskDataset(combinedData, user.role, rules), payload.columnas);
 
     // Paginación nativa en memoria
     const limit = payload.limit ?? 50;
@@ -380,7 +381,7 @@ export class DataEngineService {
     user: AuthenticatedUser,
   ): Promise<ExportResult> {
     const { rows: combinedData, rules } = await this.performJoin(payload, user);
-    const securedData = this.maskingService.maskDataset(combinedData, user.role, rules);
+    const securedData = selectColumns(this.maskingService.maskDataset(combinedData, user.role, rules), payload.columnas);
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 
@@ -442,7 +443,7 @@ export class DataEngineService {
     }
 
     const { rows: combinedData, rules } = await this.performJoin(payload, user);
-    const securedData = this.maskingService.maskDataset(combinedData, user.role, rules);
+    const securedData = selectColumns(this.maskingService.maskDataset(combinedData, user.role, rules), payload.columnas);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 
     if (payload.format === 'excel') {
@@ -506,7 +507,7 @@ export class DataEngineService {
   ): Promise<{ rows: Record<string, any>[]; truncated: boolean }> {
     const { rows, truncated, rules } = await this.performJoin(payload, user, { ...options, cooperative: true });
     options.signal?.throwIfAborted();
-    const secured = this.maskingService.maskDataset(rows, user.role, rules);
+    const secured = selectColumns(this.maskingService.maskDataset(rows, user.role, rules), payload.columnas);
     options.onProgress?.(1);
     return { rows: secured, truncated };
   }

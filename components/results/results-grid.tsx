@@ -29,10 +29,11 @@ function compare(a: unknown, b: unknown) {
  * Data Grid de resultados (#46): encabezado fijo, orden por columna, filtro sobre la página cargada y resaltado de
  * campos enmascarados. La paginación del servidor la maneja quien lo usa.
  */
-export function ResultsGrid({ rows, caption }: Readonly<{ rows: Row[]; caption: string }>) {
+/** `columns`: columnas visibles y su orden (editor de consultas); sin ella se muestran todas. */
+export function ResultsGrid({ rows, caption, columns: chosen }: Readonly<{ rows: Row[]; caption: string; columns?: string[] }>) {
   const [sort, setSort] = useState<Sort>(null);
   const [filter, setFilter] = useState('');
-  const columns = useMemo(() => [...new Set(rows.flatMap((row) => Object.keys(row)))], [rows]);
+  const columns = useMemo(() => chosen ?? [...new Set(rows.flatMap((row) => Object.keys(row)))], [rows, chosen]);
   const maskedCount = useMemo(() => rows.reduce((count, row) => count + Object.values(row).filter(isMasked).length, 0), [rows]);
 
   const visible = useMemo(() => {
