@@ -47,7 +47,7 @@ export function ForgotPasswordForm() {
   return (
     <>
       <AuthHeading title="¿Olvidaste tu contraseña?" description="Escribe el correo de tu cuenta y te enviaremos un enlace para restablecerla." />
-      <form className="login-form" onSubmit={handleSubmit}>
+      <form method="post" className="login-form" onSubmit={handleSubmit}>
         <label className="field-label" htmlFor="email">Correo electrónico</label>
         <div className="input-wrap">
           <Icon name="mail" size={17} className="input-icon" />
