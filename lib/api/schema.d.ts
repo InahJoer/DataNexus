@@ -120,6 +120,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/signup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Crear una cuenta personal u organización
+         * @description Crea el usuario (ADMIN) y su workspace e inicia sesión. PERSONAL admite cualquier correo y no tiene miembros; ORGANIZACION exige correo corporativo y deja su dominio como dominio permitido para invitar al equipo.
+         */
+        post: operations["AuthController_signup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/register": {
         parameters: {
             query?: never;
@@ -1305,6 +1325,35 @@ export interface components {
              */
             password: string;
         };
+        SignupDto: {
+            /**
+             * @example ORGANIZACION
+             * @enum {string}
+             */
+            tipoCuenta: "PERSONAL" | "ORGANIZACION";
+            /** @example Ana Martínez */
+            name: string;
+            /**
+             * @description En organizaciones debe ser un correo corporativo
+             * @example ana@acme.com
+             */
+            email: string;
+            /**
+             * @description Entre 10 y 72 caracteres, con al menos una mayúscula, una minúscula, un número y un símbolo. No puede contener tu correo ni contraseñas comunes.
+             * @example Segura#2026dn
+             */
+            password: string;
+            /**
+             * @description Obligatorio en organizaciones
+             * @example Acme Analytics S.A.
+             */
+            nombreEmpresa?: string;
+            /**
+             * @description Zona horaria IANA del navegador
+             * @example America/Managua
+             */
+            zonaHoraria?: string;
+        };
         RegisterDto: {
             /**
              * @description Correo corporativo del usuario (no se aceptan Gmail, Hotmail, Outlook, etc.)
@@ -2434,6 +2483,13 @@ export interface components {
             id: string;
             /** @example Acme Analytics S.A. */
             nombreEmpresa: string;
+            /**
+             * @description Personal (una persona) u organización (equipo).
+             * @enum {string}
+             */
+            tipoCuenta: "PERSONAL" | "ORGANIZACION";
+            /** @example Datos de ventas y logística */
+            descripcion: string | null;
             /** @example https://cdn.acme.com/logo.png */
             logoUrl: string | null;
             /** @example America/Managua */
@@ -2451,6 +2507,13 @@ export interface components {
              * @example Acme Analytics S.A.
              */
             nombreEmpresa?: string;
+            /** @description Descripción breve del workspace. Envía null o vacío para quitarla. */
+            descripcion?: string | null;
+            /**
+             * @description Convierte un espacio personal en organización (para invitar a un equipo). No se puede volver a personal.
+             * @enum {string}
+             */
+            tipoCuenta?: "ORGANIZACION";
             /**
              * @description URL https del logo. Envía null para eliminarlo.
              * @example https://cdn.acme.com/logo.png
@@ -2933,6 +2996,37 @@ export interface operations {
             };
         };
     };
+    AuthController_signup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SignupDto"];
+            };
+        };
+        responses: {
+            /** @description Cuenta creada; devuelve los tokens como el login. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthResponseDto"];
+                };
+            };
+            /** @description Ya existe una cuenta con ese correo. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     AuthController_register: {
         parameters: {
             query?: never;
@@ -3001,7 +3095,7 @@ export interface operations {
                 /** @description Filtrar registros hasta esta fecha (formato ISO 8601) */
                 fechaFin?: string;
                 /** @description Filtrar por tipo de acción o evento */
-                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED" | "INVITATION_RESENT" | "INVITATION_REVOKED" | "INVITATION_ACCEPTED" | "USER_REMOVED" | "BROWSE_DATA" | "SAVED_QUERY_CREATED" | "SAVED_QUERY_UPDATED" | "SAVED_QUERY_DELETED" | "SCHEDULED_REPORT_CREATED" | "SCHEDULED_REPORT_UPDATED" | "SCHEDULED_REPORT_DELETED" | "SCHEDULED_REPORT_RUN";
+                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED" | "INVITATION_RESENT" | "INVITATION_REVOKED" | "INVITATION_ACCEPTED" | "USER_REMOVED" | "BROWSE_DATA" | "SAVED_QUERY_CREATED" | "SAVED_QUERY_UPDATED" | "SAVED_QUERY_DELETED" | "SCHEDULED_REPORT_CREATED" | "SCHEDULED_REPORT_UPDATED" | "SCHEDULED_REPORT_DELETED" | "SCHEDULED_REPORT_RUN" | "ACCOUNT_CREATED";
             };
             header?: never;
             path?: never;
@@ -3042,7 +3136,7 @@ export interface operations {
                 /** @description Filtrar registros hasta esta fecha (formato ISO 8601) */
                 fechaFin?: string;
                 /** @description Filtrar por tipo de acción o evento */
-                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED" | "INVITATION_RESENT" | "INVITATION_REVOKED" | "INVITATION_ACCEPTED" | "USER_REMOVED" | "BROWSE_DATA" | "SAVED_QUERY_CREATED" | "SAVED_QUERY_UPDATED" | "SAVED_QUERY_DELETED" | "SCHEDULED_REPORT_CREATED" | "SCHEDULED_REPORT_UPDATED" | "SCHEDULED_REPORT_DELETED" | "SCHEDULED_REPORT_RUN";
+                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED" | "INVITATION_RESENT" | "INVITATION_REVOKED" | "INVITATION_ACCEPTED" | "USER_REMOVED" | "BROWSE_DATA" | "SAVED_QUERY_CREATED" | "SAVED_QUERY_UPDATED" | "SAVED_QUERY_DELETED" | "SCHEDULED_REPORT_CREATED" | "SCHEDULED_REPORT_UPDATED" | "SCHEDULED_REPORT_DELETED" | "SCHEDULED_REPORT_RUN" | "ACCOUNT_CREATED";
                 format?: "csv" | "json";
             };
             header?: never;

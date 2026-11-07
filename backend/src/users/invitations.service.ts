@@ -91,9 +91,12 @@ export class InvitationsService {
 
     const workspace = await this.prisma.workspace.findUnique({
       where: { id: actor.workspaceId },
-      select: { nombreEmpresa: true, dominiosPermitidos: true },
+      select: { nombreEmpresa: true, dominiosPermitidos: true, tipoCuenta: true },
     });
     if (!workspace) throw new NotFoundException('Workspace no encontrado');
+    if (workspace.tipoCuenta === 'PERSONAL') {
+      throw new ForbiddenException('Los espacios personales no tienen miembros. Conviértelo en organización para invitar a tu equipo.');
+    }
     if (!isEmailDomainAllowed(email, workspace.dominiosPermitidos)) {
       throw new BadRequestException(
         `El correo debe pertenecer a un dominio permitido del workspace: ${workspace.dominiosPermitidos.join(', ')}`,

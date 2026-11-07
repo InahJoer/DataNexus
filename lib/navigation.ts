@@ -10,7 +10,11 @@ export type NavItem = Readonly<{
   permission?: Permission;
   /** Muestra junto al enlace el número de conexiones del workspace. */
   counter?: 'connections';
+  /** Solo en workspaces de organización (los espacios personales no tienen equipo). */
+  organizationOnly?: boolean;
 }>;
+
+export type AccountType = 'PERSONAL' | 'ORGANIZACION';
 
 export type NavGroup = Readonly<{ label: string; items: readonly NavItem[] }>;
 
@@ -26,7 +30,7 @@ export const NAVIGATION: readonly NavGroup[] = [
       { label: 'Editor de consultas', href: '/queries', icon: 'join', permission: 'RUN_JOINS' },
       { label: 'Ejecuciones', href: '/executions', icon: 'activity', permission: 'MANAGE_REPORTS' },
       { label: 'Tareas programadas', href: '/scheduled-tasks', icon: 'clock', permission: 'MANAGE_REPORTS' },
-      { label: 'Equipo', href: '/team', icon: 'users', permission: 'MANAGE_MEMBERS' },
+      { label: 'Equipo', href: '/team', icon: 'users', permission: 'MANAGE_MEMBERS', organizationOnly: true },
     ],
   },
   {
@@ -38,13 +42,14 @@ export const NAVIGATION: readonly NavGroup[] = [
   },
 ];
 
-export function canSee(item: NavItem, role: UserRole | undefined): boolean {
+export function canSee(item: NavItem, role: UserRole | undefined, accountType?: AccountType): boolean {
+  if (item.organizationOnly && accountType === 'PERSONAL') return false;
   return !item.permission || hasPermission(role, item.permission);
 }
 
 /** Menú filtrado por rol: los grupos sin ninguna sección visible desaparecen. */
-export function navigationFor(role: UserRole | undefined): NavGroup[] {
-  return NAVIGATION.map((group) => ({ ...group, items: group.items.filter((item) => canSee(item, role)) })).filter(
+export function navigationFor(role: UserRole | undefined, accountType?: AccountType): NavGroup[] {
+  return NAVIGATION.map((group) => ({ ...group, items: group.items.filter((item) => canSee(item, role, accountType)) })).filter(
     (group) => group.items.length > 0,
   );
 }

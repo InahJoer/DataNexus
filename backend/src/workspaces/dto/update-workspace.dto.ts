@@ -3,6 +3,7 @@ import { Transform } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsIn,
   IsOptional,
   IsString,
   IsUrl,
@@ -48,6 +49,21 @@ export class UpdateWorkspaceDto {
   @MinLength(2, { message: 'El nombre debe tener al menos 2 caracteres' })
   @MaxLength(120, { message: 'El nombre no puede superar 120 caracteres' })
   nombreEmpresa?: string;
+
+  @ApiPropertyOptional({ description: 'Descripción breve del workspace. Envía null o vacío para quitarla.', nullable: true, type: String })
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() || null : value))
+  @IsString({ message: 'La descripción debe ser un texto' })
+  @MaxLength(280, { message: 'La descripción no puede superar 280 caracteres' })
+  descripcion?: string | null;
+
+  @ApiPropertyOptional({
+    enum: ['ORGANIZACION'],
+    description: 'Convierte un espacio personal en organización (para invitar a un equipo). No se puede volver a personal.',
+  })
+  @IsOptional()
+  @IsIn(['ORGANIZACION'], { message: 'Solo se puede convertir un espacio personal en organización' })
+  tipoCuenta?: 'ORGANIZACION';
 
   @ApiPropertyOptional({
     description: 'URL https del logo. Envía null para eliminarlo.',

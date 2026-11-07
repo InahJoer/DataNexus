@@ -97,7 +97,8 @@ export function LoginForm() {
       <button className="button button--primary login-submit" type="submit" disabled={isSubmitting}>
         {isSubmitting ? 'Verificando…' : 'Iniciar sesión'} {!isSubmitting && <Icon name="arrow-right" size={17} />}
       </button>
-      <p className="auth-support">¿Aún no tienes acceso? <a href="mailto:soporte@datanexus.app">Contacta a tu administrador</a></p>
+      <p className="auth-support">¿No tienes cuenta? <Link href="/signup">Crea una personal u organización</Link></p>
+      <p className="auth-support auth-support--small">¿Te invitaron a un equipo? Usa el enlace que llegó a tu correo.</p>
     </form>
   );
 }

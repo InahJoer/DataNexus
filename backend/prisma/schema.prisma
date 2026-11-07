@@ -60,9 +60,16 @@ enum AuditEventType {
   SCHEDULED_REPORT_UPDATED
   SCHEDULED_REPORT_DELETED
   SCHEDULED_REPORT_RUN
+  ACCOUNT_CREATED
 }
 
 /// Estado persistido de una invitación. La expiración se calcula con expiresAt (PENDIENTE vencida = EXPIRADA).
+/// Tipo de cuenta del workspace: personal (una persona) u organización (equipo con miembros e invitaciones).
+enum TipoCuenta {
+  PERSONAL
+  ORGANIZACION
+}
+
 enum InvitationStatus {
   PENDIENTE
   ACEPTADA
@@ -73,6 +80,10 @@ enum InvitationStatus {
 model Workspace {
   id                    String           @id @default(uuid())
   nombreEmpresa         String
+  /// Personal u organización. Los workspaces creados antes de este campo son organizaciones.
+  tipoCuenta            TipoCuenta       @default(ORGANIZACION)
+  /// Descripción breve que se muestra en la pantalla de Workspaces.
+  descripcion           String?
   /// URL https del logo que muestra el cliente web.
   logoUrl               String?
   /// Zona horaria IANA (p. ej. America/Managua) para fechas y reportes programados.
