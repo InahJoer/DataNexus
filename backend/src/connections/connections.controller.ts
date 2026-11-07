@@ -15,7 +15,10 @@ import {
   UploadedFile,
   UseInterceptors,
   BadRequestException,
+  BadGatewayException,
+  ForbiddenException,
 } from '@nestjs/common';
+import { v1 } from '@google-cloud/firestore';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiTags,
@@ -26,6 +29,8 @@ import {
   ApiConsumes,
   ApiBody,
   ApiCreatedResponse,
+  ApiProperty,
+  PickType,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { ConnectionsService } from './connections.service.js';
@@ -35,6 +40,8 @@ import { ConnectionResponseDto } from './dto/connection-response.dto.js';
 import { ConnectionTestOptionsDto, TestConnectionDto } from './dto/test-connection.dto.js';
 import { ConnectionTestResultDto } from './dto/connection-test-result.dto.js';
 import { ConnectionTestService } from './connection-test.service.js';
+import { FirestoreCredentialsDto } from './credentials/credential-dtos.js';
+import { parseServiceAccount } from './credentials/connection-credentials.js';
 import {
   FIRESTORE_UPLOAD_SCHEMA,
   FirestoreUploadFieldsDto,
@@ -61,6 +68,16 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
 import { RequirePermission } from '../auth/decorators/roles.decorator.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-user.interface.js';
+
+class ListFirestoreDatabasesDto extends PickType(FirestoreCredentialsDto, ['serviceAccount'] as const) {}
+
+class FirestoreDatabasesResponseDto {
+  @ApiProperty({ type: [String] })
+  databaseIds: string[];
+
+  @ApiProperty()
+  partial: boolean;
+}
 
 @ApiTags('Connections')
 @ApiBearerAuth()
@@ -125,6 +142,38 @@ export class ConnectionsController {
     @Body() options: ConnectionTestOptionsDto = {},
   ) {
     return this.connectionTestService.testSaved(request.user, id, options);
+  }
+
+  @Post('firestore/databases')
+  @RequirePermission('MANAGE_CONNECTIONS')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Listar las bases Cloud Firestore del proyecto de la cuenta de servicio' })
+  @ApiOkResponse({ type: FirestoreDatabasesResponseDto })
+  async listFirestoreDatabases(@Body() input: ListFirestoreDatabasesDto): Promise<FirestoreDatabasesResponseDto> {
+    const account = parseServiceAccount(input.serviceAccount);
+    const parent = `projects/${account.project_id}`;
+    const client = new v1.FirestoreAdminClient({
+      projectId: account.project_id,
+      credentials: { client_email: account.client_email, private_key: account.private_key },
+    });
+    try {
+      const [result] = await client.listDatabases({ parent }, { timeout: 10_000, retry: null });
+      const prefix = `${parent}/databases/`;
+      const databaseIds = (result.databases ?? []).flatMap((database) =>
+        database.type === 'FIRESTORE_NATIVE' && database.name?.startsWith(prefix)
+          ? [database.name.slice(prefix.length)]
+          : [],
+      );
+      return { databaseIds: [...new Set(databaseIds)].sort(), partial: Boolean(result.unreachable?.length) };
+    } catch (error) {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 7) {
+        throw new ForbiddenException('La cuenta de servicio necesita el permiso datastore.databases.list');
+      }
+      throw new BadGatewayException('No se pudieron listar las bases de Firestore. Revisa las credenciales del proyecto.');
+    } finally {
+      await client.close().catch(() => undefined);
+    }
   }
 
   @Post('firestore')

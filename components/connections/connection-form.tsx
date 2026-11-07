@@ -24,8 +24,18 @@ type Fields = {
 };
 
 type TestState = { state: 'idle' } | { state: 'running' } | { state: 'ok'; detail: string } | { state: 'error'; detail: string };
+type DatabaseList = { databaseIds: string[]; partial: boolean };
 
 const EMPTY: Fields = { nombre: '', host: '', port: '', database: '', username: '', password: '', ssl: false, uri: '', serviceAccount: '', databaseId: '' };
+
+function parseServiceAccount(text: string): Record<string, unknown> | null {
+  try {
+    const account: unknown = JSON.parse(text);
+    return account && typeof account === 'object' && !Array.isArray(account) ? account as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Credenciales en el formato que espera la API para cada motor, o el mensaje de lo que falta. */
 function buildCredentials(engine: Engine, fields: Fields): Credentials | string {
@@ -35,13 +45,9 @@ function buildCredentials(engine: Engine, fields: Fields): Credentials | string 
     return { uri: fields.uri.trim(), database: fields.database.trim() };
   }
   if (kind === 'firestore') {
-    try {
-      const serviceAccount: unknown = JSON.parse(fields.serviceAccount);
-      if (!serviceAccount || typeof serviceAccount !== 'object' || Array.isArray(serviceAccount)) throw new Error('json');
-      return { serviceAccount: serviceAccount as Record<string, unknown>, ...(fields.databaseId.trim() ? { databaseId: fields.databaseId.trim() } : {}) };
-    } catch {
-      return 'Pega el JSON completo de la cuenta de servicio de Firebase.';
-    }
+    const serviceAccount = parseServiceAccount(fields.serviceAccount);
+    if (!serviceAccount) return 'Pega el JSON completo de la cuenta de servicio de Firebase.';
+    return { serviceAccount, ...(fields.databaseId.trim() ? { databaseId: fields.databaseId.trim() } : {}) };
   }
   if (!fields.host.trim() || !fields.database.trim() || !fields.username.trim() || !fields.password) {
     return 'Completa host, base de datos, usuario y contraseña.';
@@ -68,19 +74,54 @@ export function ConnectionForm({ connection, onClose, onSaved }: ConnectionFormP
     nombre: connection?.nombre ?? '',
     host: connection && ENGINES[connection.tipoMotor].kind === 'sql' ? connection.host : '',
     database: connection?.dbName ?? '',
+    databaseId: connection?.tipoMotor === 'FIRESTORE' ? connection.dbName : '',
   });
   const [test, setTest] = useState<TestState>({ state: 'idle' });
+  const [databases, setDatabases] = useState<DatabaseList | null>(null);
+  const [databaseError, setDatabaseError] = useState<string | null>(null);
+  const [isListing, setIsListing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const kind = ENGINES[engine].kind;
   // Al editar, las credenciales son opcionales: si no se escriben, se conservan las guardadas.
   const touchedCredentials = kind === 'sql' ? Boolean(fields.password || fields.username) : kind === 'mongo' ? Boolean(fields.uri) : Boolean(fields.serviceAccount);
   const sendCredentials = !isEdit || touchedCredentials || engine !== connection?.tipoMotor;
+  const needsDatabase = kind === 'firestore' && databases !== null && !databases.databaseIds.includes(fields.databaseId);
 
   const set = <K extends keyof Fields>(key: K, value: Fields[K]) => {
     setFields((current) => ({ ...current, [key]: value }));
     setTest({ state: 'idle' });
   };
+
+  async function listDatabases() {
+    const serviceAccount = parseServiceAccount(fields.serviceAccount);
+    if (!serviceAccount) {
+      setDatabaseError('Pega el JSON completo de la cuenta de servicio de Firebase.');
+      return;
+    }
+    setIsListing(true);
+    setDatabaseError(null);
+    try {
+      const result = await call((api) => api.POST('/connections/firestore/databases', {
+        body: { serviceAccount },
+      }));
+      if (!result.response.ok || !result.data) {
+        setDatabaseError(apiErrorMessage(result.error, result.response.status));
+        return;
+      }
+      const { databaseIds, partial } = result.data;
+      setDatabases(databaseIds.length ? result.data : null);
+      if (!databaseIds.length) {
+        setDatabaseError(partial ? 'No se pudo consultar todas las regiones. Puedes indicar el ID manualmente.' : 'El proyecto no devolvió bases de Cloud Firestore.');
+        return;
+      }
+      if (!fields.databaseId && !isEdit && databaseIds.includes('(default)')) set('databaseId', '(default)');
+    } catch {
+      setDatabaseError(NETWORK_ERROR_MESSAGE);
+    } finally {
+      setIsListing(false);
+    }
+  }
 
   async function runTest() {
     const credenciales = buildCredentials(engine, fields);
@@ -106,6 +147,7 @@ export function ConnectionForm({ connection, onClose, onSaved }: ConnectionFormP
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (isListing || needsDatabase) return;
     setError(null);
     const credenciales = sendCredentials ? buildCredentials(engine, fields) : null;
     if (typeof credenciales === 'string') {
@@ -154,8 +196,8 @@ export function ConnectionForm({ connection, onClose, onSaved }: ConnectionFormP
             {test.state === 'running' && 'Probando conexión…'}
             {(test.state === 'ok' || test.state === 'error') && <><Icon name={test.state === 'ok' ? 'check' : 'alert'} size={14} />{test.detail}</>}
           </span>
-          <button className="button form-secondary" type="button" onClick={() => void runTest()} disabled={test.state === 'running' || !sendCredentials}>Probar conexión</button>
-          <button className="button button--primary form-primary" type="submit" form="connection-form" disabled={isSaving}>{isSaving ? 'Guardando…' : isEdit ? 'Guardar cambios' : 'Crear conexión'}</button>
+          <button className="button form-secondary" type="button" onClick={() => void runTest()} disabled={test.state === 'running' || !sendCredentials || isListing || needsDatabase}>Probar conexión</button>
+          <button className="button button--primary form-primary" type="submit" form="connection-form" disabled={isSaving || isListing || needsDatabase}>{isSaving ? 'Guardando…' : isEdit ? 'Guardar cambios' : 'Crear conexión'}</button>
         </>
       }
     >
@@ -202,9 +244,29 @@ export function ConnectionForm({ connection, onClose, onSaved }: ConnectionFormP
           <>
             <label className="form-field form-field--wide">
               <span>Cuenta de servicio (JSON)</span>
-              <textarea className="form-input form-textarea" value={fields.serviceAccount} onChange={(event) => set('serviceAccount', event.target.value)} placeholder='{"type": "service_account", "project_id": "…", …}' required={!isEdit} spellCheck={false} />
+              <textarea className="form-input form-textarea" value={fields.serviceAccount} disabled={isListing} onChange={(event) => {
+                set('serviceAccount', event.target.value);
+                setDatabases(null);
+                setDatabaseError(null);
+              }} placeholder='{"type": "service_account", "project_id": "…", …}' required={!isEdit} spellCheck={false} />
             </label>
-            {input('databaseId', 'ID de base de datos (opcional)', { placeholder: '(default)' })}
+            <div className="form-field form-field--wide">
+              <button className="button form-secondary" type="button" disabled={isListing || !fields.serviceAccount.trim()} onClick={() => void listDatabases()}>
+                {isListing ? 'Listando bases…' : 'Listar bases de Firestore'}
+              </button>
+              {databaseError && <p className="form-error" role="status">{databaseError}</p>}
+              {databases?.partial && <p className="field-help" role="status">Algunas regiones no respondieron. La lista puede estar incompleta.</p>}
+              {databases && <button className="row-action" type="button" disabled={isListing} onClick={() => setDatabases(null)}>Ingresar ID manualmente</button>}
+            </div>
+            {databases ? (
+              <label className="form-field">
+                <span>Base de datos de Firestore</span>
+                <select className="form-input" required value={needsDatabase ? '' : fields.databaseId} disabled={isListing} onChange={(event) => set('databaseId', event.target.value)}>
+                  <option value="">Elige una base de datos</option>
+                  {databases.databaseIds.map((id) => <option key={id} value={id}>{id}</option>)}
+                </select>
+              </label>
+            ) : input('databaseId', 'ID de base de datos (opcional)', { placeholder: '(default)', disabled: isListing || !sendCredentials })}
           </>
         )}
         {error && <p className="form-error form-field--wide" role="alert">{error}</p>}
