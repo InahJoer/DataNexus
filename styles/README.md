@@ -10,11 +10,12 @@ Cada pantalla tiene su propio archivo CSS en esta carpeta. Todos se importan **u
 | `login.css` | Formulario de acceso. Contiene `.button`, inputs y mensajes de formulario reutilizables. |
 | `auth.css` | Pantallas de acceso (`components/auth/`): diagrama de fuentes, avisos, casilla "Mantener sesión", política de contraseña, invitación y aviso de inactividad. |
 | `workspaces.css` | Selección de workspace (`app/workspaces`). |
-| `dashboard.css` | Vista general: métricas, conexiones y actividad (`app/(app)/dashboard`). |
+| `dashboard.css` | Vista general (#68): KPIs, consumo de API, latencia, consultas, entorno y actividad. Define `.surface-card` y `.status-pill`, que usan otras pantallas. Trae sus media queries. |
 | `responsive.css` | Media queries de Onboarding, Login, Workspaces y Dashboard. |
-| `cross-join.css` | Constructor de Cross-Joins (`components/cross-join-builder.tsx`). |
+| `cross-join.css` | Constructor de Cross-Joins (`components/cross-join-builder.tsx`). (incluye el grid de resultados y el modal de exportación) |
 | `audit.css` | Bitácora de auditoría (`components/audit-table.tsx`). |
 | `app-shell.css` | Layout base de `app/(app)`: sidebar con el menú por rol, barra superior, encabezado de página (`PageHeader`) y estados de carga, vacío y error. Trae sus media queries. |
+| `connections.css` | Conexiones (#44) y piezas compartidas: tabla `.data-table`, modal `.modal` y formularios `.form-*`. |
 
 ## Reglas
 

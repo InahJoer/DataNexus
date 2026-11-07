@@ -11,6 +11,7 @@ import '@/styles/auth.css';
 import '@/styles/cross-join.css';
 import '@/styles/audit.css';
 import '@/styles/app-shell.css';
+import '@/styles/connections.css';
 import { AuthProvider } from '@/components/auth-provider';
 import { IdleWarning } from '@/components/idle-warning';
 
