@@ -1,9 +1,4 @@
 /* Responsive: media queries de Onboarding, Login, Workspaces y Dashboard. Va después de esas pantallas porque sobrescribe sus reglas. */
-@media (max-width: 1120px) {
-  .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .dashboard-grid { grid-template-columns: minmax(0, 1.25fr) minmax(260px, .9fr); }
-}
-
 @media (max-width: 900px) {
   .onboarding-shell { grid-template-columns: minmax(0, .78fr) minmax(440px, 1.22fr); }
   .onboarding-aside { padding: 36px; }
@@ -28,20 +23,6 @@
   .workspace-choice { padding: 16px 15px 14px; }
   .workspace-choice-meta { gap: 9px 12px; margin-left: 0; }
   .workspace-choice-footer { align-items: flex-start; flex-direction: column; }
-  .summary-grid { gap: 9px; }
-  .metric-card { padding: 12px 11px 11px; }
-  .metric-icon { width: 27px; height: 27px; }
-  .metric-trend { font-size: 8px; }
-  .metric-card > p { margin-top: 11px; font-size: 9px; }
-  .metric-value { font-size: 22px; }
-  .metric-detail { display: none; }
-  .dashboard-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; margin-top: 10px; }
-  .trend-chart { height: 165px; }
-  .trend-chart text { font-size: 18px; }
-  .surface-header { padding-right: 14px; padding-left: 14px; }
-  .connection-list, .activity-list { padding-right: 14px; padding-left: 14px; }
-  .dashboard-cta { align-items: flex-start; flex-direction: column; }
-  .dashboard-footer { flex-direction: column; }
 }
 
 @media (hover: hover) and (pointer: fine) {

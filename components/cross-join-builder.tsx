@@ -3,7 +3,9 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icon } from '@/components/icons';
-import { apiBaseUrl, createApiClient } from '@/lib/api/client';
+import { createApiClient } from '@/lib/api/client';
+import { ExportModal } from '@/components/results/export-modal';
+import { ResultsGrid } from '@/components/results/results-grid';
 import { useAuth } from '@/lib/auth-context';
 import type { components } from '@/lib/api/schema';
 
@@ -12,14 +14,10 @@ type ConnectionSchema = components['schemas']['ConnectionSchemaResponseDto'];
 type CatalogObject = components['schemas']['CatalogObjectResponseDto'];
 type CrossJoinPayload = components['schemas']['CrossJoinDto'];
 type CrossJoinResult = components['schemas']['PaginatedCrossJoinResultDto'];
-type ExportFormat = components['schemas']['ExportCrossJoinDto']['format'];
 
-const EXPORT_FORMATS: readonly ExportFormat[] = ['excel', 'word', 'pdf', 'json'];
-const EXPORT_LABELS: Record<ExportFormat, string> = { excel: 'Excel', word: 'Word', pdf: 'PDF', json: 'JSON' };
-const EXPORT_EXTENSIONS: Record<ExportFormat, string> = { excel: 'xlsx', word: 'docx', pdf: 'pdf', json: 'json' };
 
-const SQL_ENGINES = new Set(['SQLSERVER', 'MSSQL']);
-const NOSQL_ENGINES = new Set(['FIRESTORE', 'FIREBASE', 'CLOUDFIRESTORE']);
+const SQL_ENGINES = new Set(['POSTGRESQL', 'MYSQL', 'SQLSERVER', 'MSSQL']);
+const NOSQL_ENGINES = new Set(['MONGODB', 'FIRESTORE', 'FIREBASE', 'CLOUDFIRESTORE']);
 const PAGE_SIZES = [25, 50, 100, 250];
 
 function engineKey(value: string) {
@@ -36,12 +34,6 @@ function responseMessage(value: unknown) {
   if (typeof message === 'string') return message;
   if (Array.isArray(message)) return message.filter((part) => typeof part === 'string').join(' ');
   return null;
-}
-
-function displayValue(value: unknown) {
-  if (value === null || value === undefined || value === '') return '—';
-  if (typeof value === 'object') return JSON.stringify(value) ?? '—';
-  return String(value);
 }
 
 function connectionLabel(connection: Connection) {
@@ -82,7 +74,7 @@ export function CrossJoinBuilder() {
   const [pageSize, setPageSize] = useState(50);
   const [result, setResult] = useState<CrossJoinResult | null>(null);
   const [isRunning, setIsRunning] = useState(false);
-  const [isExporting, setIsExporting] = useState<ExportFormat | null>(null);
+  const [isExportOpen, setIsExportOpen] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
   const lastPayload = useRef<CrossJoinPayload | null>(null);
 
@@ -350,47 +342,6 @@ export function CrossJoinBuilder() {
     await runPage(payload, 0);
   }
 
-  async function exportResults(format: ExportFormat) {
-    if (!accessToken || !lastPayload.current) return;
-    setIsExporting(format);
-    setJoinError(null);
-    try {
-      const response = await fetch(`${apiBaseUrl}/engine/export`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ ...lastPayload.current, format }),
-      });
-
-      if (response.status === 401) {
-        logout();
-        router.replace('/login');
-        return;
-      }
-      if (!response.ok) {
-        const errorBody: unknown = await response.json().catch(() => null);
-        setJoinError(responseMessage(errorBody) ?? 'No se pudo exportar el resultado.');
-        return;
-      }
-
-      const extension = EXPORT_EXTENSIONS[format];
-      const filename = response.headers.get('content-disposition')?.match(/filename="?([^";]+)"?/i)?.[1]
-        ?? `datanexus-cross-join.${extension}`;
-      const objectUrl = URL.createObjectURL(await response.blob());
-      const anchor = document.createElement('a');
-      anchor.href = objectUrl;
-      anchor.download = filename;
-      anchor.click();
-      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-    } catch {
-      setJoinError('No se pudo conectar con la API para exportar el resultado.');
-    } finally {
-      setIsExporting(null);
-    }
-  }
-
   function handleSqlConnectionChange(value: string) {
     setSqlConnectionId(value);
     setSqlObjectKey('');
@@ -405,7 +356,6 @@ export function CrossJoinBuilder() {
     clearExecution();
   }
 
-  const columns = result?.data[0] ? Object.keys(result.data[0]) : [];
   const page = result ? Math.floor(result.offset / result.limit) + 1 : 0;
   const totalPages = result ? Math.max(1, Math.ceil(result.total / result.limit)) : 0;
   const hasPrevious = Boolean(result && result.offset > 0);
@@ -437,7 +387,7 @@ export function CrossJoinBuilder() {
           <Icon name="database" size={20} />
           <div>
             <strong>Faltan fuentes compatibles</strong>
-            <p>Para ejecutar un cruce se necesita SQL Server y una fuente Firestore o Firebase en este workspace.</p>
+            <p>Para ejecutar un cruce se necesita una conexión SQL (PostgreSQL, MySQL o SQL Server) y una NoSQL (MongoDB o Firestore) en este workspace.</p>
           </div>
         </div>
       ) : (
@@ -447,7 +397,7 @@ export function CrossJoinBuilder() {
               <article className="join-source-card">
                 <div className="join-source-heading">
                   <span className="join-source-step">01</span>
-                  <span><strong>Fuente relacional</strong><small>SQL Server</small></span>
+                  <span><strong>Fuente relacional</strong><small>PostgreSQL · MySQL · SQL Server</small></span>
                 </div>
                 <label className="join-field">
                   <span>Conexión</span>
@@ -483,7 +433,7 @@ export function CrossJoinBuilder() {
               <article className="join-source-card join-source-card--nosql">
                 <div className="join-source-heading">
                   <span className="join-source-step">02</span>
-                  <span><strong>Fuente documental</strong><small>Firestore / Firebase</small></span>
+                  <span><strong>Fuente documental</strong><small>MongoDB · Firestore</small></span>
                 </div>
                 <label className="join-field">
                   <span>Conexión</span>
@@ -540,21 +490,9 @@ export function CrossJoinBuilder() {
                 {result && <p>{result.total.toLocaleString('es')} filas encontradas · página {page} de {totalPages}</p>}
               </div>
               {result && result.total > 0 && (
-                <div className="join-export-actions" aria-label="Exportar resultados">
-                  <span>Exportar</span>
-                  {EXPORT_FORMATS.map((format) => (
-                    <button
-                      className="join-export-button"
-                      type="button"
-                      key={format}
-                      onClick={() => void exportResults(format)}
-                      disabled={isExporting !== null}
-                      aria-label={`Exportar a ${EXPORT_LABELS[format]}`}
-                    >
-                      {isExporting === format ? '…' : EXPORT_LABELS[format]}
-                    </button>
-                  ))}
-                </div>
+                <button className="button button--primary join-export-open" type="button" onClick={() => setIsExportOpen(true)}>
+                  <Icon name="arrow-up-right" size={15} />Exportar
+                </button>
               )}
             </div>
 
@@ -564,18 +502,7 @@ export function CrossJoinBuilder() {
               <div className="join-results-empty"><p>El cruce no encontró registros para esta página.</p></div>
             ) : (
               <>
-                <div className="join-results-table-wrap">
-                  <table className="join-results-table">
-                    <thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
-                    <tbody>
-                      {result.data.map((row, rowIndex) => (
-                        <tr key={result.offset + rowIndex}>
-                          {columns.map((column) => <td key={column} title={displayValue(row[column])}>{displayValue(row[column])}</td>)}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <ResultsGrid rows={result.data} caption={`Resultados del cruce, página ${page} de ${totalPages}`} />
                 <footer className="join-results-footer">
                   <span>Mostrando {result.data.length.toLocaleString('es')} de {result.total.toLocaleString('es')} registros</span>
                   <div>
@@ -586,6 +513,9 @@ export function CrossJoinBuilder() {
               </>
             )}
           </section>
+          {isExportOpen && result && lastPayload.current && (
+            <ExportModal payload={lastPayload.current} total={result.total} onClose={() => setIsExportOpen(false)} />
+          )}
         </>
       )}
     </section>
