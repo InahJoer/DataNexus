@@ -9,6 +9,7 @@ import '@/styles/dashboard.css';
 import '@/styles/responsive.css';
 import '@/styles/cross-join.css';
 import '@/styles/audit.css';
+import '@/styles/app-shell.css';
 import { AuthProvider } from '@/components/auth-provider';
 
 export const metadata: Metadata = {

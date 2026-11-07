@@ -9,10 +9,11 @@ Cada pantalla tiene su propio archivo CSS en esta carpeta. Todos se importan **u
 | `onboarding.css` | Layout de dos columnas compartido por Login y Workspaces. |
 | `login.css` | Formulario de acceso. Contiene `.button`, inputs y mensajes de formulario reutilizables. |
 | `workspaces.css` | Selección de workspace (`app/workspaces`). |
-| `dashboard.css` | Sidebar, barra superior, métricas, conexiones y actividad (`app/dashboard`). |
+| `dashboard.css` | Vista general: métricas, conexiones y actividad (`app/(app)/dashboard`). |
 | `responsive.css` | Media queries de Onboarding, Login, Workspaces y Dashboard. |
 | `cross-join.css` | Constructor de Cross-Joins (`components/cross-join-builder.tsx`). |
 | `audit.css` | Bitácora de auditoría (`components/audit-table.tsx`). |
+| `app-shell.css` | Layout base de `app/(app)`: sidebar con el menú por rol, barra superior, encabezado de página (`PageHeader`) y estados de carga, vacío y error. Trae sus media queries. |
 
 ## Reglas
 

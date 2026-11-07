@@ -1,6 +1,5 @@
 /* Responsive: media queries de Onboarding, Login, Workspaces y Dashboard. Va después de esas pantallas porque sobrescribe sus reglas. */
 @media (max-width: 1120px) {
-  .dashboard-shell { grid-template-columns: 224px minmax(0, 1fr); }
   .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dashboard-grid { grid-template-columns: minmax(0, 1.25fr) minmax(260px, .9fr); }
 }
@@ -13,19 +12,6 @@
   .onboarding-preview { padding: 14px; }
   .onboarding-main { padding-right: 32px; padding-left: 32px; }
   .page-footnote { right: 32px; left: 32px; }
-  .dashboard-shell { display: block; }
-  .dashboard-sidebar { position: sticky; z-index: 5; top: 0; height: auto; padding: 12px 18px 10px; }
-  .sidebar-brand { padding: 0 2px 11px; }
-  .sidebar-brand .brand-symbol { width: 29px; height: 29px; }
-  .sidebar-workspace { position: absolute; top: 10px; right: 18px; width: min(260px, 40vw); min-height: 38px; padding: 4px 8px; }
-  .sidebar-workspace-avatar { width: 28px; height: 28px; }
-  .sidebar-workspace-copy span, .sidebar-workspace > svg { display: none; }
-  .sidebar-nav { flex-direction: row; gap: 4px; overflow-x: auto; padding-bottom: 1px; scrollbar-width: none; }
-  .sidebar-nav::-webkit-scrollbar { display: none; }
-  .sidebar-section-label, .sidebar-bottom { display: none; }
-  .sidebar-nav a { min-height: 34px; flex: 0 0 auto; gap: 7px; padding: 0 9px; font-size: 9px; }
-  .sidebar-nav a[aria-current="page"]::before { top: auto; right: 9px; bottom: 0; left: 9px; width: auto; height: 2px; }
-  .dashboard-main { padding: 25px 26px 35px; }
 }
 
 @media (max-width: 700px) {
@@ -43,15 +29,6 @@
   .workspace-choice { padding: 16px 15px 14px; }
   .workspace-choice-meta { gap: 9px 12px; margin-left: 0; }
   .workspace-choice-footer { align-items: flex-start; flex-direction: column; }
-  .dashboard-sidebar { padding-right: 13px; padding-left: 13px; }
-  .sidebar-workspace { right: 13px; width: min(214px, 50vw); }
-  .dashboard-main { padding: 20px 16px 30px; }
-  .dashboard-topbar { margin-bottom: 23px; }
-  .dashboard-topbar .search-box { display: none; }
-  .breadcrumb > span, .breadcrumb > svg { display: none; }
-  .topbar-actions { gap: 7px; }
-  .dashboard-heading { align-items: flex-start; flex-direction: column; margin-bottom: 18px; }
-  .dashboard-heading h1 { margin-top: 6px; font-size: 27px; }
   .summary-grid { gap: 9px; }
   .metric-card { padding: 12px 11px 11px; }
   .metric-icon { width: 27px; height: 27px; }
@@ -69,7 +46,7 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .sidebar-nav a:hover, .back-to-login:hover, .auth-support a:hover { text-decoration: none; }
+  .back-to-login:hover, .auth-support a:hover { text-decoration: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

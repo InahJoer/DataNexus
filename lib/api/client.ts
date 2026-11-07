@@ -9,3 +9,5 @@ export function createApiClient(accessToken?: string) {
     ...(accessToken ? { headers: { Authorization: `Bearer ${accessToken}` } } : {}),
   });
 }
+
+export type ApiClient = ReturnType<typeof createApiClient>;

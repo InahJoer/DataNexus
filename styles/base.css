@@ -12,6 +12,21 @@
   --green-dark: #0d7666;
   --green-pale: #e8f5f1;
   --blue: #4c7be8;
+  --warning: #b6823e;
+  --warning-pale: #fbf3e6;
+  --danger: #b45454;
+  --danger-pale: #fbecec;
+  /* Sidebar del layout base (styles/app-shell.css). */
+  --shell-sidebar-width: 252px;
+  --sidebar-bg: #172522;
+  --sidebar-raised: rgba(244, 251, 248, .05);
+  --sidebar-hover: rgba(244, 251, 248, .09);
+  --sidebar-active: rgba(41, 146, 117, .24);
+  --sidebar-line: rgba(213, 235, 227, .12);
+  --sidebar-text: #b0bdb8;
+  --sidebar-muted: #7f938a;
+  --sidebar-strong: #eef6f2;
+  --sidebar-accent: #63d2b3;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
 

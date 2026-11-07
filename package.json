@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "api:generate": "openapi-typescript http://localhost:3001/api/docs-json -o lib/api/schema.d.ts"
+    "api:generate": "openapi-typescript http://localhost:3001/api/docs-json --default-non-nullable false -o lib/api/schema.d.ts"
   },
   "dependencies": {
     "next": "16.4.3",

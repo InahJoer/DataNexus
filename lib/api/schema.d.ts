@@ -611,6 +611,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/engine/connections/{connectionId}/data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Explorar los datos de una tabla o colección con paginación por cursor
+         * @description Devuelve una página y `nextCursor` para pedir la siguiente. Usa cursores nativos de cada motor (keyset sobre la llave primaria en SQL, `_id` en MongoDB, `startAfter` en Firestore): cualquier página cuesta lo mismo y la memoria es constante aunque la tabla tenga millones de filas (RNF-06). Las tablas SQL necesitan llave primaria.
+         */
+        get: operations["DataEngineController_browseData[0]"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/data-engine/connections/{connectionId}/data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Explorar los datos de una tabla o colección con paginación por cursor
+         * @description Devuelve una página y `nextCursor` para pedir la siguiente. Usa cursores nativos de cada motor (keyset sobre la llave primaria en SQL, `_id` en MongoDB, `startAfter` en Firestore): cualquier página cuesta lo mismo y la memoria es constante aunque la tabla tenga millones de filas (RNF-06). Las tablas SQL necesitan llave primaria.
+         */
+        get: operations["DataEngineController_browseData[1]"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/engine/records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Actualizar una celda de una fila en su fuente de origen
+         * @description Disponible para ADMIN y OPERADOR en PostgreSQL, MySQL, SQL Server y Firestore. Requiere el valor observado para rechazar cambios concurrentes; los conflictos devuelven 409.
+         */
+        patch: operations["DataEngineController_updateRecord[0]"];
+        trace?: never;
+    };
+    "/data-engine/records": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Actualizar una celda de una fila en su fuente de origen
+         * @description Disponible para ADMIN y OPERADOR en PostgreSQL, MySQL, SQL Server y Firestore. Requiere el valor observado para rechazar cambios concurrentes; los conflictos devuelven 409.
+         */
+        patch: operations["DataEngineController_updateRecord[1]"];
+        trace?: never;
+    };
     "/engine/join": {
         parameters: {
             query?: never;
@@ -691,6 +771,148 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/engine/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Listar los joins asíncronos del workspace (los propios; ADMIN ve todos) */
+        get: operations["JoinJobsController_list[0]"];
+        put?: never;
+        /**
+         * Encolar un cross-join pesado
+         * @description Valida el payload, lo encola y responde enseguida con el id del job. El join se ejecuta en segundo plano sin bloquear el servidor. Consulte su estado y resultado con GET /engine/jobs/:id.
+         */
+        post: operations["JoinJobsController_enqueue[0]"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/data-engine/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Listar los joins asíncronos del workspace (los propios; ADMIN ve todos) */
+        get: operations["JoinJobsController_list[1]"];
+        put?: never;
+        /**
+         * Encolar un cross-join pesado
+         * @description Valida el payload, lo encola y responde enseguida con el id del job. El join se ejecuta en segundo plano sin bloquear el servidor. Consulte su estado y resultado con GET /engine/jobs/:id.
+         */
+        post: operations["JoinJobsController_enqueue[1]"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/engine/jobs/{jobId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Estado, progreso y resultado paginado de un join asíncrono
+         * @description Cuando el estado es COMPLETADO incluye `resultado` con `offset` y `limit`. El resultado expira tras JOBS_RESULT_TTL_SECONDS.
+         */
+        get: operations["JoinJobsController_get[0]"];
+        put?: never;
+        post?: never;
+        /** Cancelar un join asíncrono en cola o en proceso */
+        delete: operations["JoinJobsController_cancel[0]"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/data-engine/jobs/{jobId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Estado, progreso y resultado paginado de un join asíncrono
+         * @description Cuando el estado es COMPLETADO incluye `resultado` con `offset` y `limit`. El resultado expira tras JOBS_RESULT_TTL_SECONDS.
+         */
+        get: operations["JoinJobsController_get[1]"];
+        put?: never;
+        post?: never;
+        /** Cancelar un join asíncrono en cola o en proceso */
+        delete: operations["JoinJobsController_cancel[1]"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/me/sensitive-fields": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Listar los campos marcados como sensibles */
+        get: operations["SensitiveFieldsController_list"];
+        put?: never;
+        /**
+         * Marcar un campo como sensible
+         * @description Desde ese momento ningún rol sin VIEW_UNMASKED_DATA (LECTOR, AUDITOR) recibe su valor real en cross-joins, exportaciones, reportes programados, joins asíncronos ni exploración de datos.
+         */
+        post: operations["SensitiveFieldsController_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/me/sensitive-fields/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Quitar un campo sensible */
+        delete: operations["SensitiveFieldsController_remove"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reports/executions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Historial de todas las ejecuciones de reportes del workspace (issue #39)
+         * @description Incluye las programadas, las de "Ejecutar ahora" y las de POST /reports/trigger. Más recientes primero.
+         */
+        get: operations["ReportsController_listExecutions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/reports/trigger": {
         parameters: {
             query?: never;
@@ -725,6 +947,235 @@ export interface paths {
         get: operations["ReportsController_downloadLocalReport"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reports/schedules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Listar programaciones del workspace */
+        get: operations["ScheduledReportsController_findAll"];
+        put?: never;
+        /** Crear una programación de reporte */
+        post: operations["ScheduledReportsController_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reports/schedules/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Resumen de programaciones y ejecuciones de hoy */
+        get: operations["ScheduledReportsController_summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reports/schedules/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Consultar una programación */
+        get: operations["ScheduledReportsController_findOne"];
+        put?: never;
+        post?: never;
+        /** Eliminar una programación y su historial */
+        delete: operations["ScheduledReportsController_remove"];
+        options?: never;
+        head?: never;
+        /** Editar una programación */
+        patch: operations["ScheduledReportsController_update"];
+        trace?: never;
+    };
+    "/reports/schedules/{id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pausar una programación */
+        post: operations["ScheduledReportsController_pause"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reports/schedules/{id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reanudar una programación */
+        post: operations["ScheduledReportsController_resume"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reports/schedules/{id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ejecutar ahora sin cambiar el horario ni el estado */
+        post: operations["ScheduledReportsController_runNow"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reports/schedules/{id}/executions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Historial de ejecuciones de la programación (issue #39)
+         * @description Estado, duración, intentos, tamaño, filas, error, messageId y enlace mientras siga vigente. Más recientes primero; admite filtros por estado y origen.
+         */
+        get: operations["ScheduledReportsController_listExecutions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reports/schedules/{id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Alias de /executions (issue #38)
+         * @deprecated
+         * @description Se mantiene por compatibilidad. Use GET /reports/schedules/:id/executions.
+         */
+        get: operations["ScheduledReportsController_listRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/queries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Listar consultas guardadas del workspace
+         * @description ADMIN y OPERADOR ven todas; el LECTOR solo las publicadas y sin su definición.
+         */
+        get: operations["SavedQueriesController_findAll"];
+        put?: never;
+        /**
+         * Guardar una consulta (vista unificada) del Query Builder
+         * @description La definición es el cuerpo de POST /engine/join; se guarda como versión 1.
+         */
+        post: operations["SavedQueriesController_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/queries/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Obtener una consulta guardada */
+        get: operations["SavedQueriesController_findOne"];
+        put?: never;
+        post?: never;
+        /** Eliminar una consulta guardada y su historial de versiones */
+        delete: operations["SavedQueriesController_remove"];
+        options?: never;
+        head?: never;
+        /**
+         * Actualizar una consulta guardada
+         * @description Solo el autor o un ADMIN. Si cambia la definición se crea una versión nueva.
+         */
+        patch: operations["SavedQueriesController_update"];
+        trace?: never;
+    };
+    "/queries/{id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Historial de versiones de la definición */
+        get: operations["SavedQueriesController_listVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/queries/{id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Ejecutar una consulta guardada
+         * @description Ejecuta la definición con el mismo motor que POST /engine/join (límites, filtros y enmascaramiento por rol). El LECTOR solo puede ejecutar consultas publicadas. Se registra como EXECUTE_JOIN en la bitácora.
+         */
+        post: operations["SavedQueriesController_run"];
         delete?: never;
         options?: never;
         head?: never;
@@ -767,6 +1218,26 @@ export interface paths {
          * @description Número de miembros por rol, conexiones por motor y reportes enviados. Disponible para cualquier rol.
          */
         get: operations["WorkspacesController_getStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboard/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Resumen del workspace para la Vista general (issue #40)
+         * @description Conexiones activas/caídas y latencia del último health check, Cross-Joins y exportaciones del mes con su variación, datos procesados frente al límite del plan, consumo de API de 7 días, consultas guardadas recientes, reportes próximos, actividad reciente de la bitácora y estado del entorno. Cualquier rol autenticado; las secciones que el rol no puede ver llegan como null. Se cachea 60 s por workspace y rol.
+         */
+        get: operations["DashboardController_getSummary"];
         put?: never;
         post?: never;
         delete?: never;
@@ -917,7 +1388,7 @@ export interface components {
              * @description Exigir TLS (sslmode=require)
              * @default false
              */
-            ssl: boolean;
+            ssl?: boolean;
         };
         MysqlCredentialsDto: {
             /**
@@ -946,7 +1417,7 @@ export interface components {
              * @description Conectar con TLS
              * @default false
              */
-            ssl: boolean;
+            ssl?: boolean;
         };
         SqlServerCredentialsDto: {
             /**
@@ -975,12 +1446,12 @@ export interface components {
              * @description Cifrar la conexión (Encrypt)
              * @default true
              */
-            encrypt: boolean;
+            encrypt?: boolean;
             /**
              * @description Aceptar certificados no verificados (solo desarrollo)
              * @default false
              */
-            trustServerCertificate: boolean;
+            trustServerCertificate?: boolean;
         };
         MongoCredentialsDto: {
             /**
@@ -1001,7 +1472,7 @@ export interface components {
              * @default (default)
              * @example (default)
              */
-            databaseId: string;
+            databaseId?: string;
         };
         CreateConnectionDto: {
             /**
@@ -1240,6 +1711,53 @@ export interface components {
              */
             fields: string[];
         };
+        BrowseDataResponseDto: {
+            /** @example clientes */
+            entidad: string;
+            /** @example public */
+            esquema?: string;
+            /** @example 50 */
+            limite: number;
+            /**
+             * @description Columnas por las que avanza el cursor (llave primaria, _id o id del documento)
+             * @example [
+             *       "id"
+             *     ]
+             */
+            orden: string[];
+            /**
+             * @description Filas de esta página
+             * @example 50
+             */
+            filas: number;
+            data: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * @description Cursor para pedir la página siguiente; null si es la última
+             * @example eyJ2IjoxLCJiIjoi...
+             */
+            nextCursor: string | null;
+        };
+        UpdateRecordDto: {
+            /**
+             * Format: uuid
+             * @example 61d0a4cf-8b3c-4f27-8540-1c038b38c124
+             */
+            conexionId: string;
+            /** @example clientes */
+            entidad: string;
+            /** @example public */
+            esquema?: string;
+            /** @description ID del documento en Firestore o mapa exacto de columnas de llave primaria SQL. */
+            llavePrimaria: string | {
+                [key: string]: unknown;
+            };
+            /** @example nombre */
+            campo: string;
+            valorAnterior: (string | number | boolean) | null;
+            valorNuevo: (string | number | boolean) | null;
+        };
         DataFilterDto: {
             /**
              * @description Campo de origen que se filtrará
@@ -1250,12 +1768,76 @@ export interface components {
              * @example eq
              * @enum {string}
              */
-            operador: "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in" | "not-in";
+            operador: "eq" | "neq" | "gt" | "gte" | "lt" | "lte" | "in" | "not-in" | "between" | "contains" | "startsWith" | "isNull";
             /**
-             * @description Valor escalar; para in y not-in, lista de hasta 10 valores escalares
+             * @description eq/neq: escalar o null · gt/gte/lt/lte: escalar · in/not-in: lista de 1 a 10 escalares · between: [mínimo, máximo] (números o textos, p. ej. fechas ISO) · contains/startsWith: texto (sin distinguir mayúsculas) · isNull: true (es nulo) o false (no es nulo)
              * @example active
              */
             valor: Record<string, never>;
+        };
+        FilterGroupDto: {
+            /**
+             * @example OR
+             * @enum {string}
+             */
+            logica: "AND" | "OR";
+            /** @description Condiciones o grupos del grupo */
+            filtros: (components["schemas"]["DataFilterDto"] | components["schemas"]["FilterGroupDto"])[];
+        };
+        JoinSourceDto: {
+            /**
+             * @description Alias único de la fuente; se usa en las relaciones y para calificar columnas repetidas
+             * @example clientes
+             */
+            alias: string;
+            /**
+             * @description UUID de la conexión
+             * @example a1b2c3d4-e5f6-4a8b-9c0d-1e2f3a4b5c6d
+             */
+            conexionId: string;
+            /**
+             * @description Tabla, vista o colección de la conexión
+             * @example clientes
+             */
+            entidad: string;
+            /**
+             * @description Esquema SQL de la tabla
+             * @example public
+             */
+            esquema?: string;
+            /** @description Filtros aplicados en el origen (filter pushdown cuando el motor lo admite). Se combinan con AND; usa grupos { logica: 'OR', filtros: [...] } para OR. Máximo 20 condiciones. */
+            filtros?: (components["schemas"]["DataFilterDto"] | components["schemas"]["FilterGroupDto"])[];
+        };
+        JoinKeyPairDto: {
+            /**
+             * @description Campo de la fuente izquierda
+             * @example cliente_id
+             */
+            izquierda: string;
+            /**
+             * @description Campo de la fuente derecha
+             * @example cliente_ref
+             */
+            derecha: string;
+        };
+        JoinRelationDto: {
+            /**
+             * @description Alias de una fuente ya unida
+             * @example clientes
+             */
+            izquierda: string;
+            /**
+             * @description Alias de la fuente que se añade
+             * @example pedidos
+             */
+            derecha: string;
+            /**
+             * @default INNER
+             * @enum {string}
+             */
+            tipo?: "INNER" | "LEFT" | "RIGHT" | "FULL";
+            /** @description De 1 a 3 pares de llaves (llave compuesta) */
+            llaves: components["schemas"]["JoinKeyPairDto"][];
         };
         AggregationMetricDto: {
             /**
@@ -1272,45 +1854,55 @@ export interface components {
             as: string;
         };
         CrossJoinDto: {
+            /** @description Formato de N fuentes: de 2 a 5 tablas o colecciones */
+            fuentes?: components["schemas"]["JoinSourceDto"][];
+            /** @description Formato de N fuentes: una relación por cada fuente que se añade. La primera une dos fuentes y cada una de las siguientes une una fuente nueva (derecha) a una ya unida (izquierda). */
+            relaciones?: components["schemas"]["JoinRelationDto"][];
             /**
-             * @description UUID de la conexión SQL origen
+             * @description Formato original: tipo de join entre la tabla SQL y la colección NoSQL
+             * @default INNER
+             * @enum {string}
+             */
+            tipoJoin?: "INNER" | "LEFT" | "RIGHT" | "FULL";
+            /**
+             * @description Formato original: UUID de la conexión SQL origen
              * @example a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d
              */
-            conexionSqlId: string;
+            conexionSqlId?: string;
             /**
-             * @description UUID de la conexión NoSQL origen
+             * @description Formato original: UUID de la conexión NoSQL origen
              * @example b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e
              */
-            conexionNoSqlId: string;
+            conexionNoSqlId?: string;
             /**
-             * @description Nombre de la tabla SQL a consultar
+             * @description Formato original: nombre de la tabla SQL a consultar
              * @example clientes
              */
-            tablaSql: string;
+            tablaSql?: string;
             /**
              * @description Esquema SQL de la tabla cuando se conoce o hay nombres duplicados
              * @example dbo
              */
             esquemaSql?: string;
             /**
-             * @description Nombre de la colección NoSQL a consultar
+             * @description Formato original: nombre de la colección NoSQL a consultar
              * @example pedidos
              */
-            coleccionNoSql: string;
+            coleccionNoSql?: string;
             /**
-             * @description Nombre de la llave en la tabla SQL para el Join
+             * @description Formato original: nombre de la llave en la tabla SQL para el Join
              * @example id
              */
-            llaveSql: string;
+            llaveSql?: string;
             /**
-             * @description Nombre de la llave en la colección NoSQL para el Join
+             * @description Formato original: nombre de la llave en la colección NoSQL para el Join
              * @example cliente_id
              */
-            llaveNoSql: string;
-            /** @description Filtros SQL AND aplicados en la consulta del origen */
-            filtrosSql?: components["schemas"]["DataFilterDto"][];
-            /** @description Filtros NoSQL AND aplicados en la consulta del origen */
-            filtrosNoSql?: components["schemas"]["DataFilterDto"][];
+            llaveNoSql?: string;
+            /** @description Formato original: filtros de la tabla SQL. Se combinan con AND; usa grupos { logica: 'OR', filtros: [...] } para OR. Máximo 20 condiciones. */
+            filtrosSql?: (components["schemas"]["DataFilterDto"] | components["schemas"]["FilterGroupDto"])[];
+            /** @description Formato original: filtros de la colección NoSQL. Se combinan con AND; usa grupos { logica: 'OR', filtros: [...] } para OR. Máximo 20 condiciones. */
+            filtrosNoSql?: (components["schemas"]["DataFilterDto"] | components["schemas"]["FilterGroupDto"])[];
             /**
              * @description Campos unificados usados para agrupar filas después del cross-join
              * @example [
@@ -1324,12 +1916,18 @@ export interface components {
              * @description Límite de elementos por página
              * @default 50
              */
-            limit: number;
+            limit?: number;
             /**
              * @description Desplazamiento (offset) para la paginación
              * @default 0
              */
-            offset: number;
+            offset?: number;
+            /**
+             * @description Máximo de filas del resultado (RF-16). Se aplica después del join y de los filtros; `total` cuenta las filas conservadas y `truncado` indica si había más.
+             * @example 100
+             * @enum {number}
+             */
+            limiteFilas?: 50 | 100 | 500 | 1000;
         };
         PaginatedCrossJoinResultDto: {
             /** @example 128 */
@@ -1342,47 +1940,68 @@ export interface components {
             data: {
                 [key: string]: unknown;
             }[];
+            /**
+             * @description Límite de filas pedido (RF-16)
+             * @example 100
+             * @enum {number}
+             */
+            limiteFilas?: 50 | 100 | 500 | 1000;
+            /**
+             * @description true si el resultado tenía más filas que limiteFilas
+             * @example true
+             */
+            truncado?: boolean;
         };
         ExportCrossJoinDto: {
+            /** @description Formato de N fuentes: de 2 a 5 tablas o colecciones */
+            fuentes?: components["schemas"]["JoinSourceDto"][];
+            /** @description Formato de N fuentes: una relación por cada fuente que se añade. La primera une dos fuentes y cada una de las siguientes une una fuente nueva (derecha) a una ya unida (izquierda). */
+            relaciones?: components["schemas"]["JoinRelationDto"][];
             /**
-             * @description UUID de la conexión SQL origen
+             * @description Formato original: tipo de join entre la tabla SQL y la colección NoSQL
+             * @default INNER
+             * @enum {string}
+             */
+            tipoJoin?: "INNER" | "LEFT" | "RIGHT" | "FULL";
+            /**
+             * @description Formato original: UUID de la conexión SQL origen
              * @example a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d
              */
-            conexionSqlId: string;
+            conexionSqlId?: string;
             /**
-             * @description UUID de la conexión NoSQL origen
+             * @description Formato original: UUID de la conexión NoSQL origen
              * @example b2c3d4e5-f6a7-8b9c-0d1e-2f3a4b5c6d7e
              */
-            conexionNoSqlId: string;
+            conexionNoSqlId?: string;
             /**
-             * @description Nombre de la tabla SQL a consultar
+             * @description Formato original: nombre de la tabla SQL a consultar
              * @example clientes
              */
-            tablaSql: string;
+            tablaSql?: string;
             /**
              * @description Esquema SQL de la tabla cuando se conoce o hay nombres duplicados
              * @example dbo
              */
             esquemaSql?: string;
             /**
-             * @description Nombre de la colección NoSQL a consultar
+             * @description Formato original: nombre de la colección NoSQL a consultar
              * @example pedidos
              */
-            coleccionNoSql: string;
+            coleccionNoSql?: string;
             /**
-             * @description Nombre de la llave en la tabla SQL para el Join
+             * @description Formato original: nombre de la llave en la tabla SQL para el Join
              * @example id
              */
-            llaveSql: string;
+            llaveSql?: string;
             /**
-             * @description Nombre de la llave en la colección NoSQL para el Join
+             * @description Formato original: nombre de la llave en la colección NoSQL para el Join
              * @example cliente_id
              */
-            llaveNoSql: string;
-            /** @description Filtros SQL AND aplicados en la consulta del origen */
-            filtrosSql?: components["schemas"]["DataFilterDto"][];
-            /** @description Filtros NoSQL AND aplicados en la consulta del origen */
-            filtrosNoSql?: components["schemas"]["DataFilterDto"][];
+            llaveNoSql?: string;
+            /** @description Formato original: filtros de la tabla SQL. Se combinan con AND; usa grupos { logica: 'OR', filtros: [...] } para OR. Máximo 20 condiciones. */
+            filtrosSql?: (components["schemas"]["DataFilterDto"] | components["schemas"]["FilterGroupDto"])[];
+            /** @description Formato original: filtros de la colección NoSQL. Se combinan con AND; usa grupos { logica: 'OR', filtros: [...] } para OR. Máximo 20 condiciones. */
+            filtrosNoSql?: (components["schemas"]["DataFilterDto"] | components["schemas"]["FilterGroupDto"])[];
             /**
              * @description Campos unificados usados para agrupar filas después del cross-join
              * @example [
@@ -1396,18 +2015,148 @@ export interface components {
              * @description Límite de elementos por página
              * @default 50
              */
-            limit: number;
+            limit?: number;
             /**
              * @description Desplazamiento (offset) para la paginación
              * @default 0
              */
-            offset: number;
+            offset?: number;
+            /**
+             * @description Máximo de filas del resultado (RF-16). Se aplica después del join y de los filtros; `total` cuenta las filas conservadas y `truncado` indica si había más.
+             * @example 100
+             * @enum {number}
+             */
+            limiteFilas?: 50 | 100 | 500 | 1000;
             /**
              * @description Formato de exportación del archivo resultante
              * @example excel
              * @enum {string}
              */
             format: "excel" | "pdf" | "json" | "word";
+        };
+        JobResultPageDto: {
+            /** @example 120000 */
+            total: number;
+            /** @example 0 */
+            offset: number;
+            /** @example 50 */
+            limit: number;
+            data: {
+                [key: string]: unknown;
+            }[];
+        };
+        JoinJobStatusDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @example EN_PROCESO
+             * @enum {string}
+             */
+            estado: "EN_COLA" | "EN_PROCESO" | "COMPLETADO" | "FALLIDO" | "CANCELADO";
+            /** @example 45 */
+            progreso: number;
+            /** @example dbo.clientes x pedidos */
+            descripcion: string;
+            /** @example ana@empresa.com */
+            creadoPor: string;
+            /** Format: date-time */
+            creadoEn: string;
+            /** Format: date-time */
+            iniciadoEn?: string;
+            /** Format: date-time */
+            terminadoEn?: string;
+            /**
+             * Format: date-time
+             * @description Cuándo se borran el estado y el resultado
+             */
+            expiraEn?: string;
+            /** @example 120000 */
+            totalFilas?: number;
+            truncado?: boolean;
+            /** @example El join supera el máximo de 100000 filas configurado */
+            error?: string;
+            /** @description Solo cuando el estado es COMPLETADO */
+            resultado?: components["schemas"]["JobResultPageDto"];
+        };
+        CreateSensitiveFieldDto: {
+            /**
+             * @description Nombre del campo o columna (sin distinguir mayúsculas)
+             * @example cedula
+             */
+            campo: string;
+            /**
+             * @description EMAIL: conserva el dominio · PHONE: conserva los 2 últimos dígitos · FULL: oculta todo · HASH: huella estable (permite agrupar sin revelar el valor)
+             * @default FULL
+             * @enum {string}
+             */
+            estrategia?: "EMAIL" | "PHONE" | "FULL" | "HASH";
+            /**
+             * Format: uuid
+             * @description Limita la regla a una conexión; sin ella aplica a todas
+             */
+            conexionId?: string;
+            /**
+             * @description Limita la regla a una tabla o colección; sin ella aplica a todas
+             * @example clientes
+             */
+            entidad?: string;
+        };
+        ReportExecutionResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * Format: uuid
+             * @description null en reportes bajo demanda.
+             */
+            scheduledReportId?: Record<string, never> | null;
+            /**
+             * @description SCHEDULED: horario; MANUAL: "Ejecutar ahora"; ON_DEMAND: POST /reports/trigger.
+             * @enum {string}
+             */
+            trigger: "SCHEDULED" | "MANUAL" | "ON_DEMAND";
+            /**
+             * @description RUNNING incluye los reintentos en curso.
+             * @enum {string}
+             */
+            status: "RUNNING" | "SUCCEEDED" | "FAILED";
+            /** @example Ventas diarias */
+            titulo?: Record<string, never> | null;
+            /** @example pdf */
+            formato?: Record<string, never> | null;
+            /** Format: date-time */
+            scheduledFor?: Record<string, never> | null;
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            finishedAt?: Record<string, never> | null;
+            /**
+             * @description Duración total en milisegundos, con reintentos.
+             * @example 2350
+             */
+            durationMs?: Record<string, never> | null;
+            /**
+             * @description Intentos realizados (1 = sin reintentos).
+             * @example 1
+             */
+            attempts: number;
+            totalRows?: Record<string, never> | null;
+            /**
+             * @description Tamaño del archivo en bytes.
+             * @example 48213
+             */
+            fileSizeBytes?: Record<string, never> | null;
+            /** @description Mensaje seguro, sin datos de conexión. */
+            error?: Record<string, never> | null;
+            /** @description Solo mientras el enlace no haya vencido. */
+            downloadUrl?: Record<string, never> | null;
+            /** Format: date-time */
+            expiresAt?: Record<string, never> | null;
+            messageId?: Record<string, never> | null;
+            /**
+             * Format: date-time
+             * @description Cuándo se avisó del fallo al autor.
+             */
+            authorNotifiedAt?: Record<string, never> | null;
         };
         TriggerReportDto: {
             /**
@@ -1424,11 +2173,11 @@ export interface components {
              */
             recipients: string[];
             /**
-             * @description Formato del archivo adjunto (excel o pdf)
+             * @description Formato del archivo de reporte (Excel, PDF, JSON o Word)
              * @example excel
              * @enum {string}
              */
-            format: "excel" | "pdf" | "word";
+            format: "excel" | "pdf" | "json" | "word";
             /** @description Parámetros del Cross-Join para extraer y combinar los datos */
             crossJoinParams: components["schemas"]["CrossJoinDto"];
             /**
@@ -1436,6 +2185,234 @@ export interface components {
              * @example Estimados, adjunto el consolidado generado por DataNexus.
              */
             customMessage?: string;
+        };
+        CreateScheduledReportDto: {
+            /**
+             * Format: uuid
+             * @description Consulta guardada que se ejecutará.
+             */
+            savedQueryId: string;
+            /** @example Ventas semanales */
+            reportTitle: string;
+            /**
+             * @example weekly
+             * @enum {string}
+             */
+            frequency: "daily" | "weekly" | "monthly";
+            /**
+             * @description Hora local en formato HH:mm.
+             * @example 08:30
+             */
+            time: string;
+            /** @description Día semanal: 0 domingo, 6 sábado. */
+            dayOfWeek?: number;
+            /** @description Día del mes. */
+            dayOfMonth?: number;
+            /**
+             * @description Zona IANA; por defecto la del workspace.
+             * @example America/Managua
+             */
+            timezone?: string;
+            /**
+             * @example excel
+             * @enum {string}
+             */
+            format: "excel" | "pdf" | "json" | "word";
+            /**
+             * @example [
+             *       "analista@empresa.com"
+             *     ]
+             */
+            recipients?: string[];
+            /**
+             * @description Envía un enlace firmado al terminar.
+             * @default true
+             */
+            sendEmail?: boolean;
+        };
+        ScheduledReportResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            savedQueryId: string;
+            savedQueryName: string;
+            reportTitle: string;
+            /** @enum {string} */
+            frequency: "daily" | "weekly" | "monthly";
+            /** @example 08:30 */
+            time: string;
+            dayOfWeek?: Record<string, never> | null;
+            dayOfMonth?: Record<string, never> | null;
+            timezone: string;
+            /** @example 30 8 * * 1 */
+            cronExpression: string;
+            /** Format: date-time */
+            nextRunAt?: Record<string, never> | null;
+            /** @enum {string} */
+            format: "excel" | "pdf" | "json" | "word";
+            recipients: string[];
+            sendEmail: boolean;
+            /** @enum {string} */
+            status: "ACTIVE" | "PAUSED" | "ERROR";
+            /** Format: date-time */
+            lastRunAt?: Record<string, never> | null;
+            lastError?: Record<string, never> | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        ScheduledReportsSummaryDto: {
+            active: number;
+            paused: number;
+            error: number;
+            executionsToday: number;
+            /** Format: date-time */
+            nextExecutionAt?: Record<string, never> | null;
+        };
+        UpdateScheduledReportDto: {
+            /**
+             * Format: uuid
+             * @description Consulta guardada que se ejecutará.
+             */
+            savedQueryId?: string;
+            /** @example Ventas semanales */
+            reportTitle?: string;
+            /**
+             * @example weekly
+             * @enum {string}
+             */
+            frequency?: "daily" | "weekly" | "monthly";
+            /**
+             * @description Hora local en formato HH:mm.
+             * @example 08:30
+             */
+            time?: string;
+            /** @description Día semanal: 0 domingo, 6 sábado. */
+            dayOfWeek?: number;
+            /** @description Día del mes. */
+            dayOfMonth?: number;
+            /**
+             * @description Zona IANA; por defecto la del workspace.
+             * @example America/Managua
+             */
+            timezone?: string;
+            /**
+             * @example excel
+             * @enum {string}
+             */
+            format?: "excel" | "pdf" | "json" | "word";
+            /**
+             * @example [
+             *       "analista@empresa.com"
+             *     ]
+             */
+            recipients?: string[];
+            /**
+             * @description Envía un enlace firmado al terminar.
+             * @default true
+             */
+            sendEmail?: boolean;
+        };
+        CreateSavedQueryDto: {
+            /** @example Ventas por cliente */
+            nombre: string;
+            /** @example Pedidos de MySQL cruzados con clientes de Firestore */
+            descripcion?: string;
+            /** @description Definición del join: el mismo cuerpo de POST /engine/join. limit y offset no se guardan; se indican al ejecutar. */
+            definicion: components["schemas"]["CrossJoinDto"];
+            /**
+             * @description PRIVADA: solo ADMIN y OPERADOR. PUBLICADA: también la ve y ejecuta el LECTOR.
+             * @default PRIVADA
+             * @enum {string}
+             */
+            visibilidad?: "PRIVADA" | "PUBLICADA";
+        };
+        SavedQueryAuthorDto: {
+            /** Format: uuid */
+            id: string;
+            /** @example Ana Pérez */
+            name: string;
+        };
+        SavedQueryResponseDto: {
+            /** Format: uuid */
+            id: string;
+            nombre: string;
+            descripcion: string | null;
+            /** @description Definición del join. null para el LECTOR, que solo consume el resultado. */
+            definicion: components["schemas"]["CrossJoinDto"] | null;
+            /**
+             * @description Versión vigente de la definición.
+             * @example 3
+             */
+            version: number;
+            /** @enum {string} */
+            visibilidad: "PRIVADA" | "PUBLICADA";
+            autor: components["schemas"]["SavedQueryAuthorDto"] | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        UpdateSavedQueryDto: {
+            /** @example Ventas por cliente */
+            nombre?: string;
+            /** @example Pedidos de MySQL cruzados con clientes de Firestore */
+            descripcion?: string;
+            /** @description Definición del join: el mismo cuerpo de POST /engine/join. limit y offset no se guardan; se indican al ejecutar. */
+            definicion?: components["schemas"]["CrossJoinDto"];
+            /**
+             * @description PRIVADA: solo ADMIN y OPERADOR. PUBLICADA: también la ve y ejecuta el LECTOR.
+             * @default PRIVADA
+             * @enum {string}
+             */
+            visibilidad?: "PRIVADA" | "PUBLICADA";
+        };
+        SavedQueryVersionDto: {
+            /** @example 2 */
+            version: number;
+            definicion: components["schemas"]["CrossJoinDto"];
+            autor: components["schemas"]["SavedQueryAuthorDto"] | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        RunSavedQueryDto: {
+            /** @default 50 */
+            limit?: number;
+            /** @default 0 */
+            offset?: number;
+            /** @description Versión de la definición a ejecutar. Por defecto la vigente. Solo ADMIN y OPERADOR. */
+            version?: number;
+        };
+        SavedQueryRunResultDto: {
+            /** @example 128 */
+            total: number;
+            /** @example 50 */
+            limit: number;
+            /** @example 0 */
+            offset: number;
+            /** @description Filas combinadas; los nombres de propiedad dependen de las fuentes. */
+            data: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * @description Límite de filas pedido (RF-16)
+             * @example 100
+             * @enum {number}
+             */
+            limiteFilas?: 50 | 100 | 500 | 1000;
+            /**
+             * @description true si el resultado tenía más filas que limiteFilas
+             * @example true
+             */
+            truncado?: boolean;
+            /** Format: uuid */
+            consultaId: string;
+            /**
+             * @description Versión de la definición que se ejecutó.
+             * @example 3
+             */
+            version: number;
         };
         WorkspaceSettingsDto: {
             /**
@@ -1538,6 +2515,247 @@ export interface components {
              *     }
              */
             reportes: Record<string, never>;
+        };
+        DashboardPeriodDto: {
+            /** @example 2026-11 */
+            mes: string;
+            /**
+             * Format: date-time
+             * @description Inicio del mes en la zona horaria del workspace.
+             */
+            inicio: string;
+            /**
+             * Format: date-time
+             * @description Inicio del mes siguiente (exclusivo).
+             */
+            fin: string;
+        };
+        ConnectionAttentionDto: {
+            /** Format: uuid */
+            id: string;
+            /** @example CRM Legado */
+            nombre: string;
+            /** @example SQLSERVER */
+            tipoMotor: string;
+            /**
+             * @description Resultado del último health check.
+             * @example UNAVAILABLE
+             */
+            estado: string;
+            /** Format: date-time */
+            ultimoHealthAt?: Record<string, never> | null;
+        };
+        ConnectionLatencyDto: {
+            /** Format: uuid */
+            id: string;
+            /** @example ERP Producción */
+            nombre: string;
+            /** @example POSTGRESQL */
+            tipoMotor: string;
+            /** @example 24 */
+            latenciaMs: number;
+            /** @description true si supera el umbral configurado. */
+            superaUmbral: boolean;
+            /** Format: date-time */
+            ultimoHealthAt: string;
+        };
+        DashboardConnectionsDto: {
+            /** @example 13 */
+            total: number;
+            /**
+             * @description Conexiones cuyo último health check fue correcto.
+             * @example 12
+             */
+            activas: number;
+            /**
+             * @description Conexiones cuyo último health check falló.
+             * @example 1
+             */
+            caidas: number;
+            /**
+             * @description Conexiones nunca comprobadas o con motor sin health check.
+             * @example 0
+             */
+            sinComprobar: number;
+            /**
+             * @description Motores con al menos una conexión activa.
+             * @example [
+             *       "POSTGRESQL",
+             *       "SQLSERVER",
+             *       "FIRESTORE"
+             *     ]
+             */
+            motoresConectados: string[];
+            /** @description Conexiones que requieren atención (último health check fallido). */
+            requierenAtencion: components["schemas"]["ConnectionAttentionDto"][];
+            /**
+             * @description Umbral de latencia (CONNECTION_LATENCY_THRESHOLD_MS).
+             * @example 100
+             */
+            umbralLatenciaMs: number;
+            /** @description Latencia del último health check correcto, de menor a mayor. */
+            latencias: components["schemas"]["ConnectionLatencyDto"][];
+            /**
+             * Format: date-time
+             * @description Health check más reciente del workspace.
+             */
+            ultimaComprobacion?: Record<string, never> | null;
+        };
+        CrossJoinsMetricDto: {
+            /** @example 1284 */
+            mesActual: number;
+            /** @example 1083 */
+            mesAnterior: number;
+            /**
+             * @description Variación % respecto al mes anterior; null si no hubo actividad.
+             * @example 18.6
+             */
+            variacionPct?: Record<string, never> | null;
+            /** Format: date-time */
+            ultimaEjecucion?: Record<string, never> | null;
+        };
+        MonthlyCountDto: {
+            /** @example 1284 */
+            mesActual: number;
+            /** @example 1083 */
+            mesAnterior: number;
+            /**
+             * @description Variación % respecto al mes anterior; null si no hubo actividad.
+             * @example 18.6
+             */
+            variacionPct?: Record<string, never> | null;
+        };
+        DataProcessedMetricDto: {
+            /**
+             * @description Bytes extraídos de las fuentes este mes (joins, exportaciones y reportes).
+             * @example 904727658496
+             */
+            bytesMesActual: number;
+            /** @example 804727658496 */
+            bytesMesAnterior: number;
+            /** @example 12.4 */
+            variacionPct?: Record<string, never> | null;
+            /**
+             * @description Límite del plan en bytes (WORKSPACE_DATA_LIMIT_GB).
+             * @example 1099511627776
+             */
+            limitePlanBytes: number;
+            /**
+             * @description Porcentaje del plan usado este mes.
+             * @example 82.3
+             */
+            usoPlanPct: number;
+        };
+        ApiUsageDayDto: {
+            /**
+             * @description Día en UTC.
+             * @example 2026-11-06
+             */
+            dia: string;
+            /** @example 18234 */
+            solicitudes: number;
+        };
+        ApiUsageMetricDto: {
+            /** @description Últimos 7 días, del más antiguo a hoy. */
+            dias: components["schemas"]["ApiUsageDayDto"][];
+            /** @example 124806 */
+            totalSemana: number;
+            /** @example 115348 */
+            totalSemanaAnterior: number;
+            /** @example 8.2 */
+            variacionPct?: Record<string, never> | null;
+        };
+        RecentSavedQueryDto: {
+            /** Format: uuid */
+            id: string;
+            /** @example Ventas y eventos por cliente */
+            nombre: string;
+            /**
+             * @description Motores de las fuentes, en orden.
+             * @example [
+             *       "SQLSERVER",
+             *       "FIRESTORE"
+             *     ]
+             */
+            fuentes: string[];
+            /** @example Ana Martínez */
+            autor?: Record<string, never> | null;
+            /** Format: date-time */
+            actualizadaEn: string;
+        };
+        UpcomingReportDto: {
+            /** Format: uuid */
+            id: string;
+            /** @example Ventas diarias */
+            nombre: string;
+            /** @example pdf */
+            formato: string;
+            /** Format: date-time */
+            proximaEjecucion: string;
+        };
+        RecentActivityDto: {
+            /** Format: uuid */
+            id: string;
+            /** @example EXECUTE_JOIN */
+            tipo: string;
+            /** @example Ejecutó un Cross-Join */
+            descripcion: string;
+            /** @enum {string} */
+            resultado: "SUCCESS" | "FAILURE";
+            /** @example ana@acme.com */
+            actor?: Record<string, never> | null;
+            /** @example CROSS_JOIN */
+            objetivo?: Record<string, never> | null;
+            /** Format: date-time */
+            fecha: string;
+        };
+        PlatformServiceDto: {
+            /** @example Base de datos */
+            servicio: string;
+            /** @enum {string} */
+            estado: "OPERATIVO" | "DEGRADADO" | "CAIDO" | "NO_CONFIGURADO";
+            /** @example PostgreSQL responde */
+            detalle: string;
+            /** @example 3 */
+            latenciaMs?: Record<string, never> | null;
+        };
+        EnvironmentStatusDto: {
+            /**
+             * @description null si el rol no puede ver conexiones.
+             * @example 1
+             */
+            conexionesConError?: Record<string, never> | null;
+            servicios: components["schemas"]["PlatformServiceDto"][];
+            /**
+             * @description Peor estado entre los servicios configurados.
+             * @enum {string}
+             */
+            estadoGeneral: "OPERATIVO" | "DEGRADADO" | "CAIDO";
+        };
+        DashboardSummaryDto: {
+            /** Format: date-time */
+            generadoEn: string;
+            /**
+             * Format: date-time
+             * @description Hasta cuándo se sirve esta respuesta desde la caché (60 s).
+             */
+            cacheHasta: string;
+            /** @example America/Managua */
+            zonaHoraria: string;
+            periodo: components["schemas"]["DashboardPeriodDto"];
+            /** @description Solo ADMIN y OPERADOR. */
+            conexiones?: components["schemas"]["DashboardConnectionsDto"] | null;
+            crossJoins: components["schemas"]["CrossJoinsMetricDto"];
+            exportaciones: components["schemas"]["MonthlyCountDto"];
+            datosProcesados: components["schemas"]["DataProcessedMetricDto"];
+            consumoApi: components["schemas"]["ApiUsageMetricDto"];
+            /** @description El LECTOR solo ve las publicadas; null para AUDITOR. */
+            consultasRecientes?: components["schemas"]["RecentSavedQueryDto"][] | null;
+            /** @description Solo ADMIN y OPERADOR. */
+            reportesProximos?: components["schemas"]["UpcomingReportDto"][] | null;
+            /** @description ADMIN y AUDITOR ven todo el workspace; el resto, su propia actividad. */
+            actividadReciente: components["schemas"]["RecentActivityDto"][];
+            entorno: components["schemas"]["EnvironmentStatusDto"];
         };
     };
     responses: never;
@@ -1783,7 +3001,7 @@ export interface operations {
                 /** @description Filtrar registros hasta esta fecha (formato ISO 8601) */
                 fechaFin?: string;
                 /** @description Filtrar por tipo de acción o evento */
-                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED" | "INVITATION_RESENT" | "INVITATION_REVOKED" | "INVITATION_ACCEPTED" | "USER_REMOVED";
+                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED" | "INVITATION_RESENT" | "INVITATION_REVOKED" | "INVITATION_ACCEPTED" | "USER_REMOVED" | "BROWSE_DATA" | "SAVED_QUERY_CREATED" | "SAVED_QUERY_UPDATED" | "SAVED_QUERY_DELETED" | "SCHEDULED_REPORT_CREATED" | "SCHEDULED_REPORT_UPDATED" | "SCHEDULED_REPORT_DELETED" | "SCHEDULED_REPORT_RUN";
             };
             header?: never;
             path?: never;
@@ -1824,7 +3042,7 @@ export interface operations {
                 /** @description Filtrar registros hasta esta fecha (formato ISO 8601) */
                 fechaFin?: string;
                 /** @description Filtrar por tipo de acción o evento */
-                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED" | "INVITATION_RESENT" | "INVITATION_REVOKED" | "INVITATION_ACCEPTED" | "USER_REMOVED";
+                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED" | "INVITATION_RESENT" | "INVITATION_REVOKED" | "INVITATION_ACCEPTED" | "USER_REMOVED" | "BROWSE_DATA" | "SAVED_QUERY_CREATED" | "SAVED_QUERY_UPDATED" | "SAVED_QUERY_DELETED" | "SCHEDULED_REPORT_CREATED" | "SCHEDULED_REPORT_UPDATED" | "SCHEDULED_REPORT_DELETED" | "SCHEDULED_REPORT_RUN";
                 format?: "csv" | "json";
             };
             header?: never;
@@ -2904,6 +4122,344 @@ export interface operations {
             };
         };
     };
+    "DataEngineController_browseData[0]": {
+        parameters: {
+            query: {
+                /** @description Tabla, vista o colección */
+                entidad: string;
+                /** @description Esquema SQL (si se omite: public / el de la conexión) */
+                esquema?: string;
+                /** @description Filas por página */
+                limite?: number;
+                /** @description Cursor opaco devuelto en `nextCursor` de la página anterior. Sin cursor se lee la primera página. */
+                cursor?: string;
+                /** @description Filtros en JSON con el mismo formato que en el cross-join (condiciones y grupos AND/OR), por ejemplo [{"campo":"pais","operador":"eq","valor":"NI"}]. Se aplican antes de paginar. */
+                filtros?: string;
+            };
+            header?: never;
+            path: {
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowseDataResponseDto"];
+                };
+            };
+            /** @description Parámetros, filtros o cursor no válidos; motor sin paginación o tabla sin llave primaria. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Se requiere rol ADMIN u OPERADOR para explorar datos. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Conexión fuera del workspace o inexistente. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description La página supera el máximo de bytes configurado. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Falló la consulta en la fuente externa. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description La lectura de la página superó el límite de 10 segundos. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "DataEngineController_browseData[1]": {
+        parameters: {
+            query: {
+                /** @description Tabla, vista o colección */
+                entidad: string;
+                /** @description Esquema SQL (si se omite: public / el de la conexión) */
+                esquema?: string;
+                /** @description Filas por página */
+                limite?: number;
+                /** @description Cursor opaco devuelto en `nextCursor` de la página anterior. Sin cursor se lee la primera página. */
+                cursor?: string;
+                /** @description Filtros en JSON con el mismo formato que en el cross-join (condiciones y grupos AND/OR), por ejemplo [{"campo":"pais","operador":"eq","valor":"NI"}]. Se aplican antes de paginar. */
+                filtros?: string;
+            };
+            header?: never;
+            path: {
+                connectionId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowseDataResponseDto"];
+                };
+            };
+            /** @description Parámetros, filtros o cursor no válidos; motor sin paginación o tabla sin llave primaria. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Se requiere rol ADMIN u OPERADOR para explorar datos. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Conexión fuera del workspace o inexistente. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description La página supera el máximo de bytes configurado. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Falló la consulta en la fuente externa. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description La lectura de la página superó el límite de 10 segundos. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "DataEngineController_updateRecord[0]": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRecordDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example true */
+                        actualizada?: boolean;
+                        /** @example clientes */
+                        entidad?: string;
+                        /** @example nombre */
+                        campo?: string;
+                        valorAnterior?: (string | number | boolean) | null;
+                        valorNuevo?: (string | number | boolean) | null;
+                    };
+                };
+            };
+            /** @description Payload, entidad, campo o llave primaria no válidos. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Solo ADMIN y OPERADOR pueden editar registros. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Conexión fuera del workspace, tabla o registro inexistente. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description El valor de la celda cambió desde la última lectura. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Falló la actualización en la fuente externa. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description La celda se actualizó, pero no se pudo guardar el evento de auditoría. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description La actualización superó el tiempo máximo de la fuente. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "DataEngineController_updateRecord[1]": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateRecordDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @example true */
+                        actualizada?: boolean;
+                        /** @example clientes */
+                        entidad?: string;
+                        /** @example nombre */
+                        campo?: string;
+                        valorAnterior?: (string | number | boolean) | null;
+                        valorNuevo?: (string | number | boolean) | null;
+                    };
+                };
+            };
+            /** @description Payload, entidad, campo o llave primaria no válidos. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Solo ADMIN y OPERADOR pueden editar registros. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Conexión fuera del workspace, tabla o registro inexistente. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description El valor de la celda cambió desde la última lectura. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Falló la actualización en la fuente externa. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description La celda se actualizó, pero no se pudo guardar el evento de auditoría. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description La actualización superó el tiempo máximo de la fuente. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     "DataEngineController_crossJoin[0]": {
         parameters: {
             query?: never;
@@ -3178,6 +4734,407 @@ export interface operations {
             };
         };
     };
+    "JoinJobsController_list[0]": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinJobStatusDto"][];
+                };
+            };
+        };
+    };
+    "JoinJobsController_enqueue[0]": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CrossJoinDto"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinJobStatusDto"];
+                };
+            };
+            /** @description Payload inválido (mismas reglas que POST /engine/join). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Se requiere rol ADMIN u OPERADOR. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description El workspace alcanzó el máximo de joins en cola o en proceso. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "JoinJobsController_list[1]": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinJobStatusDto"][];
+                };
+            };
+        };
+    };
+    "JoinJobsController_enqueue[1]": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CrossJoinDto"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinJobStatusDto"];
+                };
+            };
+            /** @description Payload inválido (mismas reglas que POST /engine/join). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Se requiere rol ADMIN u OPERADOR. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description El workspace alcanzó el máximo de joins en cola o en proceso. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "JoinJobsController_get[0]": {
+        parameters: {
+            query?: {
+                /** @description Desplazamiento dentro del resultado */
+                offset?: number;
+                /** @description Filas del resultado por página */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                jobId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinJobStatusDto"];
+                };
+            };
+            /** @description Job inexistente, expirado o de otro usuario/workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "JoinJobsController_cancel[0]": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinJobStatusDto"];
+                };
+            };
+            /** @description Job inexistente, expirado o de otro usuario/workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description El job ya terminó. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "JoinJobsController_get[1]": {
+        parameters: {
+            query?: {
+                /** @description Desplazamiento dentro del resultado */
+                offset?: number;
+                /** @description Filas del resultado por página */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                jobId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinJobStatusDto"];
+                };
+            };
+            /** @description Job inexistente, expirado o de otro usuario/workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "JoinJobsController_cancel[1]": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinJobStatusDto"];
+                };
+            };
+            /** @description Job inexistente, expirado o de otro usuario/workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description El job ya terminó. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    SensitiveFieldsController_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Reglas de enmascaramiento del workspace */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Solo ADMINISTRADOR. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    SensitiveFieldsController_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSensitiveFieldDto"];
+            };
+        };
+        responses: {
+            /** @description Regla creada */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description La conexión no pertenece al workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Ya existe una regla igual. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    SensitiveFieldsController_remove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Regla eliminada */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Regla inexistente o de otro workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ReportsController_listExecutions: {
+        parameters: {
+            query?: {
+                status?: "RUNNING" | "SUCCEEDED" | "FAILED";
+                trigger?: "SCHEDULED" | "MANUAL" | "ON_DEMAND";
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportExecutionResponseDto"][];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Se requiere rol ADMIN u OPERADOR. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     ReportsController_trigger: {
         parameters: {
             query?: never;
@@ -3251,6 +5208,678 @@ export interface operations {
             };
             /** @description El reporte no existe en almacenamiento local. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ScheduledReportsController_findAll: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledReportResponseDto"][];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ScheduledReportsController_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateScheduledReportDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledReportResponseDto"];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Se requiere rol ADMIN u OPERADOR. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description La consulta está en uso o la configuración no se puede programar. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ScheduledReportsController_summary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledReportsSummaryDto"];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ScheduledReportsController_findOne: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledReportResponseDto"];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Programación no encontrada en el workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ScheduledReportsController_remove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Programación eliminada. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Programación no encontrada. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ScheduledReportsController_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateScheduledReportDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledReportResponseDto"];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Programación o consulta guardada no encontrada. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ScheduledReportsController_pause: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledReportResponseDto"];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ScheduledReportsController_resume: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduledReportResponseDto"];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ScheduledReportsController_runNow: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportExecutionResponseDto"];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ScheduledReportsController_listExecutions: {
+        parameters: {
+            query?: {
+                status?: "RUNNING" | "SUCCEEDED" | "FAILED";
+                trigger?: "SCHEDULED" | "MANUAL" | "ON_DEMAND";
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportExecutionResponseDto"][];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Programación no encontrada. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ScheduledReportsController_listRuns: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportExecutionResponseDto"][];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Programación no encontrada. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    SavedQueriesController_findAll: {
+        parameters: {
+            query?: {
+                visibilidad?: "PRIVADA" | "PUBLICADA";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedQueryResponseDto"][];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description El AUDITOR no accede a datos de negocio. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    SavedQueriesController_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSavedQueryDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedQueryResponseDto"];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Se requiere rol ADMIN u OPERADOR. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Alguna conexión no existe en el workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Ya existe una consulta con ese nombre. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    SavedQueriesController_findOne: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedQueryResponseDto"];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No existe o no es visible para el rol. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    SavedQueriesController_remove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Solo el autor o un ADMIN puede eliminarla. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Consulta no encontrada. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    SavedQueriesController_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSavedQueryDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedQueryResponseDto"];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Solo el autor o un ADMIN puede modificarla. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Consulta o conexión no encontrada. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Ya existe una consulta con ese nombre. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    SavedQueriesController_listVersions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedQueryVersionDto"][];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Consulta no encontrada. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    SavedQueriesController_run: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RunSavedQueryDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SavedQueryRunResultDto"];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Consulta, versión o conexión no encontrada. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description El origen o el resultado supera los límites configurados. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description La definición guardada ya no es válida. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Falló la extracción de una fuente externa. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description La consulta a una fuente externa agotó el tiempo. */
+            504: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3350,6 +5979,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkspaceStatsDto"];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    DashboardController_getSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DashboardSummaryDto"];
                 };
             };
             /** @description Token JWT inválido o ausente. */
