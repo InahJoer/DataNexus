@@ -2137,7 +2137,7 @@ export interface components {
              * @example SUM
              * @enum {string}
              */
-            operation: "COUNT" | "SUM" | "AVG";
+            operation: "COUNT" | "COUNT_DISTINCT" | "SUM" | "AVG" | "MIN" | "MAX";
             /** @description Campo unificado sobre el que opera la métrica */
             field?: string;
             /**
@@ -2145,6 +2145,15 @@ export interface components {
              * @example total
              */
             as: string;
+        };
+        SortSpecDto: {
+            /** @example total */
+            campo: string;
+            /**
+             * @example DESC
+             * @enum {string}
+             */
+            direccion: "ASC" | "DESC";
         };
         CrossJoinDto: {
             /** @description Formato de N fuentes: de 2 a 5 tablas o colecciones */
@@ -2213,6 +2222,21 @@ export interface components {
              *     ]
              */
             columnas?: string[];
+            /**
+             * @description Renombra columnas de salida (alias), por ejemplo { "clientes.nombre": "Cliente" }
+             * @example {
+             *       "clientes.nombre": "Cliente"
+             *     }
+             */
+            aliasColumnas?: {
+                [key: string]: string;
+            };
+            /** @description Orden del resultado (ORDER BY) por una o más columnas, antes de paginar */
+            ordenarPor?: components["schemas"]["SortSpecDto"][];
+            /** @description Disposición visual del Query Builder (posiciones de las tarjetas). El motor la ignora. */
+            lienzo?: {
+                [key: string]: unknown;
+            };
             /**
              * @description Límite de elementos por página
              * @default 50
@@ -2320,6 +2344,21 @@ export interface components {
              *     ]
              */
             columnas?: string[];
+            /**
+             * @description Renombra columnas de salida (alias), por ejemplo { "clientes.nombre": "Cliente" }
+             * @example {
+             *       "clientes.nombre": "Cliente"
+             *     }
+             */
+            aliasColumnas?: {
+                [key: string]: string;
+            };
+            /** @description Orden del resultado (ORDER BY) por una o más columnas, antes de paginar */
+            ordenarPor?: components["schemas"]["SortSpecDto"][];
+            /** @description Disposición visual del Query Builder (posiciones de las tarjetas). El motor la ignora. */
+            lienzo?: {
+                [key: string]: unknown;
+            };
             /**
              * @description Límite de elementos por página
              * @default 50

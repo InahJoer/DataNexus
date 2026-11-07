@@ -21,6 +21,7 @@ import {
   ValidatorConstraint,
   type ValidationArguments,
   type ValidatorConstraintInterface,
+  IsObject,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import {
@@ -121,8 +122,46 @@ function FilterList(description: string): PropertyDecorator {
   );
 }
 
-export const AGGREGATION_OPERATIONS = ['COUNT', 'SUM', 'AVG'] as const;
+export const AGGREGATION_OPERATIONS = ['COUNT', 'COUNT_DISTINCT', 'SUM', 'AVG', 'MIN', 'MAX'] as const;
 export type AggregationOperation = (typeof AGGREGATION_OPERATIONS)[number];
+
+@ValidatorConstraint({ name: 'columnAliases' })
+class ColumnAliasesConstraint implements ValidatorConstraintInterface {
+  validate(value: unknown) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    const entries = Object.entries(value);
+    return entries.length <= 300 && entries.every(([key, alias]) => key.length <= 300 && typeof alias === 'string' && alias.trim().length > 0 && alias.length <= 120);
+  }
+  defaultMessage() {
+    return 'aliasColumnas debe asociar cada columna con un nombre de 1 a 120 caracteres (máximo 300 columnas)';
+  }
+}
+
+@ValidatorConstraint({ name: 'canvasSize' })
+class CanvasSizeConstraint implements ValidatorConstraintInterface {
+  validate(value: unknown) {
+    try {
+      return JSON.stringify(value).length <= 50_000;
+    } catch {
+      return false;
+    }
+  }
+  defaultMessage() {
+    return 'lienzo no puede superar 50 KB';
+  }
+}
+
+export class SortSpecDto {
+  @ApiProperty({ example: 'total' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(300)
+  campo: string;
+
+  @ApiProperty({ enum: ['ASC', 'DESC'], example: 'DESC' })
+  @IsIn(['ASC', 'DESC'])
+  direccion: 'ASC' | 'DESC';
+}
 
 export class AggregationMetricDto {
   @ApiProperty({ enum: AGGREGATION_OPERATIONS, example: 'SUM' })
@@ -134,6 +173,7 @@ export class AggregationMetricDto {
   })
   @ValidateIf(
     (metric: AggregationMetricDto) =>
+      // Solo COUNT puede ir sin campo (cuenta filas); COUNT_DISTINCT, SUM, AVG, MIN y MAX lo necesitan.
       metric.operation !== 'COUNT' || metric.field !== undefined,
   )
   @IsString()
@@ -381,6 +421,38 @@ export class CrossJoinDto {
   @IsNotEmpty({ each: true })
   @MaxLength(300, { each: true })
   columnas?: string[];
+
+  @ApiPropertyOptional({
+    description: 'Renombra columnas de salida (alias), por ejemplo { "clientes.nombre": "Cliente" }',
+    type: 'object',
+    additionalProperties: { type: 'string' },
+    example: { 'clientes.nombre': 'Cliente' },
+  })
+  @IsOptional()
+  @IsObject()
+  @Validate(ColumnAliasesConstraint)
+  aliasColumnas?: Record<string, string>;
+
+  @ApiPropertyOptional({
+    description: 'Orden del resultado (ORDER BY) por una o más columnas, antes de paginar',
+    type: [SortSpecDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @ValidateNested({ each: true })
+  @Type(() => SortSpecDto)
+  ordenarPor?: SortSpecDto[];
+
+  @ApiPropertyOptional({
+    description: 'Disposición visual del Query Builder (posiciones de las tarjetas). El motor la ignora.',
+    type: 'object',
+    additionalProperties: true,
+  })
+  @IsOptional()
+  @IsObject()
+  @Validate(CanvasSizeConstraint)
+  lienzo?: Record<string, unknown>;
 
   @ApiPropertyOptional({
     description: 'Límite de elementos por página',

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { selectColumns } from './select-columns.js';
+import { selectColumns, sortRows } from './select-columns.js';
 
 describe('selectColumns (columnas de salida del editor de consultas)', () => {
   const rows = [
@@ -20,5 +20,25 @@ describe('selectColumns (columnas de salida del editor de consultas)', () => {
   it('sin lista devuelve las filas tal cual', () => {
     expect(selectColumns(rows)).toBe(rows);
     expect(selectColumns(rows, [])).toBe(rows);
+  });
+});
+
+describe('alias y orden del resultado (Query Builder)', () => {
+  const rows = [
+    { nombre: 'Luis', total: 80, ciudad: 'León' },
+    { nombre: 'Ana', total: 120, ciudad: 'Managua' },
+    { nombre: 'Eva', total: null, ciudad: 'León' },
+    { nombre: 'Jon', total: 120, ciudad: 'Granada' },
+  ];
+
+  it('renombra columnas con o sin lista de columnas', () => {
+    expect(selectColumns(rows, ['nombre'], { nombre: 'Cliente' })[0]).toEqual({ Cliente: 'Luis' });
+    expect(Object.keys(selectColumns(rows, undefined, { total: 'Monto' })[0])).toEqual(['nombre', 'Monto', 'ciudad']);
+  });
+
+  it('ordena por varias columnas, de forma estable y con los vacíos al final', () => {
+    expect(sortRows(rows, [{ campo: 'total', direccion: 'DESC' }, { campo: 'ciudad', direccion: 'ASC' }]).map((row) => row.nombre)).toEqual(['Jon', 'Ana', 'Luis', 'Eva']);
+    expect(sortRows(rows, [{ campo: 'total', direccion: 'ASC' }]).map((row) => row.nombre)).toEqual(['Luis', 'Ana', 'Jon', 'Eva']);
+    expect(sortRows(rows)).toBe(rows);
   });
 });

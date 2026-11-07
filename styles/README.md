@@ -17,6 +17,7 @@ Cada pantalla tiene su propio archivo CSS en esta carpeta. Todos se importan **u
 | `app-shell.css` | Layout base de `app/(app)`: sidebar con el menú por rol, barra superior, encabezado de página (`PageHeader`) y estados de carga, vacío y error. Trae sus media queries. |
 | `connections.css` | Conexiones (#44) y piezas compartidas: tabla `.data-table`, modal `.modal` y formularios `.form-*`. |
 | `explorer.css` | Explorador de datos (`app/(app)/explorer`): árbol de conexiones, grid editable, filtros y panel de documento. |
+| `query-builder.css` | Query Builder visual (`components/query-builder/`): paleta, lienzo con tarjetas y uniones, panel de salida, vista previa, resultados y gráfico rápido. Trae sus media queries. |
 
 ## Reglas
 

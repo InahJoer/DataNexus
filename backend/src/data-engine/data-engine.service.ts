@@ -23,7 +23,7 @@ import {
 } from './adapters/data-source-adapter.interface.js';
 import { DataSourceClientPool } from './pool/data-source-client-pool.js';
 import { MaskingService, type SensitiveRule } from './masking/masking.service.js';
-import { selectColumns } from './join/select-columns.js';
+import { selectColumns, sortRows } from './join/select-columns.js';
 import { SensitiveFieldsService, type SensitiveSource } from './masking/sensitive-fields.service.js';
 import { hasPermission } from '../auth/interfaces/user-role.js';
 import { UsageMeterService } from '../usage/usage-meter.service.js';
@@ -95,8 +95,15 @@ export interface StreamExportResult {
 interface AggregateMetricState {
   count: number;
   sum: number;
+  min: number | null;
+  max: number | null;
+  /** Valores distintos para COUNT_DISTINCT (serializados para comparar objetos y fechas). */
+  distinct: Set<string>;
   masked: boolean;
 }
+
+/** Tope de valores distintos que se cuentan por grupo (protege la memoria). */
+const MAX_DISTINCT_VALUES = 100_000;
 
 interface AggregateBucket {
   keys: Record<string, any>;
@@ -357,7 +364,7 @@ export class DataEngineService {
     const { rows: combinedData, truncated, rules } = await this.performJoin(payload, user);
 
     // Enmascaramiento si es LECTOR
-    const securedData = selectColumns(this.maskingService.maskDataset(combinedData, user.role, rules), payload.columnas);
+    const securedData = selectColumns(sortRows(this.maskingService.maskDataset(combinedData, user.role, rules), payload.ordenarPor), payload.columnas, payload.aliasColumnas);
 
     // Paginación nativa en memoria
     const limit = payload.limit ?? 50;
@@ -381,7 +388,7 @@ export class DataEngineService {
     user: AuthenticatedUser,
   ): Promise<ExportResult> {
     const { rows: combinedData, rules } = await this.performJoin(payload, user);
-    const securedData = selectColumns(this.maskingService.maskDataset(combinedData, user.role, rules), payload.columnas);
+    const securedData = selectColumns(sortRows(this.maskingService.maskDataset(combinedData, user.role, rules), payload.ordenarPor), payload.columnas, payload.aliasColumnas);
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 
@@ -443,7 +450,7 @@ export class DataEngineService {
     }
 
     const { rows: combinedData, rules } = await this.performJoin(payload, user);
-    const securedData = selectColumns(this.maskingService.maskDataset(combinedData, user.role, rules), payload.columnas);
+    const securedData = selectColumns(sortRows(this.maskingService.maskDataset(combinedData, user.role, rules), payload.ordenarPor), payload.columnas, payload.aliasColumnas);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 
     if (payload.format === 'excel') {
@@ -507,7 +514,7 @@ export class DataEngineService {
   ): Promise<{ rows: Record<string, any>[]; truncated: boolean }> {
     const { rows, truncated, rules } = await this.performJoin(payload, user, { ...options, cooperative: true });
     options.signal?.throwIfAborted();
-    const secured = selectColumns(this.maskingService.maskDataset(rows, user.role, rules), payload.columnas);
+    const secured = selectColumns(sortRows(this.maskingService.maskDataset(rows, user.role, rules), payload.ordenarPor), payload.columnas, payload.aliasColumnas);
     options.onProgress?.(1);
     return { rows: secured, truncated };
   }
@@ -700,7 +707,7 @@ export class DataEngineService {
   ): AggregateBucket {
     const metrics = new Map<string, AggregateMetricState>();
     for (const metric of aggregations) {
-      metrics.set(metric.as, { count: 0, sum: 0, masked: false });
+      metrics.set(metric.as, { count: 0, sum: 0, min: null, max: null, distinct: new Set(), masked: false });
     }
     return { keys, metrics, output: {}, bytes: 0 };
   }
@@ -735,6 +742,12 @@ export class DataEngineService {
         }
         continue;
       }
+      if (metric.operation === 'COUNT_DISTINCT') {
+        if (value !== null && value !== undefined && state.distinct.size < MAX_DISTINCT_VALUES) {
+          state.distinct.add(typeof value === 'object' ? JSON.stringify(value) : `${typeof value}:${String(value)}`);
+        }
+        continue;
+      }
       if (value === null || value === undefined) continue;
       if (typeof value !== 'number' || !Number.isFinite(value)) {
         throw new BadRequestException(
@@ -748,6 +761,8 @@ export class DataEngineService {
         );
       }
       state.count += 1;
+      state.min = state.min === null ? value : Math.min(state.min, value);
+      state.max = state.max === null ? value : Math.max(state.max, value);
     }
   }
 
@@ -770,6 +785,15 @@ export class DataEngineService {
             break;
           case 'AVG':
             value = state.count ? state.sum / state.count : null;
+            break;
+          case 'COUNT_DISTINCT':
+            value = state.distinct.size;
+            break;
+          case 'MIN':
+            value = state.min;
+            break;
+          case 'MAX':
+            value = state.max;
             break;
         }
       }

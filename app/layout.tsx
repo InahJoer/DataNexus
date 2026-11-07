@@ -13,6 +13,7 @@ import '@/styles/audit.css';
 import '@/styles/app-shell.css';
 import '@/styles/connections.css';
 import '@/styles/explorer.css';
+import '@/styles/query-builder.css';
 import { AuthProvider } from '@/components/auth-provider';
 import { IdleWarning } from '@/components/idle-warning';
 import { THEME_BOOT_SCRIPT } from '@/lib/theme';

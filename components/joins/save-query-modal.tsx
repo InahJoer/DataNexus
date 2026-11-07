@@ -10,10 +10,10 @@ import type { components } from '@/lib/api/schema';
 
 type JoinPayload = components['schemas']['CrossJoinDto'];
 
-type SaveQueryModalProps = Readonly<{ definition: JoinPayload; columns: number; onClose: () => void }>;
+type SaveQueryModalProps = Readonly<{ definition: JoinPayload; columns: number; onClose: () => void; onSaved?: (query: { id: string; nombre: string }) => void }>;
 
 /** Guarda el cruce (fuentes, relaciones y columnas elegidas) como consulta para reutilizarlo o programarlo. */
-export function SaveQueryModal({ definition, columns, onClose }: SaveQueryModalProps) {
+export function SaveQueryModal({ definition, columns, onClose, onSaved }: SaveQueryModalProps) {
   const call = useApiCall();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -36,6 +36,7 @@ export function SaveQueryModal({ definition, columns, onClose }: SaveQueryModalP
         return;
       }
       setSaved(result.data.nombre);
+      onSaved?.({ id: result.data.id, nombre: result.data.nombre });
     } catch {
       setError(NETWORK_ERROR_MESSAGE);
     } finally {
