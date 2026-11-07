@@ -3,7 +3,7 @@
 import { type FormEvent, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Icon } from '@/components/icons';
-import { createApiClient } from '@/lib/api/client';
+import { withSessionRetry } from '@/lib/api/with-session-retry';
 import { useAuth } from '@/lib/auth-context';
 import type { components, paths } from '@/lib/api/schema';
 
@@ -86,7 +86,7 @@ function AuditRow({ entry }: { entry: AuditEntry }) {
 }
 
 export function AuditTable() {
-  const { session, logout } = useAuth();
+  const { session, refreshSession } = useAuth();
   const router = useRouter();
   const accessToken = session?.accessToken;
   const canReadAudit = session?.user.role === 'ADMIN' || session?.user.role === 'AUDITOR';
@@ -102,6 +102,7 @@ export function AuditTable() {
 
   useEffect(() => {
     if (!canReadAudit || !accessToken) return;
+    const token = accessToken;
     let cancelled = false;
     setIsLoading(true);
     setErrorMessage(null);
@@ -116,10 +117,9 @@ export function AuditTable() {
 
     async function loadAuditLogs() {
       try {
-        const response = await createApiClient(accessToken).GET('/audit/logs', { params: { query } });
+        const response = await withSessionRetry(token, refreshSession, (api) => api.GET('/audit/logs', { params: { query } }));
         if (cancelled) return;
         if (response.response.status === 401) {
-          logout();
           router.replace('/login');
           return;
         }
@@ -141,7 +141,7 @@ export function AuditTable() {
 
     void loadAuditLogs();
     return () => { cancelled = true; };
-  }, [accessToken, filters, canReadAudit, logout, page, pageSize, reloadKey, router]);
+  }, [accessToken, filters, canReadAudit, refreshSession, page, pageSize, reloadKey, router]);
 
   if (!canReadAudit || !session) return null;
 

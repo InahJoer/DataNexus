@@ -2,11 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { createApiClient, type ApiClient } from '@/lib/api/client';
+import type { ApiClient } from '@/lib/api/client';
 import { apiErrorMessage, NETWORK_ERROR_MESSAGE } from '@/lib/api/errors';
 import { useAuth } from '@/lib/auth-context';
-
-type ApiResult<T> = { data?: T; error?: unknown; response: Response };
+import { withSessionRetry, type ApiResult } from '@/lib/api/with-session-retry';
 
 export type ApiQuery<T> = Readonly<{
   data: T | null;
@@ -18,15 +17,15 @@ export type ApiQuery<T> = Readonly<{
 }>;
 
 /**
- * Petición GET autenticada con el manejo común de toda la app: estado de carga, mensaje de error legible y cierre
- * de sesión si la API responde 401. `request` debe ser estable (useCallback); con null no se pide nada (por ejemplo,
+ * Petición GET autenticada con el manejo común de toda la app: estado de carga, mensaje de error legible y, si la
+ * API responde 401, renovación transparente del token (un reintento) o cierre de sesión. `request` debe ser estable (useCallback); con null no se pide nada (por ejemplo,
  * cuando el rol no tiene acceso).
  */
 export function useApiQuery<T>(
   request: ((api: ApiClient) => Promise<ApiResult<T>>) | null,
   options: { refreshMs?: number } = {},
 ): ApiQuery<T> {
-  const { session, logout } = useAuth();
+  const { session, refreshSession } = useAuth();
   const router = useRouter();
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -41,9 +40,9 @@ export function useApiQuery<T>(
   const load = useCallback(async () => {
     if (!request || !tokenRef.current) return;
     try {
-      const result = await request(createApiClient(tokenRef.current));
+      const result = await withSessionRetry(tokenRef.current, refreshSession, request);
       if (result.response.status === 401) {
-        logout('expirada');
+        // refreshSession ya cerró la sesión; se vuelve al login.
         router.replace('/login');
         return;
       }
@@ -58,7 +57,7 @@ export function useApiQuery<T>(
     } finally {
       setIsLoading(false);
     }
-  }, [request, logout, router]);
+  }, [request, refreshSession, router]);
 
   useEffect(() => {
     if (!request || !hasSession) {

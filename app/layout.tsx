@@ -7,10 +7,12 @@ import '@/styles/login.css';
 import '@/styles/workspaces.css';
 import '@/styles/dashboard.css';
 import '@/styles/responsive.css';
+import '@/styles/auth.css';
 import '@/styles/cross-join.css';
 import '@/styles/audit.css';
 import '@/styles/app-shell.css';
 import { AuthProvider } from '@/components/auth-provider';
+import { IdleWarning } from '@/components/idle-warning';
 
 export const metadata: Metadata = {
   title: 'DataNexus — Operaciones de datos',
@@ -20,7 +22,12 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="es" data-scroll-behavior="smooth">
-      <body><AuthProvider>{children}</AuthProvider></body>
+      <body>
+        <AuthProvider>
+          {children}
+          <IdleWarning />
+        </AuthProvider>
+      </body>
     </html>
   );
 }

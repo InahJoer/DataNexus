@@ -8,6 +8,7 @@ Cada pantalla tiene su propio archivo CSS en esta carpeta. Todos se importan **u
 | `base.css` | Variables de diseño (`--ink`, `--green`, …), reset y marca. Va primero. |
 | `onboarding.css` | Layout de dos columnas compartido por Login y Workspaces. |
 | `login.css` | Formulario de acceso. Contiene `.button`, inputs y mensajes de formulario reutilizables. |
+| `auth.css` | Pantallas de acceso (`components/auth/`): diagrama de fuentes, avisos, casilla "Mantener sesión", política de contraseña, invitación y aviso de inactividad. |
 | `workspaces.css` | Selección de workspace (`app/workspaces`). |
 | `dashboard.css` | Vista general: métricas, conexiones y actividad (`app/(app)/dashboard`). |
 | `responsive.css` | Media queries de Onboarding, Login, Workspaces y Dashboard. |
