@@ -33,7 +33,7 @@ const ROWS_ALIAS = '`__dn_rows`';
 
 export interface MysqlSelect {
   sql: string;
-  params: Array<string | number | boolean>;
+  params: Array<string | number | boolean | Date>;
   oversizedKey: string;
 }
 
@@ -69,7 +69,7 @@ export function buildMysqlSelect(
   const bytesKey = quoteMysqlIdentifier(uniqueColumnName(columns, '__dn_row_bytes'), 'columna');
   const oversizedKey = uniqueColumnName([...columns, '__dn_row_bytes'], '__dn_oversized');
 
-  const params: Array<string | number | boolean> = [];
+  const params: Array<string | number | boolean | Date> = [];
   const where = buildSqlFilterClauses(columns, filters ?? [], {
     column: (name) => `${SOURCE_ALIAS}.${quoteMysqlIdentifier(name, 'filtro')}`,
     text: (column) => `CAST(${column} AS CHAR)`,

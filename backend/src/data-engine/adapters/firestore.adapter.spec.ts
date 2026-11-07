@@ -148,17 +148,24 @@ describe('FirestoreAdapter', () => {
     ]);
   });
 
+  it('no envía rangos de fechas al servidor: un Timestamp no se compara con texto ISO y se filtra en memoria', () => {
+    expect(adapter.canPushDown({ campo: 'createdAt', operador: 'between', valor: ['2026-01-01T00:00:00.000Z', '2026-01-31T23:59:59.999Z'] })).toBe(false);
+    expect(adapter.canPushDown({ campo: 'createdAt', operador: 'gte', valor: '2026-01-01' })).toBe(false);
+    expect(adapter.canPushDown({ campo: 'total', operador: 'between', valor: [1, 2] })).toBe(true);
+    expect(adapter.canPushDown({ campo: 'estado', operador: 'gte', valor: 'b' })).toBe(true);
+  });
+
   it('traduce between a dos where e isNull a == / != null (issue #31)', async () => {
     await adapter.extract(connection, 'orders', {
       filters: [
-        { campo: 'createdAt', operador: 'between', valor: ['2026-01-01', '2026-01-31'] },
+        { campo: 'total', operador: 'between', valor: [10, 50] },
         { campo: 'deletedAt', operador: 'isNull', valor: true },
         { campo: 'paidAt', operador: 'isNull', valor: false },
       ],
     });
     expect(mocks.filterCalls).toEqual([
-      ['createdAt', '>=', '2026-01-01'],
-      ['createdAt', '<=', '2026-01-31'],
+      ['total', '>=', 10],
+      ['total', '<=', 50],
       ['deletedAt', '==', null],
       ['paidAt', '!=', null],
     ]);

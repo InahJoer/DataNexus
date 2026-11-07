@@ -40,7 +40,8 @@ describe('PostgreSQL', () => {
         `LOWER(CAST("__dn_src"."email" AS text)) LIKE $4 ESCAPE '!' OR ` +
         '("__dn_src"."total" >= $5 AND "__dn_src"."email" IS NOT NULL))',
     );
-    expect(select.values).toEqual(['2026-01-01', '2026-03-31', '%ana%', 'ventas%', 100]);
+    // Las fechas ISO de un rango viajan como Date: el driver las compara como fecha, no como texto.
+    expect(select.values).toEqual([new Date('2026-01-01T00:00:00Z'), new Date('2026-03-31T00:00:00Z'), '%ana%', 'ventas%', 100]);
   });
 
   it.each(INJECTIONS)('el valor %j viaja como parámetro y nunca dentro del SQL', (payload) => {
@@ -67,7 +68,7 @@ describe('MySQL', () => {
     const select = buildMysqlSelect('clientes', undefined, COLUMNS, advanced, 100, 1_000_000);
     expect(select.sql).toContain("LOWER(CAST(`__dn_src`.`nombre` AS CHAR)) LIKE ? ESCAPE '!'");
     expect(select.sql).toContain('`__dn_src`.`alta` BETWEEN ? AND ?');
-    expect(select.params).toEqual(['2026-01-01', '2026-03-31', '%ana%', 'ventas%', 100]);
+    expect(select.params).toEqual([new Date('2026-01-01T00:00:00Z'), new Date('2026-03-31T00:00:00Z'), '%ana%', 'ventas%', 100]);
   });
 
   it('escapa los comodines del texto buscado', () => {
@@ -100,7 +101,7 @@ describe('SQL Server (dialecto @p y NVARCHAR)', () => {
         "LOWER(CAST([src].[email] AS NVARCHAR(4000))) LIKE @filter_3 ESCAPE '!' OR " +
         '([src].[total] >= @filter_4 AND [src].[email] IS NOT NULL))',
     ]);
-    expect(parameters).toEqual({ filter_0: '2026-01-01', filter_1: '2026-03-31', filter_2: '%ana%', filter_3: 'ventas%', filter_4: 100 });
+    expect(parameters).toEqual({ filter_0: new Date('2026-01-01T00:00:00Z'), filter_1: new Date('2026-03-31T00:00:00Z'), filter_2: '%ana%', filter_3: 'ventas%', filter_4: 100 });
   });
 });
 
@@ -120,7 +121,8 @@ describe('MongoDB', () => {
   it('traduce grupos a $or/$and y los operadores nuevos', () => {
     expect(buildMongoFilter(advanced)).toEqual({
       $and: [
-        { alta: { $gte: '2026-01-01', $lte: '2026-03-31' } },
+        // Un rango de fechas encuentra campos Date y también fechas guardadas como texto ISO.
+        { $or: [{ alta: { $gte: new Date('2026-01-01T00:00:00Z'), $lte: new Date('2026-03-31T00:00:00Z') } }, { alta: { $gte: '2026-01-01', $lte: '2026-03-31' } }] },
         {
           $or: [
             { nombre: { $regex: 'ana', $options: 'i' } },

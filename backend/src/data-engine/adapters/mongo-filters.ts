@@ -2,7 +2,9 @@ import { BadRequestException } from '@nestjs/common';
 import {
   assertValidFilters,
   escapeRegExp,
+  isDateRangeFilter,
   isFilterGroup,
+  parseIsoDate,
   MAX_FILTER_FIELD_LENGTH,
   type DataFilter,
   type FilterNode,
@@ -41,6 +43,14 @@ export function assertMongoCollectionName(collection: unknown): asserts collecti
   }
 }
 
+/**
+ * Rango de fechas: MongoDB no compara un Date con un texto, así que se buscan ambas formas (campo Date o texto ISO).
+ */
+function dateRange(field: string, bounds: Record<string, string>): Record<string, unknown> {
+  const asDates = Object.fromEntries(Object.entries(bounds).map(([operator, value]) => [operator, new Date(parseIsoDate(value)!)]));
+  return { $or: [{ [field]: asDates }, { [field]: bounds }] };
+}
+
 function leaf(filter: DataFilter): Record<string, unknown> {
   assertMongoFieldName(filter.campo);
   const field = filter.campo;
@@ -61,6 +71,7 @@ function leaf(filter: DataFilter): Record<string, unknown> {
       return { [field]: { $nin: [...(value as FilterScalar[]), null] } };
     case 'between': {
       const [min, max] = value as [string | number, string | number];
+      if (isDateRangeFilter(filter)) return dateRange(field, { $gte: min as string, $lte: max as string });
       return { [field]: { $gte: min, $lte: max } };
     }
     case 'contains':
@@ -71,6 +82,7 @@ function leaf(filter: DataFilter): Record<string, unknown> {
     default: {
       const operator = COMPARISON[filter.operador as keyof typeof COMPARISON];
       if (!operator) throw new BadRequestException('El operador de filtro no está soportado');
+      if (isDateRangeFilter(filter)) return dateRange(field, { [operator]: value as string });
       return { [field]: { [operator]: value } };
     }
   }

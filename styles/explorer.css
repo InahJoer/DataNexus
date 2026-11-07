@@ -80,3 +80,13 @@
   .explorer-body[data-with-panel="true"] { grid-template-columns: minmax(0, 1fr); }
   .document-panel { border-top: 1px solid var(--line); border-left: 0; }
 }
+
+/* Filtro de rango de fechas */
+.date-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 16px; color: var(--muted); border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--green-pale) 35%, transparent); }
+.date-filter .form-input { width: auto; height: 32px; font-size: 12px; }
+.date-filter > .form-input { min-width: 190px; }
+.date-filter label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; }
+.date-filter .button { min-height: 32px; padding: 0 12px; font-size: 12px; }
+.date-presets { display: flex; flex-wrap: wrap; gap: 4px; }
+.date-presets .row-action { margin: 0; }
+.date-filter .form-error { width: 100%; margin: 0; }
