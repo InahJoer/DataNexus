@@ -254,6 +254,20 @@ describe('ReportsService', () => {
       expect(JSON.stringify(update.data)).not.toContain('10.0.0.5');
     });
 
+    it('identifica un fallo de autenticación SMTP sin reintentar ni guardar la respuesta del proveedor', async () => {
+      const smtpError = Object.assign(new Error('Respuesta confidencial del proveedor'), { code: 'EAUTH' });
+      mailService.sendReportEmail.mockRejectedValue(smtpError);
+
+      await expect(service.triggerReport(adminUser, dto)).rejects.toBe(smtpError);
+
+      expect(mailService.sendReportEmail).toHaveBeenCalledOnce();
+      expect(prismaService.reportExecution.update.mock.calls[0][0].data).toMatchObject({
+        status: 'FAILED',
+        attempts: 1,
+        error: 'El reporte se generó, pero falló la autenticación SMTP.',
+      });
+    });
+
     it('registra el fallo de generación con un mensaje seguro', async () => {
       dataEngineService.executeCrossJoinToStream.mockRejectedValue(new Error('password=secreta en el driver'));
 

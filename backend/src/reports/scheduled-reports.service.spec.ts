@@ -247,7 +247,7 @@ describe('ScheduledReportsService – historial, reintentos y avisos (issue #39)
     expect(ctx.lastExecution()).toMatchObject({
       status: 'FAILED',
       attempts: 3,
-      error: 'El reporte se generó, pero no se pudo enviar el correo.',
+      error: 'El reporte se generó, pero falló la entrega por correo.',
       fileSizeBytes: 48_213,
     });
     expect(ctx.prisma.scheduledReport.update).not.toHaveBeenCalledWith(

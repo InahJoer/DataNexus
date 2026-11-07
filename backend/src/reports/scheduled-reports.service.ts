@@ -46,7 +46,6 @@ type ScheduleRecord = Prisma.ScheduledReportGetPayload<{ include: typeof SCHEDUL
 type ScheduleSettingsDto = CreateScheduledReportDto | UpdateScheduledReportDto;
 
 const SAFE_RUN_ERROR = 'No se pudo generar el reporte. Revise la consulta y las conexiones del workspace.';
-const SAFE_EMAIL_ERROR = 'El reporte se generó, pero no se pudo enviar el correo.';
 const SAFE_INTERRUPTED_ERROR = 'La ejecución se interrumpió antes de terminar.';
 const RUNS_PAGE_SIZE = 100;
 
@@ -548,7 +547,7 @@ export class ScheduledReportsService implements OnModuleInit {
           attempts,
           totalRows: result.totalRows,
           fileSizeBytes: result.fileSizeBytes,
-          error: deliveryFailed ? SAFE_EMAIL_ERROR : null,
+          error: result.deliveryError ?? null,
           downloadUrl: result.downloadUrl,
           expiresAt: new Date(result.expiresAt),
           messageId: result.messageId ?? null,
@@ -571,10 +570,10 @@ export class ScheduledReportsService implements OnModuleInit {
           where: { id: schedule.id },
           data: {
             lastRunAt: finishedAt,
-            lastError: deliveryFailed ? SAFE_EMAIL_ERROR : null,
+            lastError: result.deliveryError ?? null,
           },
         });
-        if (deliveryFailed) await this.notifyAuthor(schedule, runId, SAFE_EMAIL_ERROR, attempts);
+        if (result.deliveryError) await this.notifyAuthor(schedule, runId, result.deliveryError, attempts);
       }
       await this.recordRunAudit(actor, schedule, runId, trigger, deliveryFailed ? 'FAILURE' : 'SUCCESS', {
         format: schedule.formato,
@@ -582,6 +581,7 @@ export class ScheduledReportsService implements OnModuleInit {
         fileSizeBytes: result.fileSizeBytes,
         attempts,
         deliveryFailed,
+        ...(result.deliveryError ? { error: result.deliveryError } : {}),
       }, context);
       return await this.prisma.reportExecution.findUniqueOrThrow({ where: { id: runId } });
     } catch (error) {
