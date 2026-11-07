@@ -581,6 +581,13 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{id}/password": {
+        patch: {
+            parameters: { path: { id: string } };
+            requestBody: { content: { "application/json": { newPassword: string } } };
+            responses: { 204: { headers: { [name: string]: unknown }; content?: never } };
+        };
+    };
     "/users/{id}/role": {
         parameters: {
             query?: never;

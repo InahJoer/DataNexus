@@ -40,6 +40,7 @@ COPY --from=production-deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/dist ./dist
 COPY --from=builder --chown=node:node /app/prisma ./prisma
 COPY --from=builder --chown=node:node /app/package.json ./package.json
+RUN mkdir -p /app/storage/reports && chown node:node /app/storage/reports
 USER node
 EXPOSE 3001
 CMD ["sh", "-c", "npm run db:deploy && exec npm run start:prod"]

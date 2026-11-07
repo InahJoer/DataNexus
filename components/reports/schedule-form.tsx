@@ -10,6 +10,7 @@ import type { ApiClient } from '@/lib/api/client';
 import { apiErrorMessage, NETWORK_ERROR_MESSAGE } from '@/lib/api/errors';
 import { useApiCall } from '@/lib/api/use-api-call';
 import { useApiQuery } from '@/lib/api/use-api-query';
+import { useAuth } from '@/lib/auth-context';
 
 type ScheduleFormProps = Readonly<{ schedule?: Schedule; onClose: () => void; onSaved: () => void }>;
 
@@ -17,6 +18,7 @@ type ScheduleFormProps = Readonly<{ schedule?: Schedule; onClose: () => void; on
 export function ScheduleForm({ schedule, onClose, onSaved }: ScheduleFormProps) {
   const call = useApiCall();
   const { workspace } = useWorkspace();
+  const { session } = useAuth();
   const queries = useApiQuery(useCallback((api: ApiClient) => api.GET('/queries'), []));
   const [title, setTitle] = useState(schedule?.reportTitle ?? '');
   const [queryId, setQueryId] = useState(schedule?.savedQueryId ?? '');
@@ -31,6 +33,11 @@ export function ScheduleForm({ schedule, onClose, onSaved }: ScheduleFormProps) 
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const timeZones = typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : [timezone];
+  const isOrganization = workspace.data?.tipoCuenta === 'ORGANIZACION';
+  const allowedDomains = workspace.data?.configuracion?.dominiosPermitidos ?? [];
+  const domains = allowedDomains.length > 0 ? allowedDomains : [session?.user.email.split('@').pop() ?? ''];
+  const recipientList = recipients.split(/[,;\s]+/).filter(Boolean);
+  const isInternal = (email: string) => domains.includes(email.toLowerCase().split('@').pop() ?? '');
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -44,7 +51,7 @@ export function ScheduleForm({ schedule, onClose, onSaved }: ScheduleFormProps) 
       ...(frequency === 'monthly' ? { dayOfMonth } : {}),
       timezone,
       format,
-      recipients: recipients.split(/[,;\s]+/).map((email) => email.trim()).filter(Boolean),
+      recipients: recipientList,
       sendEmail,
     };
     setIsSaving(true);
@@ -111,7 +118,18 @@ export function ScheduleForm({ schedule, onClose, onSaved }: ScheduleFormProps) 
           <label className="form-field"><span>Formato</span><select className="form-input" value={format} onChange={(event) => setFormat(event.target.value as ReportFormat)}>{(Object.keys(FORMAT_LABELS) as ReportFormat[]).map((value) => <option key={value} value={value}>{FORMAT_LABELS[value]}</option>)}</select></label>
           <label className="form-check form-field--wide"><input type="checkbox" checked={sendEmail} onChange={(event) => setSendEmail(event.target.checked)} /><span>Enviar por correo al terminar</span></label>
           {sendEmail && (
-            <label className="form-field form-field--wide"><span>Destinatarios (separados por comas; vacío = solo tú)</span><input className="form-input" placeholder="gerencia@empresa.com, ventas@empresa.com" value={recipients} onChange={(event) => setRecipients(event.target.value)} /></label>
+            <>
+              <label className="form-field form-field--wide"><span>Destinatarios (separados por comas)</span><input className="form-input" required placeholder="gerencia@empresa.com, ventas@empresa.com" value={recipients} onChange={(event) => setRecipients(event.target.value)} /></label>
+              {isOrganization && ([['Usuarios de la misma organización', true], ['Usuarios externos', false]] as const).map(([label, internal]) => {
+                const emails = [...new Set(recipientList.filter((email) => isInternal(email) === internal))];
+                return (
+                  <details className="form-field--wide" key={label}>
+                    <summary>{label} ({emails.length})</summary>
+                    {emails.length ? <ul>{emails.map((email) => <li key={email}>{email}</li>)}</ul> : <p className="field-help">Sin destinatarios</p>}
+                  </details>
+                );
+              })}
+            </>
           )}
           <p className="field-help form-field--wide"><Icon name="shield" size={12} /> El reporte respeta los permisos y el enmascaramiento de campos sensibles de quien creó la tarea.</p>
           {error && <p className="form-error form-field--wide" role="alert">{error}</p>}

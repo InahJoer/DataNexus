@@ -25,7 +25,9 @@ import {
   ApiResponse,
   ApiTags,
   ApiUnauthorizedResponse,
+  PickType,
 } from '@nestjs/swagger';
+import { ResetPasswordDto } from '../auth/dto/password-reset.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { RevokedSessionsDto } from '../auth/dto/account.dto.js';
 import { MemberResponseDto } from './dto/member-response.dto.js';
@@ -44,6 +46,7 @@ const requestContext = (request: AuthenticatedRequest) => ({
 });
 
 const uuidPipe = new ParseUUIDPipe({ version: '4' });
+class ResetMemberPasswordDto extends PickType(ResetPasswordDto, ['newPassword'] as const) {}
 
 @ApiTags('Users')
 @ApiBearerAuth()
@@ -132,6 +135,18 @@ export class UsersController {
   @ApiConflictResponse({ description: 'La invitación ya fue aceptada o revocada.' })
   revokeInvitation(@Param('id', uuidPipe) id: string, @Req() request: AuthenticatedRequest) {
     return this.invitationsService.revoke(request.user, id, requestContext(request));
+  }
+
+  @RequirePermission('MANAGE_MEMBERS')
+  @Patch(':id/password')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Cambiar la contraseña de otro miembro del workspace' })
+  resetMemberPassword(
+    @Param('id', uuidPipe) id: string,
+    @Body() dto: ResetMemberPasswordDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.usersService.resetMemberPassword(request.user, id, dto.newPassword, requestContext(request));
   }
 
   @RequirePermission('MANAGE_MEMBERS')
