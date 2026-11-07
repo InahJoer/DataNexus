@@ -6,17 +6,23 @@ const mocks = vi.hoisted(() => ({
   options: [] as Array<Record<string, unknown>>,
   terminate: vi.fn(),
   collection: vi.fn(),
+  collectionGroup: vi.fn(),
   listCollections: vi.fn(),
   filterCalls: [] as Array<[string, string, unknown]>,
   limit: vi.fn(),
-  documents: [] as Array<{ id: string; data: Record<string, unknown> }>,
+  documents: [] as Array<{ id: string; data: Record<string, unknown>; path?: string }>,
   pageCalls: [] as Array<[string, unknown]>,
 }));
 
 vi.mock('@google-cloud/firestore', () => ({
   Firestore: vi.fn(function (options: Record<string, unknown>) {
     mocks.options.push(options);
-    return { collection: mocks.collection, listCollections: mocks.listCollections, terminate: mocks.terminate };
+    return {
+      collection: mocks.collection,
+      collectionGroup: mocks.collectionGroup,
+      listCollections: mocks.listCollections,
+      terminate: mocks.terminate,
+    };
   }),
   FieldPath: { documentId: () => '__name__' },
 }));
@@ -30,6 +36,25 @@ const account = {
   client_email: 'reader@project-1.iam.gserviceaccount.com',
   private_key: 'private-key',
 };
+/** Documento simulado con su referencia (ruta y documento padre, como en Firestore). */
+function snapshot(doc: { id: string; data: Record<string, unknown>; path?: string }) {
+  const path = doc.path ?? `orders/${doc.id}`;
+  const parts = path.split('/');
+  return { id: doc.id, data: () => doc.data, ref: { path, parent: { parent: parts.length >= 4 ? { id: parts[parts.length - 3] } : null } } };
+}
+
+/** Colección raíz simulada; `subcollections` son las subcolecciones de su primer documento. */
+function rootCollection(id: string, subcollections: string[] = []) {
+  return {
+    id,
+    limit: () => ({
+      get: async () => ({
+        docs: subcollections.length ? [{ ref: { listCollections: async () => subcollections.map((sub) => ({ id: sub })) } }] : [],
+      }),
+    }),
+  };
+}
+
 const connection = {
   id: 'firestore-1',
   tipoMotor: 'FIRESTORE',
@@ -58,15 +83,16 @@ describe('FirestoreAdapter', () => {
     query.startAfter = vi.fn((value: unknown) => (mocks.pageCalls.push(['startAfter', value]), query));
     query.stream = () =>
       Readable.from(
-        mocks.documents.map((doc) => ({ id: doc.id, data: () => doc.data })),
+        mocks.documents.map(snapshot),
         { objectMode: true },
       );
     query.get = vi.fn(async () => ({
       empty: mocks.documents.length === 0,
-      docs: mocks.documents.map((doc) => ({ id: doc.id, data: () => doc.data })),
+      docs: mocks.documents.map(snapshot),
     }));
     mocks.collection.mockReset().mockReturnValue(query);
-    mocks.listCollections.mockReset().mockResolvedValue([{ id: 'orders' }, { id: 'clients' }]);
+    mocks.collectionGroup.mockReset().mockReturnValue(query);
+    mocks.listCollections.mockReset().mockResolvedValue([rootCollection('orders'), rootCollection('clients')]);
     pool = new DataSourceClientPool();
     adapter = new FirestoreAdapter(pool);
   });
@@ -194,9 +220,56 @@ describe('FirestoreAdapter', () => {
     expect(mocks.options).toHaveLength(0);
   });
 
-  it('solo admite colecciones raíz con nombre válido', async () => {
-    await expect(adapter.extract(connection, 'orders/abc/items')).rejects.toBeInstanceOf(BadRequestException);
-    await expect(adapter.listFields(connection, '')).rejects.toBeInstanceOf(BadRequestException);
+  it('valida la ruta de la colección: raíz, subcolección de un documento o grupo padre/*/sub', async () => {
+    for (const invalid of ['', 'orders/abc', 'orders/*/items/x', '*/items', 'orders/__name__/items', 'orders/../items']) {
+      await expect(adapter.listFields(connection, invalid)).rejects.toBeInstanceOf(BadRequestException);
+    }
+    await adapter.extract(connection, 'clients/c-1/orders');
+    expect(mocks.collection).toHaveBeenCalledWith('clients/c-1/orders');
+  });
+
+  it('descubre subcolecciones en una muestra de documentos y las lista como grupos padre/*/sub', async () => {
+    mocks.listCollections.mockResolvedValue([rootCollection('clients', ['orders', 'notes']), rootCollection('products')]);
+    await expect(adapter.listObjects(connection)).resolves.toEqual([
+      { name: 'clients', type: 'COLLECTION' },
+      { name: 'products', type: 'COLLECTION' },
+      { name: 'clients/*/notes', type: 'COLLECTION' },
+      { name: 'clients/*/orders', type: 'COLLECTION' },
+    ]);
+  });
+
+  it('un grupo lee todas las subcolecciones del padre, con __parentId y __path, y descarta las de otros padres', async () => {
+    mocks.documents = [
+      { id: 'o-1', data: { total: 10 }, path: 'clients/c-1/orders/o-1' },
+      { id: 'o-2', data: { total: 20 }, path: 'clients/c-2/orders/o-2' },
+      { id: 'o-3', data: { total: 30 }, path: 'suppliers/s-1/orders/o-3' },
+      { id: 'o-4', data: { total: 40 }, path: 'clients/c-1/orders/o-4/orders/o-5' },
+    ];
+    const rows = await adapter.extract(connection, 'clients/*/orders', { filters: [{ campo: 'total', operador: 'gte', valor: 15 }] });
+    expect(mocks.collectionGroup).toHaveBeenCalledWith('orders');
+    // Los filtros de un grupo se evalúan en memoria (en el servidor pedirían índices de grupo de colecciones).
+    expect(mocks.filterCalls).toEqual([]);
+    expect(rows).toEqual([{ total: 20, __documentId: 'o-2', __parentId: 'c-2', __path: 'clients/c-2/orders/o-2' }]);
+    await expect(adapter.listFields(connection, 'clients/*/orders')).resolves.toEqual(['__parentId', 'total']);
+  });
+
+  it('pagina un grupo por ruta completa y la expone como columna de orden', async () => {
+    mocks.documents = [
+      { id: 'o-1', data: { total: 10 }, path: 'clients/c-1/orders/o-1' },
+      { id: 'o-2', data: { total: 20 }, path: 'clients/c-2/orders/o-2' },
+    ];
+    const page = await adapter.readPage(connection, 'clients/*/orders', { pageSize: 1, after: ['clients/c-0/orders/o-0'] });
+    expect(mocks.pageCalls).toEqual([['orderBy', '__name__'], ['startAfter', 'clients/c-0/orders/o-0']]);
+    expect(page.orderBy).toEqual(['__path']);
+    expect(page.lastKey).toEqual(['clients/c-1/orders/o-1']);
+    expect(page.rows).toEqual([{ total: 10, __documentId: 'o-1', __parentId: 'c-1', __path: 'clients/c-1/orders/o-1' }]);
+  });
+
+  it('para editar un documento de un grupo exige su ruta completa dentro de ese grupo', async () => {
+    const base = { entityName: 'clients/*/orders', field: 'total', expectedValue: 1, nextValue: 2 };
+    for (const primaryKey of ['o-1', 'suppliers/s-1/orders/o-1', 'clients/c-1/notes/o-1']) {
+      await expect(adapter.updateRecord(connection, { ...base, primaryKey })).rejects.toBeInstanceOf(BadRequestException);
+    }
   });
 
   it('rechaza colecciones que superan el máximo de documentos', async () => {

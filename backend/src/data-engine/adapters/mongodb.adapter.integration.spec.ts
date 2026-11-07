@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { BadRequestException, PayloadTooLargeException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException, PayloadTooLargeException } from '@nestjs/common';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { MongoClient, ObjectId } from 'mongodb';
 import { MongoDbAdapter } from './mongodb.adapter.js';
@@ -107,6 +107,24 @@ describe('MongoDbAdapter con MongoDB real (mongodb-memory-server)', () => {
     expect(pool.stats()).toEqual({ size: 1, connections: ['mongo-1'] });
     await pool.invalidate('mongo-1');
     expect(pool.stats().size).toBe(0);
+  });
+
+  it('edita un campo con comparación e intercambio, conserva el tipo fecha y no permite tocar _id', async () => {
+    fresh();
+    const key = anaId.toHexString();
+    await expect(adapter.updateRecord(connection, { entityName: 'clientes', primaryKey: key, field: 'total', expectedValue: 120, nextValue: 130 }))
+      .resolves.toEqual({ valueBefore: 120, valueAfter: 130 });
+    // Si otro ya lo cambió (el usuario vio 120 pero ahora es 130), no se pisa.
+    await expect(adapter.updateRecord(connection, { entityName: 'clientes', primaryKey: key, field: 'total', expectedValue: 120, nextValue: 1 }))
+      .rejects.toBeInstanceOf(ConflictException);
+    await adapter.updateRecord(connection, { entityName: 'clientes', primaryKey: key, field: 'alta', expectedValue: '2026-01-10T00:00:00.000Z', nextValue: '2026-02-01T00:00:00.000Z' });
+    const ana = await seed.db('ventas').collection('clientes').findOne({ _id: anaId });
+    expect(ana).toMatchObject({ total: 130, alta: new Date('2026-02-01T00:00:00Z') });
+    await expect(adapter.updateRecord(connection, { entityName: 'clientes', primaryKey: key, field: '_id', expectedValue: key, nextValue: 'x' }))
+      .rejects.toBeInstanceOf(BadRequestException);
+    await expect(adapter.updateRecord(connection, { entityName: 'clientes', primaryKey: new ObjectId().toHexString(), field: 'total', expectedValue: 1, nextValue: 2 }))
+      .rejects.toBeInstanceOf(NotFoundException);
+    await seed.db('ventas').collection('clientes').updateOne({ _id: anaId }, { $set: { total: 120, alta: new Date('2026-01-10T00:00:00Z') } });
   });
 
   it('rechaza URIs que no son de MongoDB', async () => {

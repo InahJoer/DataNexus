@@ -8,6 +8,8 @@ import type { UserRole } from '@/lib/auth-context';
 export const ROLE_PERMISSIONS = {
   VIEW_CONNECTIONS: ['ADMIN', 'OPERADOR'],
   MANAGE_CONNECTIONS: ['ADMIN'],
+  EXPLORE_DATA: ['ADMIN', 'OPERADOR'],
+  MODIFY_RECORDS: ['ADMIN', 'OPERADOR'],
   RUN_JOINS: ['ADMIN', 'OPERADOR'],
   MANAGE_REPORTS: ['ADMIN', 'OPERADOR'],
   READ_AUDIT: ['ADMIN', 'AUDITOR'],

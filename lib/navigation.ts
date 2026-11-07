@@ -22,6 +22,7 @@ export const NAVIGATION: readonly NavGroup[] = [
       { label: 'Vista general', href: '/dashboard', icon: 'grid' },
       { label: 'Workspaces', href: '/workspaces', icon: 'layers' },
       { label: 'Conexiones', href: '/connections', icon: 'database', permission: 'VIEW_CONNECTIONS', counter: 'connections' },
+      { label: 'Explorador de datos', href: '/explorer', icon: 'table', permission: 'EXPLORE_DATA' },
       { label: 'Editor de consultas', href: '/queries', icon: 'join', permission: 'RUN_JOINS' },
       { label: 'Ejecuciones', href: '/executions', icon: 'activity', permission: 'MANAGE_REPORTS' },
       { label: 'Tareas programadas', href: '/scheduled-tasks', icon: 'clock', permission: 'MANAGE_REPORTS' },
