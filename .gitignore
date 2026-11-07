@@ -31,3 +31,6 @@ skills-lock.json
 .agents
 
 
+
+# Reportes de cobertura (npm run test:cov)
+coverage/
