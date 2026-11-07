@@ -38,9 +38,11 @@ export function buildSqlFilterClauses(
   assertValidFilters(filters);
   const columnSet = new Set(columns);
   const text = (column: string) => (dialect.text ? dialect.text(column) : `CAST(${column} AS VARCHAR(4000))`);
-  // En rangos, una fecha ISO se envía como Date para que el driver la compare como fecha y no como texto.
+  // En rangos, una fecha ISO con hora se envía como Date para que el driver la compare como instante y no como texto.
+  // Una fecha sola (2026-03-31) queda como texto: los motores la convierten bien a DATE, y como Date el driver la
+  // enviaría en la zona horaria del servidor de la app y podría correrse un día.
   const rangeValue = (value: string | number | boolean) => {
-    const time = parseIsoDate(value);
+    const time = typeof value === 'string' && /\d[T ]\d/.test(value) ? parseIsoDate(value) : null;
     return time === null ? value : new Date(time);
   };
 

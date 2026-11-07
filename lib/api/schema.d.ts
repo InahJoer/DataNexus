@@ -2126,6 +2126,14 @@ export interface components {
             /** @description Métricas calculadas después del cross-join */
             aggregations?: components["schemas"]["AggregationMetricDto"][];
             /**
+             * @description Columnas de salida en orden (editor de consultas). Se aplican después del enmascaramiento; las que no existen salen en null. Sin lista, se devuelven todas. También las usan la exportación y los reportes programados.
+             * @example [
+             *       "clientes.nombre",
+             *       "total"
+             *     ]
+             */
+            columnas?: string[];
+            /**
              * @description Límite de elementos por página
              * @default 50
              */
@@ -2224,6 +2232,14 @@ export interface components {
             groupBy?: string[];
             /** @description Métricas calculadas después del cross-join */
             aggregations?: components["schemas"]["AggregationMetricDto"][];
+            /**
+             * @description Columnas de salida en orden (editor de consultas). Se aplican después del enmascaramiento; las que no existen salen en null. Sin lista, se devuelven todas. También las usan la exportación y los reportes programados.
+             * @example [
+             *       "clientes.nombre",
+             *       "total"
+             *     ]
+             */
+            columnas?: string[];
             /**
              * @description Límite de elementos por página
              * @default 50
