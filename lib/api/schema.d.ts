@@ -261,6 +261,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/audit/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Métricas de la bitácora
+         * @description Eventos del período, usuarios con actividad, fallos, eventos por impacto y días de retención.
+         */
+        get: operations["AuditController_summary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/audit/logs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Detalle de un evento (inspector)
+         * @description De solo lectura. El payload nunca incluye credenciales ni tokens.
+         */
+        get: operations["AuditController_findOne"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/audit/logs/export": {
         parameters: {
             query?: never;
@@ -1536,6 +1576,11 @@ export interface components {
             userAgent: string | null;
             /** Format: date-time */
             createdAt: string;
+            /**
+             * @description Impacto derivado del tipo de evento
+             * @enum {string}
+             */
+            impacto: "BAJO" | "MEDIO" | "ALTO";
         };
         PaginatedAuditLogsResponseDto: {
             /** @example 129 */
@@ -1547,6 +1592,41 @@ export interface components {
             /** @example 3 */
             totalPages: number;
             data: components["schemas"]["AuditLogEntryResponseDto"][];
+        };
+        AuditImpactCountsDto: {
+            /** @example 900 */
+            BAJO: number;
+            /** @example 350 */
+            MEDIO: number;
+            /** @example 34 */
+            ALTO: number;
+        };
+        AuditSummaryResponseDto: {
+            /**
+             * @description Días del período
+             * @example 30
+             */
+            dias: number;
+            /** Format: date-time */
+            desde: string;
+            /** @example 1284 */
+            eventos: number;
+            /**
+             * @description Usuarios distintos con actividad en el período
+             * @example 12
+             */
+            usuariosActivos: number;
+            /**
+             * @description Eventos con resultado FAILURE
+             * @example 7
+             */
+            fallos: number;
+            porImpacto: components["schemas"]["AuditImpactCountsDto"];
+            /**
+             * @description Días que se conservan los registros (AUDIT_RETENTION_DAYS)
+             * @example 365
+             */
+            retencionDias: number;
         };
         PostgresCredentialsDto: {
             /**
@@ -3396,6 +3476,10 @@ export interface operations {
                 fechaFin?: string;
                 /** @description Filtrar por tipo de acción o evento */
                 tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED" | "INVITATION_RESENT" | "INVITATION_REVOKED" | "INVITATION_ACCEPTED" | "USER_REMOVED" | "BROWSE_DATA" | "SAVED_QUERY_CREATED" | "SAVED_QUERY_UPDATED" | "SAVED_QUERY_DELETED" | "SCHEDULED_REPORT_CREATED" | "SCHEDULED_REPORT_UPDATED" | "SCHEDULED_REPORT_DELETED" | "SCHEDULED_REPORT_RUN" | "ACCOUNT_CREATED" | "PROFILE_UPDATED" | "PASSWORD_CHANGED" | "SESSIONS_REVOKED";
+                /** @description Nivel de impacto derivado del tipo de evento */
+                impacto?: "BAJO" | "MEDIO" | "ALTO";
+                /** @description Busca en el correo del usuario, la IP o el recurso afectado */
+                buscar?: string;
             };
             header?: never;
             path?: never;
@@ -3421,6 +3505,56 @@ export interface operations {
             };
             /** @description Se requiere rol ADMIN o AUDITOR para consultar los logs de auditoría. */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AuditController_summary: {
+        parameters: {
+            query?: {
+                /** @description Días hacia atrás (1 a 365) */
+                dias?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditSummaryResponseDto"];
+                };
+            };
+        };
+    };
+    AuditController_findOne: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditLogEntryResponseDto"];
+                };
+            };
+            /** @description El evento no existe o es de otro workspace. */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

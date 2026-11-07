@@ -1,11 +1,13 @@
-import { Controller, Get, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, Query, Req, Res, UseGuards } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
   ApiForbiddenResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiProduces,
+  ApiQuery,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -18,7 +20,7 @@ import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-user
 import { AuditService, MAX_AUDIT_EXPORT_ROWS } from './audit.service.js';
 import { QueryAuditLogsDto } from './dto/query-audit-logs.dto.js';
 import { ExportAuditLogsDto } from './dto/export-audit-logs.dto.js';
-import { PaginatedAuditLogsResponseDto } from './dto/audit-log-response.dto.js';
+import { AuditLogEntryResponseDto, AuditSummaryResponseDto, PaginatedAuditLogsResponseDto } from './dto/audit-log-response.dto.js';
 
 @ApiTags('Audit')
 @ApiBearerAuth()
@@ -41,6 +43,24 @@ export class AuditController {
   @ApiUnauthorizedResponse({ description: 'Token JWT inválido o ausente.' })
   findAll(@Req() request: AuthenticatedRequest, @Query() query: QueryAuditLogsDto) {
     return this.auditService.findAll(request.user, query);
+  }
+
+  @RequirePermission('READ_AUDIT')
+  @Get('summary')
+  @ApiOperation({ summary: 'Métricas de la bitácora', description: 'Eventos del período, usuarios con actividad, fallos, eventos por impacto y días de retención.' })
+  @ApiQuery({ name: 'dias', required: false, example: 30, description: 'Días hacia atrás (1 a 365)' })
+  @ApiOkResponse({ type: AuditSummaryResponseDto })
+  summary(@Req() request: AuthenticatedRequest, @Query('dias') dias?: string) {
+    return this.auditService.summary(request.user, Number(dias) || 30);
+  }
+
+  @RequirePermission('READ_AUDIT')
+  @Get('logs/:id')
+  @ApiOperation({ summary: 'Detalle de un evento (inspector)', description: 'De solo lectura. El payload nunca incluye credenciales ni tokens.' })
+  @ApiOkResponse({ type: AuditLogEntryResponseDto })
+  @ApiNotFoundResponse({ description: 'El evento no existe o es de otro workspace.' })
+  findOne(@Req() request: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
+    return this.auditService.findOne(request.user, id);
   }
 
   @Throttle({ export: { limit: 20, ttl: 60000 } })

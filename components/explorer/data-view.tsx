@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import { ENGINES } from '@/components/connections/engines';
 import { DateRangeFilter, dateColumns, describeDateFilter, type DateFilter } from '@/components/explorer/date-range-filter';
 import { objectLabel, type CatalogObject, type ExplorerTarget } from '@/components/explorer/explorer-tree';
+import { ColumnStats } from '@/components/explorer/column-stats';
+import { ColumnManager, mergeColumns, type ColumnSetting } from '@/components/results/column-manager';
 import { Icon } from '@/components/icons';
 import { apiErrorMessage, NETWORK_ERROR_MESSAGE } from '@/lib/api/errors';
 import { useApiCall } from '@/lib/api/use-api-call';
@@ -107,6 +109,13 @@ export function DataView({ target, subcollections, onOpen }: DataViewProps) {
   const [filters, setFilters] = useState<Filter[]>([]);
   const [draftFilter, setDraftFilter] = useState({ campo: '', operador: 'eq', valor: '', valor2: '' });
   const [filterError, setFilterError] = useState<string | null>(null);
+  /** Cómo se combinan los filtros: todos (Y) o cualquiera (O). */
+  const [logic, setLogic] = useState<'AND' | 'OR'>('AND');
+  const [sort, setSort] = useState<{ column: string; direction: 'asc' | 'desc' } | null>(null);
+  const [columnSettings, setColumnSettings] = useState<ColumnSetting[]>([]);
+  const [showColumns, setShowColumns] = useState(false);
+  const [menu, setMenu] = useState<{ x: number; y: number; rowIndex: number; column: string } | null>(null);
+  const [statsColumn, setStatsColumn] = useState<string | null>(null);
   const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
   const [page, setPage] = useState<Page | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -133,7 +142,7 @@ export function DataView({ target, subcollections, onOpen }: DataViewProps) {
               ...(object.schema ? { esquema: object.schema } : {}),
               limite: pageSize,
               ...(cursor ? { cursor } : {}),
-              ...(filters.length ? { filtros: JSON.stringify(filters) } : {}),
+              ...(filters.length ? { filtros: JSON.stringify(logic === 'OR' && filters.length > 1 ? [{ logica: 'OR', filtros: filters }] : filters) } : {}),
             },
           },
         }),
@@ -149,7 +158,7 @@ export function DataView({ target, subcollections, onOpen }: DataViewProps) {
     } finally {
       if (id === requestId.current) setIsLoading(false);
     }
-  }, [call, connection.id, object.name, object.schema, pageSize, cursor, filters]);
+  }, [call, connection.id, object.name, object.schema, pageSize, cursor, filters, logic]);
 
   // Al cambiar de tabla o colección se empieza desde la primera página y sin filtros.
   useEffect(() => {
@@ -164,13 +173,17 @@ export function DataView({ target, subcollections, onOpen }: DataViewProps) {
     void load();
   }, [load]);
 
-  const columns = useMemo(() => {
+  const columns = useMemo<string[]>(() => {
     const keys = page?.orden ?? [];
     const all = [...new Set((page?.rows ?? []).flatMap((row) => Object.keys(row)))];
     const internal = all.filter((column) => isInternal(column) && !keys.includes(column));
     const regular = all.filter((column) => !isInternal(column) && !keys.includes(column));
     return [...keys, ...regular, ...internal];
   }, [page]);
+
+  useEffect(() => {
+    if (columns.length) setColumnSettings((current) => mergeColumns(current, columns));
+  }, [columns]);
 
   function changeFilters(next: Filter[]) {
     setFilters(next);
@@ -277,7 +290,43 @@ export function DataView({ target, subcollections, onOpen }: DataViewProps) {
   }
 
   const rows = page?.rows ?? [];
+  const visibleColumns = columnSettings.length ? columnSettings.filter((item) => item.visible).map((item) => item.name) : columns;
+  // Orden por columna sobre la página cargada (el cursor del servidor sigue el orden de la llave).
+  const displayRows = rows.map((row, index) => ({ row, index }));
+  if (sort) {
+    const sign = sort.direction === 'asc' ? 1 : -1;
+    displayRows.sort((a, b) => {
+      const x = a.row[sort.column];
+      const y = b.row[sort.column];
+      if (x === y) return 0;
+      if (x === null || x === undefined) return 1;
+      if (y === null || y === undefined) return -1;
+      return typeof x === 'number' && typeof y === 'number' ? sign * (x - y) : sign * String(cellText(x)).localeCompare(cellText(y), 'es', { numeric: true });
+    });
+  }
   const selected = selectedRow !== null ? rows[selectedRow] : null;
+
+  function quickFilter(column: string, operador: string, value: unknown) {
+    setMenu(null);
+    setStatsColumn(null);
+    const valor = operador === 'isNull' ? true : value;
+    changeFilters([...filters, { campo: column, operador, valor }]);
+  }
+
+  function downloadPageCsv() {
+    const escape = (value: unknown) => {
+      let text = value === null || value === undefined ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value);
+      if (/^[=+\-@]/.test(text)) text = `'${text}`;
+      return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const csv = [visibleColumns.map(escape).join(','), ...displayRows.map(({ row }) => visibleColumns.map((column) => escape(row[column])).join(','))].join('\n');
+    const url = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${objectLabel(object)}-pagina-${cursors.length}.csv`;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
   const pageNumber = cursors.length;
   const isGroup = object.name.includes('/*/');
   const selectedDocId = selected && typeof selected.__documentId === 'string' ? selected.__documentId : null;
@@ -300,6 +349,8 @@ export function DataView({ target, subcollections, onOpen }: DataViewProps) {
           <select className="form-input compact-select" value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setCursors([undefined]); }} aria-label="Filas por página">
             {PAGE_SIZES.map((size) => <option key={size} value={size}>{size} filas</option>)}
           </select>
+          <button className="button form-secondary compact-button" type="button" aria-pressed={showColumns} onClick={() => setShowColumns((value) => !value)}><Icon name="table" size={13} />Columnas {visibleColumns.length}/{columns.length}</button>
+          <button className="button form-secondary compact-button" type="button" disabled={rows.length === 0} onClick={downloadPageCsv}><Icon name="arrow-up-right" size={13} />CSV</button>
           <button className="shell-icon-button" type="button" onClick={() => void load()} aria-label="Recargar" disabled={isLoading}><Icon name="refresh" size={15} /></button>
         </div>
       </header>
@@ -330,6 +381,12 @@ export function DataView({ target, subcollections, onOpen }: DataViewProps) {
           );
         })()}
         <button className="button form-secondary" type="submit" disabled={!draftFilter.campo}>Filtrar</button>
+        {filters.length > 1 && (
+          <div className="segmented logic-toggle" role="group" aria-label="Cómo combinar los filtros">
+            <button type="button" aria-pressed={logic === 'AND'} onClick={() => { setLogic('AND'); setCursors([undefined]); }} title="Deben cumplirse todos">Todos (Y)</button>
+            <button type="button" aria-pressed={logic === 'OR'} onClick={() => { setLogic('OR'); setCursors([undefined]); }} title="Basta con que se cumpla uno">Cualquiera (O)</button>
+          </div>
+        )}
         {filters.map((filter, index) => (
           <span className="filter-chip" key={`${filter.campo}-${index}`}>
             {describeFilter(filter)}
@@ -342,6 +399,10 @@ export function DataView({ target, subcollections, onOpen }: DataViewProps) {
       {filterError && <p className="form-error explorer-error" role="alert">{filterError}</p>}
       {error && <p className="form-error explorer-error" role="alert">{error}</p>}
       {editError && <p className="form-error explorer-error" role="alert">No se guardó el cambio: {editError}</p>}
+
+      {showColumns && columnSettings.length > 0 && (
+        <div className="explorer-columns"><ColumnManager columns={columnSettings} onChange={setColumnSettings} /></div>
+      )}
 
       <div className="explorer-body" data-with-panel={selected !== null}>
         <div className="explorer-grid-wrap">
@@ -356,18 +417,27 @@ export function DataView({ target, subcollections, onOpen }: DataViewProps) {
               <thead>
                 <tr>
                   <th className="results-index">#</th>
-                  {columns.map((column) => (
-                    <th key={column} data-key={page?.orden.includes(column) || undefined} title={column}>
-                      {page?.orden.includes(column) && <Icon name="lock" size={11} />}{column}
-                    </th>
-                  ))}
+                  {visibleColumns.map((column) => {
+                    const direction = sort?.column === column ? sort.direction : null;
+                    return (
+                      <th key={column} data-key={page?.orden.includes(column) || undefined} title={column} aria-sort={direction === 'asc' ? 'ascending' : direction === 'desc' ? 'descending' : 'none'}>
+                        <span className="th-content">
+                          <button type="button" className="th-sort" onClick={() => setSort((current) => (current?.column !== column ? { column, direction: 'asc' } : current.direction === 'asc' ? { column, direction: 'desc' } : null))}>
+                            {page?.orden.includes(column) && <Icon name="lock" size={11} />}{column}
+                            {direction && <span aria-hidden="true">{direction === 'asc' ? ' ↑' : ' ↓'}</span>}
+                          </button>
+                          <button type="button" className="th-stats" aria-label={`Estadísticas de ${column}`} title="Estadísticas de la columna" onClick={() => setStatsColumn(column)}><Icon name="activity" size={11} /></button>
+                        </span>
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, rowIndex) => (
+                {displayRows.map(({ row, index: rowIndex }) => (
                   <tr key={rowIndex} aria-selected={selectedRow === rowIndex} onClick={() => setSelectedRow(rowIndex)}>
                     <td className="results-index">{(pageNumber - 1) * pageSize + rowIndex + 1}</td>
-                    {columns.map((column) => {
+                    {visibleColumns.map((column) => {
                       const value = row[column];
                       const isEditing = editing?.rowIndex === rowIndex && editing.column === column;
                       return (
@@ -377,6 +447,10 @@ export function DataView({ target, subcollections, onOpen }: DataViewProps) {
                           data-saved={savedCell === `${rowIndex}:${column}` || undefined}
                           title={editable(row, column) ? `${cellText(value)} · doble clic para editar` : cellText(value)}
                           onDoubleClick={() => editable(row, column) && setEditing({ rowIndex, column, draft: value === null || value === undefined ? '' : String(value) })}
+                          onContextMenu={(event) => {
+                            event.preventDefault();
+                            setMenu({ x: event.clientX, y: event.clientY, rowIndex, column });
+                          }}
                         >
                           {isEditing ? (
                             <input
@@ -419,6 +493,32 @@ export function DataView({ target, subcollections, onOpen }: DataViewProps) {
           </aside>
         )}
       </div>
+
+      {menu && (() => {
+        const value = rows[menu.rowIndex]?.[menu.column];
+        const scalar = isScalar(value ?? null);
+        return (
+          <div className="context-backdrop" onClick={() => setMenu(null)} onContextMenu={(event) => { event.preventDefault(); setMenu(null); }}>
+            <div className="context-menu" role="menu" style={{ left: Math.min(menu.x, window.innerWidth - 240), top: Math.min(menu.y, window.innerHeight - 260) }} onClick={(event) => event.stopPropagation()}>
+              <p className="context-title">{menu.column}: <code>{cellText(value).slice(0, 40)}</code></p>
+              {scalar && value !== null && value !== undefined && <>
+                <button type="button" role="menuitem" onClick={() => quickFilter(menu.column, 'eq', value)}>Filtrar = este valor</button>
+                <button type="button" role="menuitem" onClick={() => quickFilter(menu.column, 'neq', value)}>Excluir este valor</button>
+                {typeof value === 'number' && <>
+                  <button type="button" role="menuitem" onClick={() => quickFilter(menu.column, 'gte', value)}>Mayor o igual</button>
+                  <button type="button" role="menuitem" onClick={() => quickFilter(menu.column, 'lte', value)}>Menor o igual</button>
+                </>}
+              </>}
+              {(value === null || value === undefined) && <button type="button" role="menuitem" onClick={() => quickFilter(menu.column, 'isNull', true)}>Solo los vacíos</button>}
+              <button type="button" role="menuitem" onClick={() => { void navigator.clipboard.writeText(cellText(value)); setMenu(null); }}>Copiar valor</button>
+              <button type="button" role="menuitem" onClick={() => { setSort({ column: menu.column, direction: 'asc' }); setMenu(null); }}>Ordenar ascendente</button>
+              <button type="button" role="menuitem" onClick={() => { setStatsColumn(menu.column); setMenu(null); }}>Estadísticas de la columna</button>
+              <button type="button" role="menuitem" onClick={() => { setColumnSettings((current) => current.map((item) => (item.name === menu.column ? { ...item, visible: false } : item))); setMenu(null); }}>Ocultar columna</button>
+            </div>
+          </div>
+        );
+      })()}
+      {statsColumn && <ColumnStats column={statsColumn} rows={rows} onClose={() => setStatsColumn(null)} onFilter={(value) => quickFilter(statsColumn, value === null || value === undefined ? 'isNull' : 'eq', value)} />}
 
       <footer className="explorer-footer">
         <span>{rows.length} registros en la página {pageNumber}{canEdit ? ' · doble clic en una celda para editarla' : ''}</span>

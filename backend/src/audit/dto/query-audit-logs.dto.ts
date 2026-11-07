@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IMPACT_LEVELS, type ImpactLevel } from '../audit-impact.js';
 import { Type } from 'class-transformer';
-import { IsDateString, IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsOptional, Max, Min, IsString, MaxLength } from 'class-validator';
 import { AUDIT_EVENT_TYPES, type AuditEventType } from '../audit.types.js';
 
 export class QueryAuditLogsDto {
@@ -56,4 +57,15 @@ export class QueryAuditLogsDto {
     message: `tipoAccion debe ser uno de: ${AUDIT_EVENT_TYPES.join(', ')}`,
   })
   tipoAccion?: AuditEventType;
+
+  @ApiPropertyOptional({ enum: [...IMPACT_LEVELS], description: 'Nivel de impacto derivado del tipo de evento' })
+  @IsOptional()
+  @IsIn([...IMPACT_LEVELS], { message: 'impacto debe ser BAJO, MEDIO o ALTO' })
+  impacto?: ImpactLevel;
+
+  @ApiPropertyOptional({ description: 'Busca en el correo del usuario, la IP o el recurso afectado', example: 'ana@' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  buscar?: string;
 }
