@@ -60,7 +60,7 @@ export function ResetPasswordForm() {
   return (
     <>
       <AuthHeading title="Crea una contraseña nueva." description="Elige una contraseña segura que no uses en otros servicios." />
-      <form className="login-form" onSubmit={handleSubmit}>
+      <form method="post" className="login-form" onSubmit={handleSubmit}>
         <NewPasswordFields onChange={setPassword} />
         {error && (
           <AuthAlert tone="error" title="No se pudo restablecer la contraseña">

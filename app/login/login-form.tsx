@@ -57,7 +57,7 @@ export function LoginForm() {
   const invalidCredentials = error?.kind === 'credentials';
 
   return (
-    <form className="login-form" onSubmit={handleSubmit}>
+    <form method="post" className="login-form" onSubmit={handleSubmit}>
       {notice && <AuthAlert tone="warning" title={notice.title}>{notice.detail}</AuthAlert>}
       {error?.kind === 'locked' && <AuthAlert tone="error" title="Cuenta bloqueada temporalmente">{error.message}</AuthAlert>}
 
