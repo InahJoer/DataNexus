@@ -32,7 +32,27 @@ Que falten funcionalidades no impide construir la imagen: el código actual debe
 
 ## GitHub Actions y GHCR
 
-`.github/workflows/ci-cd.yml` corre en pushes a `DOCKERCICD` y `main`, Pull Requests hacia `main` y ejecuciones manuales. CI inicia PostgreSQL, aplica migraciones, ejecuta lint y pruebas del backend, y construye las dos imágenes. Solo cuando ambas compilaciones Docker terminan correctamente, otro job publica las imágenes desde pushes.
+`.github/workflows/ci-cd.yml` corre en pushes a `DOCKERCICD` y `main`, Pull Requests hacia `main` y ejecuciones manuales. El job **Validate backend** inicia PostgreSQL y Redis y ejecuta, en orden: `npm ci`, `prisma generate`, `prisma validate`, migraciones, `npm run lint` (oxlint `--type-aware`), `npm run build` y las pruebas con cobertura. Después, **Build and validate Docker images** construye las dos imágenes. Solo cuando ambas compilaciones Docker terminan correctamente, otro job publica las imágenes desde pushes.
+
+### Cobertura (issue #48)
+
+Las pruebas corren con `vitest --coverage` (v8). El resumen (líneas, sentencias, funciones y ramas) aparece en la pestaña **Summary** de cada ejecución, y el reporte completo (`lcov` y HTML) se guarda 14 días como artefacto `backend-coverage`. En local: `npm --prefix backend run test:cov`.
+
+### PR con el CI en rojo (issue #48)
+
+`.github/workflows/pr-ci-guard.yml` se ejecuta cuando termina el CI de un Pull Request. Si falló, comenta en el PR qué jobs y pasos fallaron, cómo reproducirlo en local, y cierra el PR. Tras subir la corrección a la misma rama, se reabre con **Reopen pull request** y el CI vuelve a correr. Por usar `workflow_run`, GitHub lo ejecuta desde la versión de `main`: empieza a funcionar cuando este archivo está en `main`.
+
+### Protección de `main` (issue #48)
+
+La protección de rama no se guarda en el repositorio: la aplica un administrador con la configuración de `.github/branch-protection.json` (CI verde en **Validate backend** y **Build and validate Docker images**, rama actualizada, 1 aprobación, conversaciones resueltas y sin force push):
+
+```bash
+gh api -X PUT repos/InahJoer/DataNexus/branches/main/protection --input .github/branch-protection.json
+```
+
+Con ella, un PR con pruebas rotas no puede fusionarse aunque alguien lo reabra sin corregirlo.
+
+Las plantillas de PR y de issues están en `.github/pull_request_template.md` y `.github/ISSUE_TEMPLATE/`.
 
 Después de CI, los pushes (no los Pull Requests) publican imágenes a GHCR:
 

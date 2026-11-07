@@ -1,0 +1,52 @@
+name: Historia o tarea del sprint
+description: Funcionalidad nueva o tarea planificada (formato [Sx-yy]).
+title: "[Sx-yy] "
+labels: []
+body:
+  - type: textarea
+    id: contexto
+    attributes:
+      label: Contexto
+      description: Qué se necesita y por qué. Menciona el requisito (RF-xx / RNF-xx) o el caso de uso.
+      placeholder: "RF-21 incluye Word; hoy solo hay Excel, PDF y JSON."
+    validations:
+      required: true
+  - type: textarea
+    id: tareas
+    attributes:
+      label: Tareas
+      description: Lista de pasos concretos.
+      value: |
+        - [ ] 
+    validations:
+      required: true
+  - type: textarea
+    id: criterios
+    attributes:
+      label: Criterios de aceptación
+      description: Cómo se comprueba que está terminado.
+      value: |
+        - 
+    validations:
+      required: true
+  - type: input
+    id: dependencias
+    attributes:
+      label: Dependencias
+      description: Issues de las que depende (ej. S3-04, #38).
+  - type: input
+    id: figma
+    attributes:
+      label: Diseño en Figma
+      description: Enlace al nodo de Figma, si aplica.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Área
+      multiple: true
+      options:
+        - backend
+        - frontend
+        - database
+        - devops
+        - documentación

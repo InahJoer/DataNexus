@@ -1,0 +1,54 @@
+name: Reporte de error
+description: Algo no funciona como debería.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: descripcion
+    attributes:
+      label: Qué pasa
+      description: Describe el error y su impacto.
+    validations:
+      required: true
+  - type: textarea
+    id: pasos
+    attributes:
+      label: Pasos para reproducirlo
+      value: |
+        1. 
+        2. 
+        3. 
+    validations:
+      required: true
+  - type: textarea
+    id: esperado
+    attributes:
+      label: Comportamiento esperado
+    validations:
+      required: true
+  - type: dropdown
+    id: entorno
+    attributes:
+      label: Entorno
+      options:
+        - Local (npm run dev)
+        - Docker Compose
+        - Producción (Railway)
+    validations:
+      required: true
+  - type: dropdown
+    id: rol
+    attributes:
+      label: Rol del usuario
+      options:
+        - ADMIN
+        - OPERADOR
+        - LECTOR
+        - AUDITOR
+        - No aplica
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs o capturas
+      description: Sin contraseñas, tokens ni cadenas de conexión.
+      render: shell

@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentación de la API (Swagger)
+    url: http://localhost:3001/api/docs
+    about: Consulta los endpoints y sus contratos con el backend en local.
