@@ -742,6 +742,42 @@ describe('DataEngineService aggregation pipeline', () => {
     ]);
   });
 
+  it('calcula mínimo, máximo y valores distintos, ordena el resultado y renombra columnas (Query Builder)', async () => {
+    const { service } = createEngine(
+      [
+        { client_id: 'C1', status: 'sql-status' },
+        { client_id: 'C2', status: 'sql-status' },
+        { client_id: 'C3', status: 'sql-status' },
+      ],
+      [
+        { client_ref: 'C1', status: 'paid', amount: 12 },
+        { client_ref: 'C1', status: 'paid', amount: 40 },
+        { client_ref: 'C2', status: 'paid', amount: 18 },
+        { client_ref: 'C3', status: 'cancelled', amount: 30 },
+      ],
+    );
+
+    const result = await service.executeCrossJoin(
+      {
+        ...basePayload,
+        groupBy: ['nosql.status'],
+        aggregations: [
+          { operation: 'MIN', field: 'amount', as: 'minimo' },
+          { operation: 'MAX', field: 'amount', as: 'maximo' },
+          { operation: 'COUNT_DISTINCT', field: 'client_ref', as: 'clientes' },
+        ],
+        ordenarPor: [{ campo: 'maximo', direccion: 'ASC' }],
+        aliasColumnas: { 'nosql.status': 'Estado', clientes: 'Clientes distintos' },
+      } as any,
+      actorWithAccess,
+    );
+
+    expect(result.data).toEqual([
+      { Estado: 'cancelled', minimo: 30, maximo: 30, 'Clientes distintos': 1 },
+      { Estado: 'paid', minimo: 12, maximo: 40, 'Clientes distintos': 2 },
+    ]);
+  });
+
   it('returns an empty grouped result and a zero-row global aggregate', async () => {
     const { service } = createEngine([], []);
     const grouped = await service.executeCrossJoin(

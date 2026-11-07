@@ -1,15 +1,15 @@
 import { PageHeader } from '@/components/app-shell/page-header';
-import { JoinBuilder } from '@/components/joins/join-builder';
+import { QueryBuilder } from '@/components/query-builder/query-builder';
 
 export default function QueriesPage() {
   return (
     <>
       <PageHeader
         trail={['Workspace', 'Consultas']}
-        title="Editor de consultas"
-        subtitle="Combina tablas, colecciones y subcolecciones de cualquier conexión y explora el resultado."
+        title="Query Builder"
+        subtitle="Arrastra tablas, colecciones y subcolecciones de cualquier conexión, únelas en el lienzo y explora el resultado."
       />
-      <JoinBuilder />
+      <QueryBuilder />
     </>
   );
 }
