@@ -6,6 +6,7 @@ import { Modal } from '@/components/app-shell/modal';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { StatusView } from '@/components/app-shell/status-view';
 import { useWorkspace } from '@/components/app-shell/workspace-context';
+import { NewPasswordFields } from '@/components/auth/new-password-fields';
 import { Icon } from '@/components/icons';
 import type { ApiClient } from '@/lib/api/client';
 import { apiErrorMessage, NETWORK_ERROR_MESSAGE } from '@/lib/api/errors';
@@ -16,7 +17,7 @@ import type { components } from '@/lib/api/schema';
 
 type Member = components['schemas']['MemberResponseDto'];
 type Invitation = components['schemas']['InvitationResponseDto'];
-type Dialog = { kind: 'invite' } | { kind: 'remove'; member: Member } | { kind: 'revoke-all' } | null;
+type Dialog = { kind: 'invite' } | { kind: 'remove' | 'password'; member: Member } | { kind: 'revoke-all' } | null;
 
 const ROLES: UserRole[] = ['ADMIN', 'OPERADOR', 'LECTOR', 'AUDITOR'];
 const ROLE_INFO: Record<UserRole, { detail: string; can: string[] }> = {
@@ -44,6 +45,7 @@ export default function TeamPage() {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<UserRole | ''>('');
   const [dialog, setDialog] = useState<Dialog>(null);
+  const [newPassword, setNewPassword] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [invite, setInvite] = useState({ name: '', email: '', role: 'LECTOR' as UserRole });
@@ -168,6 +170,10 @@ export default function TeamPage() {
                     <td>{member.sesionesActivas}</td>
                     <td className="cell-actions">
                       <button className="row-action" type="button" disabled={member.sesionesActivas === 0 || member.esUstedMismo || busy === `rev-${member.id}`} onClick={() => void run(`rev-${member.id}`, () => call((api) => api.POST('/users/{id}/sessions/revoke', { params: { path: { id: member.id } } })), `Sesiones de ${member.name} cerradas.`)}>Cerrar sesiones</button>
+                      {!member.esUstedMismo && <button className="row-action" type="button" onClick={() => {
+                        setNewPassword(null);
+                        setDialog({ kind: 'password', member });
+                      }}>Cambiar contraseña</button>}
                       {!member.esUstedMismo && <button className="row-action row-action--danger" type="button" onClick={() => setDialog({ kind: 'remove', member })}>Quitar</button>}
                     </td>
                   </tr>
@@ -233,6 +239,30 @@ export default function TeamPage() {
           footer={<><button className="button form-secondary" type="button" onClick={() => setDialog(null)}>Cancelar</button><button className="button form-danger" type="button" disabled={busy === 'remove'} onClick={() => void run('remove', () => call((api) => api.DELETE('/users/{id}', { params: { path: { id: dialog.member.id } } })), `${dialog.member.name} ya no forma parte del workspace.`).then((ok) => ok && setDialog(null))}>Quitar</button></>}
         >
           <p className="modal-text">Sus consultas guardadas y reportes se conservan. Puedes volver a invitarlo cuando quieras.</p>
+        </Modal>
+      )}
+      {dialog?.kind === 'password' && (
+        <Modal
+          title={`Cambiar contraseña de ${dialog.member.name}`}
+          description="Se cerrarán las sesiones del miembro."
+          onClose={() => { setNewPassword(null); setDialog(null); }}
+          footer={<button className="button button--primary" type="submit" form="member-password-form" disabled={!newPassword || busy === 'password'}>Guardar contraseña</button>}
+        >
+          <form id="member-password-form" method="post" onSubmit={async (event) => {
+            event.preventDefault();
+            if (!newPassword || busy === 'password') return;
+            const ok = await run('password', () => call((api) => api.PATCH('/users/{id}/password', {
+              params: { path: { id: dialog.member.id } },
+              body: { newPassword },
+            })), 'La contraseña del miembro se actualizó.');
+            if (ok) {
+              setNewPassword(null);
+              setDialog(null);
+            }
+          }}>
+            <NewPasswordFields onChange={setNewPassword} />
+            {notice?.tone === 'error' && <p className="form-error" role="alert">{notice.text}</p>}
+          </form>
         </Modal>
       )}
       {dialog?.kind === 'revoke-all' && (

@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
+import bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import type {
@@ -97,6 +98,35 @@ export class UsersService {
       ...requestContext,
     });
     return { revocadas: result.count };
+  }
+
+  async resetMemberPassword(actor: AuthenticatedUser, id: string, password: string, context: RequestAuditContext = {}) {
+    if (!hasPermission(actor.role, 'MANAGE_MEMBERS') || actor.id === id) {
+      throw new ForbiddenException('Se requiere un administrador para cambiar la contraseña de otro miembro');
+    }
+    const hash = await bcrypt.hash(password, 10);
+    await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.user.updateMany({
+        where: { id, workspaceId: actor.workspaceId },
+        data: { password: hash, failedLoginAttempts: 0, lockedUntil: null },
+      });
+      if (updated.count === 0) throw new NotFoundException('Usuario no encontrado en el workspace');
+      await tx.passwordResetToken.deleteMany({ where: { userId: id, usedAt: null } });
+      await tx.userSession.updateMany({
+        where: { userId: id, revokedAt: null },
+        data: { revokedAt: new Date(), revokedReason: 'cambio_contrasena' },
+      });
+      await this.auditService.record({
+        ...context,
+        eventType: 'PASSWORD_RESET',
+        outcome: 'SUCCESS',
+        actorUserId: actor.id,
+        actorEmail: actor.email,
+        workspaceId: actor.workspaceId,
+        targetType: 'USER',
+        targetId: id,
+      }, tx);
+    });
   }
 
   async updateRole(

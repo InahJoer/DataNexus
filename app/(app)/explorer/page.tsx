@@ -37,6 +37,11 @@ export default function ExplorerPage() {
         title="Explorador de datos"
         subtitle="Navega tablas, colecciones y subcolecciones de todas tus conexiones; filtra, revisa documentos y edita celdas."
       />
+      <nav className="page-notice" aria-label="Vistas de consultas">
+        <Link className="auth-link" href="/queries">Query Builder</Link>
+        {' · '}
+        <span aria-current="page">Vista tabular con filtros</span>
+      </nav>
       {connections.isLoading ? (
         <p className="page-message">Cargando conexiones…</p>
       ) : connections.error && !connections.data ? (

@@ -16,12 +16,12 @@
 .qb-workspace { display: grid; grid-template-columns: 240px minmax(0, 1fr) 300px; gap: 12px; align-items: start; }
 
 /* Paleta de fuentes */
-.qb-palette { position: sticky; top: 12px; display: grid; gap: 8px; max-height: calc(100vh - 140px); overflow: auto; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.qb-palette { display: grid; gap: 8px; min-width: 0; max-height: calc(100vh - 140px); overflow: auto; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .qb-palette .search-field { width: 100%; }
 .qb-palette .field-help { margin: 0; }
 .qb-draggable { cursor: grab; }
 .qb-draggable:active { cursor: grabbing; }
-.qb-draggable span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qb-draggable span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Lienzo */
 .qb-center { display: grid; gap: 10px; min-width: 0; }

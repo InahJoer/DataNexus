@@ -26,12 +26,14 @@ export interface SendMailResult {
 export class MailService {
   private readonly logger = new Logger(MailService.name);
   private transporter: Transporter;
+  private readonly hasSmtp: boolean;
 
   constructor(private readonly configService: ConfigService) {
     const host = this.configService.get<string>('SMTP_HOST');
     const port = this.configService.get<number>('SMTP_PORT', 587);
     const user = this.configService.get<string>('SMTP_USER');
     const pass = this.configService.get<string>('SMTP_PASS');
+    this.hasSmtp = Boolean(host && user && pass);
 
     if (host && user && pass) {
       this.transporter = nodemailer.createTransport({
@@ -74,6 +76,9 @@ export class MailService {
   }
 
   async sendReportEmail(options: SendMailOptions): Promise<SendMailResult> {
+    if (!this.hasSmtp && this.configService.get<string>('NODE_ENV') === 'production') {
+      throw new Error('SMTP no está configurado para el envío de reportes');
+    }
     const from =
       this.configService.get<string>('MAIL_FROM') ?? 'DataNexus <no-reply@datanexus.io>';
     const recipients = Array.isArray(options.to) ? options.to.join(', ') : options.to;

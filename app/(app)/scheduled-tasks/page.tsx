@@ -38,7 +38,11 @@ export default function ScheduledTasksPage() {
     );
   }, [schedules.data, search, status]);
 
-  async function act(key: string, action: () => Promise<{ response: Response; error?: unknown }>, success: string) {
+  async function act(
+    key: string,
+    action: () => Promise<{ response: Response; error?: unknown; data?: { status?: string; error?: unknown } }>,
+    success: string,
+  ) {
     setBusy(key);
     setNotice(null);
     try {
@@ -47,8 +51,12 @@ export default function ScheduledTasksPage() {
         setNotice({ tone: 'error', text: apiErrorMessage(result.error, result.response.status) });
         return false;
       }
-      setNotice({ tone: 'ok', text: success });
       reload();
+      if (result.data?.status === 'FAILED') {
+        setNotice({ tone: 'error', text: asText(result.data.error) ?? 'La ejecución falló. Revisa el historial en Ejecuciones.' });
+        return false;
+      }
+      setNotice({ tone: 'ok', text: success });
       return true;
     } catch {
       setNotice({ tone: 'error', text: NETWORK_ERROR_MESSAGE });
