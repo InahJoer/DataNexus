@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, PayloadTooLargeException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, PayloadTooLargeException } from '@nestjs/common';
 import { MongoClient, ObjectId, type Document, type Filter } from 'mongodb';
 import { DataSourceClientPool } from '../pool/data-source-client-pool.js';
 import {
@@ -12,7 +12,10 @@ import type {
   DataSourceConnection,
   ExtractOptions,
   IDataSourceAdapter,
+  UpdateRecordInput,
+  UpdateRecordResult,
 } from './data-source-adapter.interface.js';
+import { assertExpectedCellValue } from './cell-update.js';
 import { assertMongoCollectionName, buildMongoFilter } from './mongo-filters.js';
 import { toDataPage, type CursorValue, type DataPage, type DataPageOptions } from '../pagination/keyset.js';
 
@@ -182,6 +185,48 @@ export class MongoDbAdapter implements IDataSourceAdapter {
         .find(query, { sort: { _id: 1 }, limit: options.pageSize + 1, maxTimeMS: EXTERNAL_QUERY_TIMEOUT_MS })
         .toArray();
       return toDataPage(raw, ['_id'], options.pageSize, (document) => normalizeBsonValue(document) as Record<string, any>);
+    });
+  }
+
+  /**
+   * Edita un campo de primer nivel de un documento (explorador de datos). Es una comparación e intercambio: solo
+   * actualiza si el valor sigue siendo el que el usuario vio; si otro lo cambió entretanto, responde 409.
+   */
+  async updateRecord(connection: DataSourceConnection, input: UpdateRecordInput): Promise<UpdateRecordResult> {
+    assertMongoCollectionName(input.entityName);
+    if (input.schema !== undefined && input.schema !== connection.dbName) {
+      throw new BadRequestException('La colección no pertenece a la base de esta conexión');
+    }
+    if (typeof input.primaryKey !== 'string' || !input.primaryKey) throw new BadRequestException('MongoDB requiere el _id del documento');
+    if (!input.field || input.field.length > 128 || input.field === '_id' || /^\$|[.\0]/.test(input.field)) {
+      throw new BadRequestException('El nombre del campo no es válido');
+    }
+    // El _id llega como texto: si tiene forma de ObjectId se busca como ObjectId (y si no, como texto).
+    const ids: unknown[] = ObjectId.isValid(input.primaryKey) && /^[0-9a-f]{24}$/i.test(input.primaryKey)
+      ? [new ObjectId(input.primaryKey), input.primaryKey]
+      : [input.primaryKey];
+
+    return await this.withClient(connection, async (client) => {
+      const collection = client.db(connection.dbName).collection(input.entityName);
+      const document = await collection.findOne({ _id: { $in: ids } } as Filter<Document>, { maxTimeMS: EXTERNAL_QUERY_TIMEOUT_MS });
+      if (!document) throw new NotFoundException('El documento no existe en la colección');
+      if (!Object.prototype.hasOwnProperty.call(document, input.field)) {
+        throw new ConflictException('El valor de la celda cambió desde la última lectura');
+      }
+      const current: unknown = document[input.field];
+      const valueBefore = assertExpectedCellValue(normalizeBsonValue(current), input.expectedValue);
+      let nextValue: unknown = input.nextValue;
+      if (current instanceof Date && typeof nextValue === 'string') {
+        const date = new Date(nextValue);
+        if (Number.isNaN(date.getTime())) throw new BadRequestException('El valor de fecha debe ser ISO 8601 válido');
+        nextValue = date;
+      }
+      const result = await collection.updateOne(
+        { _id: document._id, [input.field]: current } as Filter<Document>,
+        { $set: { [input.field]: nextValue } },
+      );
+      if (result.matchedCount === 0) throw new ConflictException('El valor de la celda cambió desde la última lectura');
+      return { valueBefore, valueAfter: normalizeBsonValue(nextValue) as UpdateRecordResult['valueAfter'] };
     });
   }
 

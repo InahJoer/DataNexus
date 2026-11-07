@@ -1,5 +1,5 @@
-import { CrossJoinBuilder } from '@/components/cross-join-builder';
 import { PageHeader } from '@/components/app-shell/page-header';
+import { JoinBuilder } from '@/components/joins/join-builder';
 
 export default function QueriesPage() {
   return (
@@ -7,9 +7,9 @@ export default function QueriesPage() {
       <PageHeader
         trail={['Workspace', 'Consultas']}
         title="Editor de consultas"
-        subtitle="Cruza una tabla SQL con una colección NoSQL y explora el resultado."
+        subtitle="Combina tablas, colecciones y subcolecciones de cualquier conexión y explora el resultado."
       />
-      <CrossJoinBuilder />
+      <JoinBuilder />
     </>
   );
 }

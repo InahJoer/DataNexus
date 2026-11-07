@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException, PayloadTooLargeException } from '@nestjs/common';
-import { FieldPath, Firestore, Timestamp, type Query, type WhereFilterOp } from '@google-cloud/firestore';
+import { FieldPath, Firestore, Timestamp, type Query, type QueryDocumentSnapshot, type WhereFilterOp } from '@google-cloud/firestore';
 import { toDataPage, type DataPage, type DataPageOptions } from '../pagination/keyset.js';
 import { DataSourceClientPool } from '../pool/data-source-client-pool.js';
 import {
@@ -38,13 +38,39 @@ const WHERE_FILTER_OPERATORS: Partial<Record<FilterOperator, WhereFilterOp>> = {
   'not-in': 'not-in',
 };
 
+/**
+ * Entidad de Firestore:
+ * - `clientes` o `clientes/{id}/pedidos`: una colección concreta (raíz o subcolección de un documento).
+ * - `clientes/*` + `/pedidos`: grupo con todas las subcolecciones `pedidos` de los documentos de `clientes`. Cada fila
+ *   lleva `__parentId` (id del documento padre) y `__path` (ruta completa) para poder cruzarla con su colección padre.
+ */
+type FirestoreEntity = { kind: 'collection'; path: string } | { kind: 'group'; parent: string; id: string };
+
+const ENTITY_ERROR = 'Colección no válida: usa coleccion, coleccion/{id}/subcoleccion o coleccion/*/subcoleccion';
+/** Muestreo para descubrir subcolecciones: documentos por colección raíz y colecciones raíz revisadas. */
+const SUBCOLLECTION_SAMPLE_DOCS = 5;
+const SUBCOLLECTION_SAMPLE_ROOTS = 25;
+
+function isValidSegment(segment: string): boolean {
+  return segment.length > 0 && segment.length <= 150 && !/[/\0*]/.test(segment) && segment !== '.' && segment !== '..' && !/^__.*__$/.test(segment);
+}
+
+export function parseFirestoreEntity(name: string): FirestoreEntity {
+  const parts = typeof name === 'string' ? name.split('/') : [];
+  if (parts.length === 3 && parts[1] === '*' && isValidSegment(parts[0]) && isValidSegment(parts[2])) {
+    return { kind: 'group', parent: parts[0], id: parts[2] };
+  }
+  if (parts.length % 2 === 1 && parts.length <= 7 && parts.every(isValidSegment)) return { kind: 'collection', path: name };
+  throw new BadRequestException(ENTITY_ERROR);
+}
+
 interface FirestoreServiceAccount {
   project_id?: unknown;
   client_email?: unknown;
   private_key?: unknown;
 }
 
-/** Firestore: colecciones raíz, campos por muestreo y extracción con filtros, con un cliente reutilizable. */
+/** Firestore: colecciones raíz y subcolecciones, campos por muestreo y extracción con filtros, con un cliente reutilizable. */
 @Injectable()
 export class FirestoreAdapter implements IDataSourceAdapter {
   readonly tipoMotor = 'FIRESTORE' as const;
@@ -60,17 +86,31 @@ export class FirestoreAdapter implements IDataSourceAdapter {
   listObjects(connection: DataSourceConnection): Promise<CatalogObject[]> {
     return this.withClient(connection, async (firestore) => {
       const collections = await firestore.listCollections();
-      return collections.map((collection) => ({ name: collection.id, type: 'COLLECTION' as const }));
+      const objects: CatalogObject[] = collections.map((collection) => ({ name: collection.id, type: 'COLLECTION' as const }));
+      // Firestore no lista subcolecciones globalmente: se descubren en una muestra de documentos de cada colección raíz.
+      const groups = new Set<string>();
+      await Promise.all(
+        collections.slice(0, SUBCOLLECTION_SAMPLE_ROOTS).map(async (collection) => {
+          const sample = await collection.limit(SUBCOLLECTION_SAMPLE_DOCS).get();
+          for (const document of sample.docs) {
+            for (const sub of await document.ref.listCollections()) groups.add(`${collection.id}/*/${sub.id}`);
+          }
+        }),
+      );
+      for (const name of [...groups].sort()) objects.push({ name, type: 'COLLECTION' });
+      return objects;
     });
   }
 
   /** Campos del primer documento de la colección (Firestore no tiene esquema). */
   async listFields(connection: DataSourceConnection, collectionName: string): Promise<string[]> {
-    this.validateCollectionName(collectionName);
+    const entity = parseFirestoreEntity(collectionName);
     return await this.withClient(connection, async (firestore) => {
-      const snapshot = await firestore.collection(collectionName).limit(1).get();
-      if (snapshot.empty) return [];
-      return Object.keys(snapshot.docs[0].data() ?? {});
+      const snapshot = await this.baseQuery(firestore, entity).limit(entity.kind === 'group' ? 50 : 1).get();
+      const document = snapshot.docs.find((doc) => this.belongs(doc, entity));
+      if (!document) return [];
+      const fields = Object.keys(document.data() ?? {});
+      return entity.kind === 'group' ? ['__parentId', ...fields] : fields;
     });
   }
 
@@ -79,14 +119,15 @@ export class FirestoreAdapter implements IDataSourceAdapter {
     collectionName: string,
     options: ExtractOptions = {},
   ): Promise<Record<string, any>[]> {
-    this.validateCollectionName(collectionName);
+    const entity = parseFirestoreEntity(collectionName);
     const filters = this.validateFilters(options.filters);
     const maxRows = getMaxSourceRows();
     const maxBytes = getMaxSourceBytes();
 
     return await this.withClient(connection, async (firestore) => {
-      let query: Query = firestore.collection(collectionName);
-      for (const filter of filters) query = this.applyFilter(query, filter);
+      let query: Query = this.baseQuery(firestore, entity);
+      // En los grupos los filtros se evalúan en memoria: en el servidor exigirían índices de grupo de colecciones.
+      if (entity.kind === 'collection') for (const filter of filters) query = this.applyFilter(query, filter);
       const stream = query.limit(maxRows + 1).stream() as NodeJS.ReadableStream & { destroy(error?: Error): unknown };
       const timeout = setTimeout(
         () => stream.destroy(Object.assign(new Error('Firestore query timeout'), { code: 'DEADLINE_EXCEEDED' })),
@@ -97,13 +138,12 @@ export class FirestoreAdapter implements IDataSourceAdapter {
       try {
         const rows: Record<string, any>[] = [];
         let totalBytes = 0;
-        for await (const document of stream as AsyncIterable<any>) {
+        for await (const document of stream as AsyncIterable<QueryDocumentSnapshot>) {
+          if (!this.belongs(document, entity)) continue;
           if (rows.length >= maxRows) {
             throw new PayloadTooLargeException(`La colección supera el máximo de ${maxRows} documentos configurado`);
           }
-          const data = this.normalizeValue(document.data()) as Record<string, any>;
-          const documentIdKey = this.uniqueMetadataKey(data, '__documentId');
-          const row = { ...data, [documentIdKey]: document.id };
+          const row = this.toRow(document, entity);
           // Misma semántica que SQL: Firestore incluye los null en != y not-in; aquí se descartan.
           if (!matchesFilters(row, filters)) continue;
           const rowBytes = getJsonByteLength(row);
@@ -128,9 +168,9 @@ export class FirestoreAdapter implements IDataSourceAdapter {
    * filas que las pedidas y seguir teniendo `nextCursor`.
    */
   async readPage(connection: DataSourceConnection, collectionName: string, options: DataPageOptions): Promise<DataPage> {
-    this.validateCollectionName(collectionName);
+    const entity = parseFirestoreEntity(collectionName);
     const filters = this.validateFilters(options.filters);
-    const server = filters.filter(
+    const server = entity.kind === 'group' ? [] : filters.filter(
       (filter) => filter.operador === 'eq' || filter.operador === 'in' || (filter.operador === 'isNull' && filter.valor === true),
     );
     if (options.after && (options.after.length !== 1 || typeof options.after[0] !== 'string')) {
@@ -138,33 +178,43 @@ export class FirestoreAdapter implements IDataSourceAdapter {
     }
 
     return await this.withClient(connection, async (firestore) => {
-      let query: Query = firestore.collection(collectionName);
+      let query: Query = this.baseQuery(firestore, entity);
       for (const filter of server) query = this.applyFilter(query, filter);
       query = query.orderBy(FieldPath.documentId());
+      // En un grupo el orden es por ruta completa, así que el cursor también lo es.
       if (options.after) query = query.startAfter(options.after[0] as string);
       const snapshot = await query.limit(options.pageSize + 1).get();
-      const raw = snapshot.docs.map((document) => {
-        const data = this.normalizeValue(document.data()) as Record<string, any>;
-        return { ...data, [this.uniqueMetadataKey(data, '__documentId')]: document.id };
-      });
-      const page = toDataPage(raw, ['__documentId'], options.pageSize, (row) => row);
+      const raw = snapshot.docs.map((document) => ({
+        ...this.toRow(document, entity),
+        __cursor: entity.kind === 'group' ? document.ref.path : document.id,
+      }));
+      const page = toDataPage(raw, ['__cursor'], options.pageSize, ({ __cursor: _cursor, ...row }) => row);
       // El cursor avanza por el último documento leído aunque los filtros en memoria lo descarten.
-      return { ...page, rows: page.rows.filter((row) => matchesFilters(row, filters)) };
+      return {
+        ...page,
+        orderBy: [entity.kind === 'group' ? '__path' : '__documentId'],
+        rows: page.rows.filter((row) => this.belongs(row, entity) && matchesFilters(row, filters)),
+      };
     });
   }
 
   async updateRecord(connection: DataSourceConnection, input: UpdateRecordInput): Promise<UpdateRecordResult> {
-    this.validateCollectionName(input.entityName);
+    const entity = parseFirestoreEntity(input.entityName);
     if (input.schema !== undefined) throw new BadRequestException('Firestore no admite esquemas');
-    if (typeof input.primaryKey !== 'string' || !input.primaryKey || input.primaryKey.includes('/') || input.primaryKey.includes('\0')) {
-      throw new BadRequestException('Firestore requiere un ID de documento válido');
-    }
+    const key = input.primaryKey;
+    // En una colección la llave es el id del documento; en un grupo, su ruta completa (columna __path).
+    const keyParts = typeof key === 'string' ? key.split('/') : [];
+    const validKey =
+      entity.kind === 'collection'
+        ? keyParts.length === 1 && isValidSegment(keyParts[0])
+        : keyParts.length === 4 && keyParts[0] === entity.parent && keyParts[2] === entity.id && keyParts.every(isValidSegment);
+    if (!validKey) throw new BadRequestException('Firestore requiere un ID de documento válido');
     if (!input.field || input.field.length > 128 || input.field.includes('\0')) {
       throw new BadRequestException('El nombre del campo no es válido');
     }
 
     return await this.withClient(connection, async (firestore) => {
-      const document = firestore.collection(input.entityName).doc(input.primaryKey as string);
+      const document = entity.kind === 'collection' ? firestore.collection(entity.path).doc(key as string) : firestore.doc(key as string);
       return await firestore.runTransaction(async (transaction) => {
         const snapshot = await transaction.get(document);
         if (!snapshot.exists) throw new NotFoundException('El documento no existe en la colección');
@@ -240,10 +290,29 @@ export class FirestoreAdapter implements IDataSourceAdapter {
     });
   }
 
-  private validateCollectionName(collectionName: string): void {
-    if (!collectionName || collectionName.length > 150 || collectionName.includes('/') || collectionName.includes('\0')) {
-      throw new BadRequestException('Solo se admiten colecciones raíz con nombre válido');
+  private baseQuery(firestore: Firestore, entity: FirestoreEntity): Query {
+    return entity.kind === 'collection' ? firestore.collection(entity.path) : firestore.collectionGroup(entity.id);
+  }
+
+  /** collectionGroup trae todas las subcolecciones con ese nombre; solo cuentan las que cuelgan de la colección padre. */
+  private belongs(document: QueryDocumentSnapshot | Record<string, unknown>, entity: FirestoreEntity): boolean {
+    if (entity.kind === 'collection') return true;
+    const path = document instanceof Object && 'ref' in document && document.ref && typeof (document.ref as { path?: unknown }).path === 'string'
+      ? (document.ref as { path: string }).path
+      : (document as Record<string, unknown>).__path;
+    if (typeof path !== 'string') return false;
+    const parts = path.split('/');
+    return parts.length === 4 && parts[0] === entity.parent && parts[2] === entity.id;
+  }
+
+  private toRow(document: QueryDocumentSnapshot, entity: FirestoreEntity): Record<string, any> {
+    const data = this.normalizeValue(document.data()) as Record<string, any>;
+    const row: Record<string, any> = { ...data, [this.uniqueMetadataKey(data, '__documentId')]: document.id };
+    if (entity.kind === 'group') {
+      row[this.uniqueMetadataKey(row, '__parentId')] = document.ref.parent.parent?.id ?? null;
+      row[this.uniqueMetadataKey(row, '__path')] = document.ref.path;
     }
+    return row;
   }
 
   /** Solo condiciones de primer nivel que Firestore ejecuta (DataEngineService evalúa el resto en memoria). */
