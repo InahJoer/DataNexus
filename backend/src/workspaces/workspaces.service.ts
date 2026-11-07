@@ -20,6 +20,8 @@ import { normalizeAllowedDomains, normalizeSensitiveFields } from './workspace-s
 const WORKSPACE_SELECT = {
   id: true,
   nombreEmpresa: true,
+  tipoCuenta: true,
+  descripcion: true,
   logoUrl: true,
   zonaHoraria: true,
   dominiosPermitidos: true,
@@ -33,6 +35,8 @@ type WorkspaceRow = Prisma.WorkspaceGetPayload<{ select: typeof WORKSPACE_SELECT
 /** Campos editables por PATCH /workspaces/me. */
 const EDITABLE_FIELDS = [
   'nombreEmpresa',
+  'descripcion',
+  'tipoCuenta',
   'logoUrl',
   'zonaHoraria',
   'dominiosPermitidos',
@@ -159,6 +163,8 @@ export class WorkspacesService {
     const changes: WorkspaceChanges = {};
 
     if (dto.nombreEmpresa !== undefined) changes.nombreEmpresa = dto.nombreEmpresa;
+    if (dto.descripcion !== undefined) changes.descripcion = dto.descripcion?.trim() || null;
+    if (dto.tipoCuenta !== undefined) changes.tipoCuenta = dto.tipoCuenta;
     if (dto.logoUrl !== undefined) changes.logoUrl = dto.logoUrl || null;
     if (dto.zonaHoraria !== undefined) changes.zonaHoraria = dto.zonaHoraria;
 

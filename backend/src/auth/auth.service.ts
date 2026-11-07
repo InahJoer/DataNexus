@@ -5,10 +5,12 @@ import { AuditService } from '../audit/audit.service.js';
 import type { RequestAuditContext } from './interfaces/authenticated-user.interface.js';
 import { LoginDto } from './dto/login.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
+import type { SignupDto } from './dto/signup.dto.js';
 import { SessionsService } from './sessions.service.js';
 import { isUserRole } from './interfaces/user-role.js';
 import type { AuthResponseDto } from './dto/auth-response.dto.js';
 import { AccountLockedException, getLockoutPolicy } from './login-lockout.js';
+import { isValidTimeZone } from '../workspaces/workspace-settings.js';
 
 @Injectable()
 export class AuthService {
@@ -153,6 +155,45 @@ export class AuthService {
    * Método de utilidad para crear usuarios válidos y poblar el sistema.
    * @param registerDto Datos para el registro del usuario
    */
+  /**
+   * Alta de una cuenta nueva con su propio workspace, del que el usuario es ADMIN. En una organización el dominio del
+   * correo queda como dominio permitido para invitar al equipo. Al terminar inicia sesión y devuelve los tokens.
+   */
+  async signup(dto: SignupDto, requestContext: RequestAuditContext = {}): Promise<AuthResponseDto> {
+    const email = dto.email.toLowerCase();
+    if (await this.prisma.user.findUnique({ where: { email }, select: { id: true } })) {
+      throw new ConflictException('Ya existe una cuenta con este correo. Inicia sesión o recupera tu contraseña.');
+    }
+    const isOrganization = dto.tipoCuenta === 'ORGANIZACION';
+    const zonaHoraria = dto.zonaHoraria && isValidTimeZone(dto.zonaHoraria) ? dto.zonaHoraria : 'UTC';
+    const password = await bcrypt.hash(dto.password, 10);
+
+    const user = await this.prisma.$transaction(async (tx) => {
+      const workspace = await tx.workspace.create({
+        data: {
+          nombreEmpresa: isOrganization ? (dto.nombreEmpresa ?? dto.name) : `Espacio de ${dto.name.split(/\s+/)[0]}`,
+          tipoCuenta: dto.tipoCuenta,
+          zonaHoraria,
+          dominiosPermitidos: isOrganization ? [email.split('@')[1]] : [],
+        },
+      });
+      return tx.user.create({ data: { email, name: dto.name, password, role: 'ADMIN', workspaceId: workspace.id } });
+    });
+
+    await this.auditService.record({
+      eventType: 'ACCOUNT_CREATED',
+      outcome: 'SUCCESS',
+      actorUserId: user.id,
+      actorEmail: user.email,
+      workspaceId: user.workspaceId,
+      targetType: 'WORKSPACE',
+      targetId: user.workspaceId,
+      details: { tipoCuenta: dto.tipoCuenta },
+      ...requestContext,
+    });
+    return this.login({ email, password: dto.password }, requestContext);
+  }
+
   async register(registerDto: RegisterDto) {
     const existingUser = await this.prisma.user.findUnique({
       where: { email: registerDto.email.toLowerCase() },

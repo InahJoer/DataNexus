@@ -17,6 +17,12 @@ export class WorkspaceResponseDto {
   @ApiProperty({ example: 'Acme Analytics S.A.' })
   nombreEmpresa: string;
 
+  @ApiProperty({ enum: ['PERSONAL', 'ORGANIZACION'], description: 'Personal (una persona) u organización (equipo).' })
+  tipoCuenta: 'PERSONAL' | 'ORGANIZACION';
+
+  @ApiProperty({ type: String, nullable: true, example: 'Datos de ventas y logística' })
+  descripcion: string | null;
+
   @ApiProperty({ nullable: true, type: String, example: 'https://cdn.acme.com/logo.png' })
   logoUrl: string | null;
 

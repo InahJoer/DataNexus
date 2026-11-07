@@ -21,7 +21,7 @@ export function AppSidebar({ id, isOpen, onNavigate }: AppSidebarProps) {
   if (!session) return null;
 
   const { user } = session;
-  const groups = navigationFor(user.role);
+  const groups = navigationFor(user.role, workspace.data?.tipoCuenta);
   const activeHref = findSection(pathname)?.item.href;
   const workspaceName = workspace.data?.nombreEmpresa ?? (workspace.isLoading ? 'Cargando…' : 'Workspace');
   const usage = summary.data?.datosProcesados;

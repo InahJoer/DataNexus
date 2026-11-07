@@ -14,6 +14,7 @@ import {
   type LoginCredentials,
   type LoginOptions,
   type LogoutReason,
+  type SignupInput,
 } from '@/lib/auth-context';
 import {
   SESSION_STORAGE_KEY,
@@ -129,6 +130,24 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
         rememberRef.current = Boolean(options.remember);
         lastInteractionRef.current = Date.now();
         applySession({ ...tokenFields(loginResult.data), user: profileResult.data });
+      } catch (error) {
+        if (error instanceof LoginError) throw error;
+        throw new LoginError('No se pudo conectar con DataNexus. Verifica que la API esté iniciada.', null);
+      }
+    },
+    [applySession],
+  );
+
+  const signup = useCallback(
+    async (input: SignupInput, options: LoginOptions = {}) => {
+      try {
+        const result = await createApiClient().POST('/auth/signup', { body: input });
+        if (!result.response.ok || !result.data) {
+          throw new LoginError(apiErrorMessage(result.error, result.response.status), result.response.status);
+        }
+        rememberRef.current = Boolean(options.remember);
+        lastInteractionRef.current = Date.now();
+        applySession({ ...tokenFields(result.data), user: result.data.user });
       } catch (error) {
         if (error instanceof LoginError) throw error;
         throw new LoginError('No se pudo conectar con DataNexus. Verifica que la API esté iniciada.', null);
@@ -267,8 +286,8 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   }, [accessTokenExpiresAt, logout, refreshSession]);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ session, status, login, logout, refreshSession, idleSecondsLeft, stayActive }),
-    [session, status, login, logout, refreshSession, idleSecondsLeft, stayActive],
+    () => ({ session, status, login, signup, logout, refreshSession, idleSecondsLeft, stayActive }),
+    [session, status, login, signup, logout, refreshSession, idleSecondsLeft, stayActive],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

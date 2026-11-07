@@ -6,6 +6,7 @@ import type { components } from '@/lib/api/schema';
 export type AuthUser = components['schemas']['AuthUserResponseDto'];
 export type UserRole = AuthUser['role'];
 export type LoginCredentials = components['schemas']['LoginDto'];
+export type SignupInput = components['schemas']['SignupDto'];
 export type AuthSession = Readonly<{
   accessToken: string;
   refreshToken: string;
@@ -32,6 +33,8 @@ export type AuthContextValue = Readonly<{
   session: AuthSession | null;
   status: AuthStatus;
   login: (credentials: LoginCredentials, options?: LoginOptions) => Promise<void>;
+  /** Crea una cuenta personal u organización con su workspace e inicia sesión. */
+  signup: (input: SignupInput, options?: LoginOptions) => Promise<void>;
   /** Cierra la sesión en la API y en el navegador. Sin motivo se asume que expiró (401). */
   logout: (reason?: LogoutReason) => void;
   /**

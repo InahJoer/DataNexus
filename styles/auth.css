@@ -89,3 +89,26 @@ a.button { text-decoration: none; }
   .auth-console { display: none; }
   .password-policy { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* Alta de cuenta: elección personal u organización (app/signup) */
+.account-types { display: grid; gap: 12px; }
+.account-type { display: flex; align-items: flex-start; gap: 14px; width: 100%; padding: 16px; color: var(--ink); border: 1px solid var(--line); border-radius: 12px; background: var(--surface); font: inherit; text-align: left; cursor: pointer; transition: border-color 150ms ease-out, box-shadow 150ms ease-out, transform 150ms var(--ease-out); }
+.account-type:hover, .account-type:focus-visible { border-color: var(--green); box-shadow: 0 0 0 3px var(--green-pale); outline: none; transform: translateY(-1px); }
+.account-type > svg { flex: 0 0 auto; align-self: center; color: var(--muted); }
+.account-type-icon { display: grid; width: 40px; height: 40px; flex: 0 0 auto; place-items: center; color: var(--green); border-radius: 11px; background: var(--green-pale); }
+.account-type-copy { display: grid; min-width: 0; flex: 1; gap: 4px; }
+.account-type-copy strong { font-size: 15px; }
+.account-type-copy > span { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.account-type-copy ul { display: grid; gap: 3px; margin: 6px 0 0; padding: 0; list-style: none; }
+.account-type-copy li { display: flex; align-items: center; gap: 6px; color: var(--ink-soft); font-size: 12px; }
+.account-type-copy li svg { color: var(--green); }
+.account-change { align-self: flex-start; margin: 0 0 14px; padding: 0; border: 0; background: none; font: inherit; font-size: 12px; cursor: pointer; }
+.inline-link { padding: 0; border: 0; background: none; font: inherit; font-size: inherit; cursor: pointer; }
+.field-help { margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.auth-support--small { margin-top: 6px; font-size: 10px; }
+.account-badge { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; padding: 4px 8px; color: var(--green-dark); border-radius: 99px; background: var(--green-pale); font-size: 10px; font-weight: 700; white-space: nowrap; }
+.account-badge[data-type="PERSONAL"] { color: #7c6bc4; background: #f0edfc; }
+.count-pill { margin-left: 4px; padding: 1px 7px; color: var(--muted); border-radius: 99px; background: var(--line); font-size: 10px; }
+.workspace-choice-footer .row-action { display: inline-flex; align-items: center; gap: 5px; margin: 0; }
+.convert-check { height: auto; align-items: flex-start; padding: 10px 12px; border-radius: 8px; background: var(--green-pale); }
+.convert-check span { line-height: 1.45; }

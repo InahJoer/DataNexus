@@ -4,6 +4,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiOkResponse } from
 import { AuthService } from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
+import { SignupDto } from './dto/signup.dto.js';
 import { AuthResponseDto, AuthUserResponseDto } from './dto/auth-response.dto.js';
 import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
 import type { AuthenticatedRequest } from './interfaces/authenticated-user.interface.js';
@@ -15,6 +16,8 @@ import { RefreshTokenDto } from './dto/refresh-token.dto.js';
 
 /** 5 solicitudes cada 15 minutos por IP en los endpoints de recuperación. */
 const PASSWORD_RESET_THROTTLE = { default: { limit: 5, ttl: 15 * 60_000 } };
+/** Alta de cuentas: 5 por IP cada hora, para frenar registros automatizados. */
+const SIGNUP_THROTTLE = { default: { limit: 5, ttl: 60 * 60_000 } };
 
 const requestContext = (request: Request) => ({
   ipAddress: request.ip,
@@ -111,6 +114,21 @@ export class AuthController {
       ipAddress: request.ip,
       userAgent: request.get('user-agent') ?? undefined,
     });
+  }
+
+  @Throttle(SIGNUP_THROTTLE)
+  @Post('signup')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Crear una cuenta personal u organización',
+    description:
+      'Crea el usuario (ADMIN) y su workspace e inicia sesión. PERSONAL admite cualquier correo y no tiene miembros; ' +
+      'ORGANIZACION exige correo corporativo y deja su dominio como dominio permitido para invitar al equipo.',
+  })
+  @ApiResponse({ status: 201, description: 'Cuenta creada; devuelve los tokens como el login.', type: AuthResponseDto })
+  @ApiResponse({ status: 409, description: 'Ya existe una cuenta con ese correo.' })
+  signup(@Body() dto: SignupDto, @Req() request: Request) {
+    return this.authService.signup(dto, { ipAddress: request.ip, userAgent: request.get('user-agent') ?? undefined });
   }
 
   @Post('register')
