@@ -101,8 +101,8 @@ type DataViewProps = Readonly<{
 export function DataView({ target, subcollections, onOpen }: DataViewProps) {
   const call = useApiCall();
   const { session } = useAuth();
-  const canEdit = hasPermission(session?.user.role, 'MODIFY_RECORDS');
   const { connection, object } = target;
+  const canEdit = connection.tipoMotor !== 'FIRESTORE' && hasPermission(session?.user.role, 'MODIFY_RECORDS');
   const isSql = ENGINES[connection.tipoMotor].kind === 'sql';
 
   const [pageSize, setPageSize] = useState(50);

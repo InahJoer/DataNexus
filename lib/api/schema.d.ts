@@ -382,6 +382,12 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/connections/firestore/databases": {
+        post: {
+            requestBody: { content: { "application/json": { serviceAccount: Record<string, unknown> } } };
+            responses: { 200: { headers: { [name: string]: unknown }; content: { "application/json": { databaseIds: string[]; partial: boolean } } } };
+        };
+    };
     "/connections/firestore": {
         parameters: {
             query?: never;

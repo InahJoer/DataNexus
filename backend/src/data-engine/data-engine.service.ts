@@ -322,6 +322,9 @@ export class DataEngineService {
     }
 
     const connection = await this.connectionsService.getConnectionForExploration(input.conexionId, actor.workspaceId);
+    if (connection.tipoMotor === 'FIRESTORE') {
+      throw new ForbiddenException('Las conexiones Firestore son de solo lectura');
+    }
     const adapter = this.adapters.get(connection.tipoMotor);
     if (!adapter?.updateRecord) {
       throw new BadRequestException('La edición no está disponible para este motor');
