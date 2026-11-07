@@ -15,6 +15,7 @@ import '@/styles/connections.css';
 import '@/styles/explorer.css';
 import { AuthProvider } from '@/components/auth-provider';
 import { IdleWarning } from '@/components/idle-warning';
+import { THEME_BOOT_SCRIPT } from '@/lib/theme';
 
 export const metadata: Metadata = {
   title: 'DataNexus — Operaciones de datos',
@@ -23,7 +24,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="es" data-scroll-behavior="smooth">
+    <html lang="es" data-scroll-behavior="smooth" suppressHydrationWarning>
+      <head>
+        {/* Tema claro u oscuro antes de pintar (preferencia guardada en Mi perfil). */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+      </head>
       <body>
         <AuthProvider>
           {children}

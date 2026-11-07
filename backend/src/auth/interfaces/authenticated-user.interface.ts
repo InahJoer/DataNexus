@@ -7,6 +7,8 @@ export interface AuthenticatedUser {
   name: string;
   role: UserRole;
   workspaceId: string;
+  /** Sesión de la petición (sid del access token). Sirve para cerrar las demás y no la actual. */
+  sessionId?: string;
 }
 
 export interface RequestAuditContext {

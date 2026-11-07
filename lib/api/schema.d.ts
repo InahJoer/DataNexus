@@ -177,6 +177,67 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
+        /**
+         * Editar nombre y apellidos
+         * @description El correo no se edita porque se usa para iniciar sesión.
+         */
+        patch: operations["AccountController_updateProfile"];
+        trace?: never;
+    };
+    "/auth/change-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cambiar la contraseña
+         * @description Exige la contraseña actual, aplica la política de contraseñas y cierra las demás sesiones abiertas del usuario.
+         */
+        post: operations["AccountController_changePassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mis sesiones abiertas
+         * @description Dispositivos con sesión activa; `actual` marca la de esta petición.
+         */
+        get: operations["AccountController_listSessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/sessions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Cerrar una de mis sesiones */
+        delete: operations["AccountController_revokeSession"];
+        options?: never;
+        head?: never;
         patch?: never;
         trace?: never;
     };
@@ -357,6 +418,46 @@ export interface paths {
         get: operations["UsersController_findAll"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/sessions/revoke-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cerrar todas las sesiones del workspace (ADMIN)
+         * @description Excepto la sesión del propio administrador.
+         */
+        post: operations["UsersController_revokeAllSessions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{id}/sessions/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cerrar las sesiones de un miembro (ADMIN)
+         * @description Su siguiente petición recibe 401 y debe volver a iniciar sesión.
+         */
+        post: operations["UsersController_revokeUserSessions"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1376,6 +1477,43 @@ export interface components {
              */
             workspaceId: string;
         };
+        UpdateProfileDto: {
+            /**
+             * @description Nombre y apellidos. El correo no se edita: se usa para entrar.
+             * @example Ana Martínez López
+             */
+            name: string;
+        };
+        ChangePasswordDto: {
+            /** @description Contraseña actual */
+            currentPassword: string;
+            /**
+             * @description Entre 10 y 72 caracteres, con al menos una mayúscula, una minúscula, un número y un símbolo. No puede contener tu correo ni contraseñas comunes.
+             * @example NuevaClave#2026
+             */
+            newPassword: string;
+        };
+        SessionResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            lastActivityAt: string;
+            /** @example 192.0.2.10 */
+            ipAddress: string | null;
+            /** @example Mozilla/5.0 (Windows NT 10.0) Chrome/130 */
+            userAgent: string | null;
+            /** @description true si es la sesión desde la que se hace la petición */
+            actual: boolean;
+        };
+        RevokedSessionsDto: {
+            /**
+             * @description Sesiones cerradas
+             * @example 3
+             */
+            revocadas: number;
+        };
         AuditLogEntryResponseDto: {
             /** Format: uuid */
             id: string;
@@ -1629,6 +1767,32 @@ export interface components {
             tipoMotor?: "POSTGRESQL" | "MYSQL" | "SQLSERVER" | "FIRESTORE" | "MONGODB";
             /** @description Credenciales nuevas o solo los campos que cambian (mismo motor). Se vuelven a cifrar. */
             credenciales?: components["schemas"]["PostgresCredentialsDto"] | components["schemas"]["MysqlCredentialsDto"] | components["schemas"]["SqlServerCredentialsDto"] | components["schemas"]["MongoCredentialsDto"] | components["schemas"]["FirestoreCredentialsDto"];
+        };
+        MemberResponseDto: {
+            /** Format: uuid */
+            id: string;
+            /** @example ana@acme.com */
+            email: string;
+            /** @example Ana Martínez */
+            name: string;
+            /** @enum {string} */
+            role: "ADMIN" | "OPERADOR" | "LECTOR" | "AUDITOR";
+            /** Format: uuid */
+            workspaceId: string;
+            /**
+             * Format: date-time
+             * @description Última actividad en cualquier sesión
+             */
+            ultimoAcceso: string | null;
+            /**
+             * @description Sesiones abiertas (no cerradas ni vencidas)
+             * @example 2
+             */
+            sesionesActivas: number;
+            /** @description Cuenta bloqueada temporalmente por intentos fallidos */
+            bloqueado: boolean;
+            /** @description true si es el usuario que hace la petición */
+            esUstedMismo: boolean;
         };
         InviteUserDto: {
             /**
@@ -3083,6 +3247,126 @@ export interface operations {
             };
         };
     };
+    AccountController_updateProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProfileDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthUserResponseDto"];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AccountController_changePassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePasswordDto"];
+            };
+        };
+        responses: {
+            /** @description La nueva contraseña no cumple la política o es igual a la actual. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AccountController_listSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionResponseDto"][];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    AccountController_revokeSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevokedSessionsDto"];
+                };
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description La sesión no existe, ya estaba cerrada o es de otro usuario. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     AuditController_findAll: {
         parameters: {
             query?: {
@@ -3095,7 +3379,7 @@ export interface operations {
                 /** @description Filtrar registros hasta esta fecha (formato ISO 8601) */
                 fechaFin?: string;
                 /** @description Filtrar por tipo de acción o evento */
-                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED" | "INVITATION_RESENT" | "INVITATION_REVOKED" | "INVITATION_ACCEPTED" | "USER_REMOVED" | "BROWSE_DATA" | "SAVED_QUERY_CREATED" | "SAVED_QUERY_UPDATED" | "SAVED_QUERY_DELETED" | "SCHEDULED_REPORT_CREATED" | "SCHEDULED_REPORT_UPDATED" | "SCHEDULED_REPORT_DELETED" | "SCHEDULED_REPORT_RUN" | "ACCOUNT_CREATED";
+                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED" | "INVITATION_RESENT" | "INVITATION_REVOKED" | "INVITATION_ACCEPTED" | "USER_REMOVED" | "BROWSE_DATA" | "SAVED_QUERY_CREATED" | "SAVED_QUERY_UPDATED" | "SAVED_QUERY_DELETED" | "SCHEDULED_REPORT_CREATED" | "SCHEDULED_REPORT_UPDATED" | "SCHEDULED_REPORT_DELETED" | "SCHEDULED_REPORT_RUN" | "ACCOUNT_CREATED" | "PROFILE_UPDATED" | "PASSWORD_CHANGED" | "SESSIONS_REVOKED";
             };
             header?: never;
             path?: never;
@@ -3136,7 +3420,7 @@ export interface operations {
                 /** @description Filtrar registros hasta esta fecha (formato ISO 8601) */
                 fechaFin?: string;
                 /** @description Filtrar por tipo de acción o evento */
-                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED" | "INVITATION_RESENT" | "INVITATION_REVOKED" | "INVITATION_ACCEPTED" | "USER_REMOVED" | "BROWSE_DATA" | "SAVED_QUERY_CREATED" | "SAVED_QUERY_UPDATED" | "SAVED_QUERY_DELETED" | "SCHEDULED_REPORT_CREATED" | "SCHEDULED_REPORT_UPDATED" | "SCHEDULED_REPORT_DELETED" | "SCHEDULED_REPORT_RUN" | "ACCOUNT_CREATED";
+                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED" | "INVITATION_RESENT" | "INVITATION_REVOKED" | "INVITATION_ACCEPTED" | "USER_REMOVED" | "BROWSE_DATA" | "SAVED_QUERY_CREATED" | "SAVED_QUERY_UPDATED" | "SAVED_QUERY_DELETED" | "SCHEDULED_REPORT_CREATED" | "SCHEDULED_REPORT_UPDATED" | "SCHEDULED_REPORT_DELETED" | "SCHEDULED_REPORT_RUN" | "ACCOUNT_CREATED" | "PROFILE_UPDATED" | "PASSWORD_CHANGED" | "SESSIONS_REVOKED";
                 format?: "csv" | "json";
             };
             header?: never;
@@ -3550,12 +3834,14 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Listado de usuarios del workspace. */
+            /** @description Miembros con último acceso y sesiones abiertas. */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["MemberResponseDto"][];
+                };
             };
             /** @description Token JWT inválido o ausente. */
             401: {
@@ -3570,6 +3856,46 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    UsersController_revokeAllSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevokedSessionsDto"];
+                };
+            };
+        };
+    };
+    UsersController_revokeUserSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RevokedSessionsDto"];
+                };
             };
         };
     };
