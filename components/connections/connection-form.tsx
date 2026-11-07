@@ -159,7 +159,7 @@ export function ConnectionForm({ connection, onClose, onSaved }: ConnectionFormP
         </>
       }
     >
-      <form id="connection-form" className="form-grid" onSubmit={handleSubmit}>
+      <form method="post" id="connection-form" className="form-grid" onSubmit={handleSubmit}>
         <fieldset className="engine-picker">
           <legend>Motor</legend>
           {ENGINE_ORDER.map((option) => (

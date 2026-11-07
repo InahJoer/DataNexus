@@ -112,7 +112,7 @@ export function AcceptInviteForm() {
         <div><dt>Tu rol</dt><dd>{roleLabels[invitation.role]}</dd></div>
         <div><dt>Vence</dt><dd>{dateFormat.format(new Date(invitation.expiresAt))}</dd></div>
       </dl>
-      <form className="login-form" onSubmit={handleSubmit}>
+      <form method="post" className="login-form" onSubmit={handleSubmit}>
         <label className="field-label" htmlFor="name">Nombre</label>
         <div className="input-wrap">
           <Icon name="user" size={17} className="input-icon" />

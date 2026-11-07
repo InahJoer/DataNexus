@@ -2,6 +2,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module.js';
+import { isAllowedOrigin } from './config/cors-origins.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -33,8 +34,8 @@ async function bootstrap() {
       origin: string | undefined,
       callback: (err: Error | null, allow?: boolean) => void,
     ) => {
-      // Permitir herramientas locales/servidor sin encabezado origin o dominios autorizados
-      if (!origin || allowedOrigins.includes(origin)) {
+      // Sin Origin (herramientas locales), dominios autorizados y, fuera de producción, la red local.
+      if (isAllowedOrigin(origin, allowedOrigins, process.env.NODE_ENV === 'production')) {
         callback(null, true);
       } else {
         callback(new Error(`CORS bloqueado para el origen: ${origin}`));
