@@ -30,6 +30,25 @@
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
+/* Tema oscuro (Mi perfil → Apariencia). Las pantallas usan estas variables. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ink: #e6efeb;
+  --ink-soft: #c2d0ca;
+  --body: #0f1916;
+  --surface: #16231f;
+  --line: #273731;
+  --muted: #8ea29a;
+  --muted-dark: #5d7068;
+  --green: #3ebf9f;
+  --green-dark: #74d9be;
+  --green-pale: rgba(62, 191, 159, .14);
+  --warning: #e0b066;
+  --warning-pale: rgba(224, 176, 102, .14);
+  --danger: #ec8a8a;
+  --danger-pale: rgba(236, 138, 138, .14);
+}
+
 * { box-sizing: border-box; }
 html { min-width: 320px; scroll-behavior: smooth; }
 body {

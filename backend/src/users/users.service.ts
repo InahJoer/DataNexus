@@ -35,11 +35,68 @@ export class UsersService {
    * Lista todos los miembros del workspace al que pertenece el usuario autenticado.
    */
   async findAll(actor: AuthenticatedUser) {
-    return this.prisma.user.findMany({
+    const now = new Date();
+    const users = await this.prisma.user.findMany({
       where: { workspaceId: actor.workspaceId },
-      select: SAFE_USER_SELECT,
+      select: {
+        ...SAFE_USER_SELECT,
+        lockedUntil: true,
+        sessions: { select: { lastActivityAt: true, revokedAt: true, expiresAt: true }, orderBy: { lastActivityAt: 'desc' }, take: 50 },
+      },
       orderBy: { name: 'asc' },
     });
+    // Último acceso = última actividad de cualquier sesión; activas = no revocadas ni vencidas.
+    return users.map(({ sessions, lockedUntil, ...user }) => ({
+      ...user,
+      ultimoAcceso: sessions[0]?.lastActivityAt ?? null,
+      sesionesActivas: sessions.filter((session) => !session.revokedAt && session.expiresAt > now).length,
+      bloqueado: Boolean(lockedUntil && lockedUntil > now),
+      esUstedMismo: user.id === actor.id,
+    }));
+  }
+
+  /** Cierra las sesiones de un miembro (ADMIN). Su siguiente petición recibe 401. */
+  async revokeUserSessions(actor: AuthenticatedUser, targetUserId: string, requestContext: RequestAuditContext = {}) {
+    if (!hasPermission(actor.role, 'MANAGE_MEMBERS')) throw new ForbiddenException('Se requiere rol ADMIN para cerrar sesiones');
+    const target = await this.prisma.user.findFirst({ where: { id: targetUserId, workspaceId: actor.workspaceId }, select: { id: true, email: true } });
+    if (!target) throw new NotFoundException('Usuario no encontrado en el workspace');
+    const result = await this.prisma.userSession.updateMany({
+      where: { userId: target.id, revokedAt: null, ...(actor.sessionId ? { id: { not: actor.sessionId } } : {}) },
+      data: { revokedAt: new Date(), revokedReason: 'revocada_admin' },
+    });
+    await this.auditService.record({
+      eventType: 'SESSIONS_REVOKED',
+      outcome: 'SUCCESS',
+      actorUserId: actor.id,
+      actorEmail: actor.email,
+      workspaceId: actor.workspaceId,
+      targetType: 'USER',
+      targetId: target.id,
+      details: { alcance: 'usuario', usuario: target.email, revocadas: result.count },
+      ...requestContext,
+    });
+    return { revocadas: result.count };
+  }
+
+  /** Cierra todas las sesiones del workspace salvo la del propio ADMIN (p. ej. ante un incidente). */
+  async revokeAllSessions(actor: AuthenticatedUser, requestContext: RequestAuditContext = {}) {
+    if (!hasPermission(actor.role, 'MANAGE_MEMBERS')) throw new ForbiddenException('Se requiere rol ADMIN para cerrar sesiones');
+    const result = await this.prisma.userSession.updateMany({
+      where: { revokedAt: null, user: { workspaceId: actor.workspaceId }, ...(actor.sessionId ? { id: { not: actor.sessionId } } : {}) },
+      data: { revokedAt: new Date(), revokedReason: 'revocada_admin' },
+    });
+    await this.auditService.record({
+      eventType: 'SESSIONS_REVOKED',
+      outcome: 'SUCCESS',
+      actorUserId: actor.id,
+      actorEmail: actor.email,
+      workspaceId: actor.workspaceId,
+      targetType: 'WORKSPACE',
+      targetId: actor.workspaceId,
+      details: { alcance: 'workspace', revocadas: result.count },
+      ...requestContext,
+    });
+    return { revocadas: result.count };
   }
 
   async updateRole(

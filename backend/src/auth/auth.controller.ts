@@ -165,6 +165,7 @@ export class AuthController {
     description: 'No autorizado / Token ausente o inválido',
   })
   getProfile(@Req() req: AuthenticatedRequest): AuthUserResponseDto {
-    return req.user;
+    const { id, email, name, role, workspaceId } = req.user;
+    return { id, email, name, role, workspaceId };
   }
 }

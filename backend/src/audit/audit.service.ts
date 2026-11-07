@@ -325,6 +325,30 @@ export class AuditService {
       Object.assign(safeDetails, this.safeWorkspaceChanges(details));
     }
 
+    if (eventType === 'ACCOUNT_CREATED' && (details.tipoCuenta === 'PERSONAL' || details.tipoCuenta === 'ORGANIZACION')) {
+      safeDetails.tipoCuenta = details.tipoCuenta;
+    }
+
+    // Cambio de nombre: solo el campo name (nunca la contraseña ni el correo).
+    if (eventType === 'PROFILE_UPDATED') {
+      const change = (details.cambios as { name?: { antes?: unknown; despues?: unknown } } | undefined)?.name;
+      if (typeof change?.antes === 'string' && typeof change.despues === 'string') {
+        safeDetails.campos = ['name'];
+        safeDetails.cambios = { name: { antes: change.antes.slice(0, 120), despues: change.despues.slice(0, 120) } };
+      }
+    }
+
+    if (eventType === 'PASSWORD_CHANGED') {
+      if (typeof details.sesionesCerradas === 'number') safeDetails.sesionesCerradas = details.sesionesCerradas;
+      if (typeof details.motivo === 'string') safeDetails.motivo = details.motivo.slice(0, 64);
+    }
+
+    if (eventType === 'SESSIONS_REVOKED') {
+      if (['propia', 'usuario', 'workspace'].includes(details.alcance as string)) safeDetails.alcance = details.alcance;
+      if (typeof details.revocadas === 'number') safeDetails.revocadas = details.revocadas;
+      if (typeof details.usuario === 'string') safeDetails.usuario = details.usuario.slice(0, 254);
+    }
+
     if (eventType === 'BROWSE_DATA') {
       for (const key of ['entidad', 'esquema', 'tipoMotor', 'error']) {
         if (typeof details[key] === 'string') safeDetails[key] = (details[key] as string).slice(0, 300);

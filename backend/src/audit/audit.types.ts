@@ -37,6 +37,9 @@ export const AUDIT_EVENT_TYPES = [
   'SCHEDULED_REPORT_DELETED',
   'SCHEDULED_REPORT_RUN',
   'ACCOUNT_CREATED',
+  'PROFILE_UPDATED',
+  'PASSWORD_CHANGED',
+  'SESSIONS_REVOKED',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];

@@ -78,3 +78,40 @@
   .data-card-header h2 { width: 100%; }
   .search-field { width: 100%; }
 }
+
+/* Equipo (#71) y Perfil (#72) */
+.page-header-actions .page-action { display: inline-flex; align-items: center; gap: 6px; }
+.page-notice { margin: 12px 0 0; color: var(--green-dark); font-size: 12px; }
+.team-card { margin-top: 14px; }
+.member-avatar { display: grid; width: 32px; height: 32px; flex: 0 0 auto; place-items: center; color: var(--green-dark); border-radius: 50%; background: var(--green-pale); font-size: 11px; font-weight: 700; }
+.member-avatar--pending { color: var(--muted); background: var(--line); }
+.member-avatar--lg { width: 52px; height: 52px; font-size: 16px; }
+.you-tag { margin-left: 6px; padding: 1px 6px; color: var(--green-dark); border-radius: 99px; background: var(--green-pale); font-size: 10px; font-weight: 700; vertical-align: 1px; }
+.row-pending td { background: color-mix(in srgb, var(--body) 60%, transparent); }
+.role-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+.role-card { padding: 14px 16px; }
+.role-card strong { color: var(--ink); font-size: 13px; }
+.role-card p { margin: 4px 0 8px; color: var(--muted); font-size: 12px; }
+.role-card ul { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.role-card li { display: flex; align-items: center; gap: 6px; color: var(--ink-soft); font-size: 11.5px; }
+.role-card li svg { color: var(--green); }
+.role-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.role-picker .engine-option { align-items: flex-start; text-align: left; }
+.profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.profile-identity { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.profile-identity strong, .profile-identity span { display: block; }
+.profile-identity strong { color: var(--ink); font-size: 15px; }
+.profile-identity span { margin-top: 3px; color: var(--muted); font-size: 12px; }
+.form-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; }
+.profile-submit { margin-top: 14px; align-self: flex-start; }
+.session-list { display: grid; margin: 0; padding: 0; list-style: none; }
+.session-list li { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.session-list li > div { min-width: 0; flex: 1; }
+.session-list strong, .session-list small { display: block; }
+.session-list strong { color: var(--ink); font-size: 13px; }
+.session-list small { margin-top: 3px; color: var(--muted); font-size: 11px; }
+.theme-picker button { padding: 7px 14px; }
+
+@media (max-width: 960px) {
+  .profile-grid, .role-cards { grid-template-columns: minmax(0, 1fr); }
+}

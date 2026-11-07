@@ -152,8 +152,8 @@ describe('UsersService', () => {
   describe('findAll', () => {
     it('returns all members of the actor workspace', async () => {
       const mockUsers = [
-        { id: 'u1', name: 'User 1', email: 'u1@ws.com', role: 'ADMIN', workspaceId: 'ws-1' },
-        { id: 'u2', name: 'User 2', email: 'u2@ws.com', role: 'LECTOR', workspaceId: 'ws-1' },
+        { id: 'u1', name: 'User 1', email: 'u1@ws.com', role: 'ADMIN', workspaceId: 'ws-1', lockedUntil: null, sessions: [] },
+        { id: 'u2', name: 'User 2', email: 'u2@ws.com', role: 'LECTOR', workspaceId: 'ws-1', lockedUntil: null, sessions: [{ lastActivityAt: new Date('2026-11-07T10:00:00Z'), revokedAt: null, expiresAt: new Date('2999-01-01T00:00:00Z') }] },
       ];
       prismaService.user = { findMany: vi.fn().mockResolvedValue(mockUsers) };
 
@@ -171,6 +171,8 @@ describe('UsersService', () => {
         orderBy: { name: 'asc' },
       });
       expect(result).toHaveLength(2);
+      expect(result[1]).toMatchObject({ sesionesActivas: 1, ultimoAcceso: new Date('2026-11-07T10:00:00Z'), bloqueado: false, esUstedMismo: false });
+      expect(result[0]).toMatchObject({ sesionesActivas: 0, ultimoAcceso: null, esUstedMismo: true });
     });
   });
 

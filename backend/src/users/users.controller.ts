@@ -27,6 +27,8 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
+import { RevokedSessionsDto } from '../auth/dto/account.dto.js';
+import { MemberResponseDto } from './dto/member-response.dto.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
 import { RequirePermission } from '../auth/decorators/roles.decorator.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-user.interface.js';
@@ -59,11 +61,29 @@ export class UsersController {
     summary: 'Listar miembros del workspace (ADMIN)',
     description: 'Devuelve todos los usuarios que pertenecen al mismo Workspace del usuario autenticado.',
   })
-  @ApiOkResponse({ description: 'Listado de usuarios del workspace.' })
+  @ApiOkResponse({ description: 'Miembros con último acceso y sesiones abiertas.', type: [MemberResponseDto] })
   @ApiForbiddenResponse({ description: 'Se requiere rol ADMIN para listar miembros.' })
   @ApiUnauthorizedResponse({ description: 'Token JWT inválido o ausente.' })
   findAll(@Req() request: AuthenticatedRequest) {
     return this.usersService.findAll(request.user);
+  }
+
+  @RequirePermission('MANAGE_MEMBERS')
+  @Post('sessions/revoke-all')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Cerrar todas las sesiones del workspace (ADMIN)', description: 'Excepto la sesión del propio administrador.' })
+  @ApiOkResponse({ type: RevokedSessionsDto })
+  revokeAllSessions(@Req() request: AuthenticatedRequest) {
+    return this.usersService.revokeAllSessions(request.user, { ipAddress: request.ip, userAgent: request.get('user-agent') ?? undefined });
+  }
+
+  @RequirePermission('MANAGE_MEMBERS')
+  @Post(':id/sessions/revoke')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Cerrar las sesiones de un miembro (ADMIN)', description: 'Su siguiente petición recibe 401 y debe volver a iniciar sesión.' })
+  @ApiOkResponse({ type: RevokedSessionsDto })
+  revokeUserSessions(@Req() request: AuthenticatedRequest, @Param('id', ParseUUIDPipe) id: string) {
+    return this.usersService.revokeUserSessions(request.user, id, { ipAddress: request.ip, userAgent: request.get('user-agent') ?? undefined });
   }
 
   @RequirePermission('MANAGE_MEMBERS')

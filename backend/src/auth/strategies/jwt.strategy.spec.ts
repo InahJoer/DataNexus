@@ -31,7 +31,8 @@ const payload = (overrides: Partial<JwtPayload> = {}): JwtPayload => ({
 describe('JwtStrategy', () => {
   it('valida la sesión del token y devuelve el usuario de la base', async () => {
     const { strategy, assertActive } = setup();
-    await expect(strategy.validate(payload())).resolves.toEqual(dbUser);
+    // Lleva además la sesión del token, para poder cerrar las demás sin cerrar la actual.
+    await expect(strategy.validate(payload())).resolves.toEqual({ ...dbUser, sessionId: 's1' });
     expect(assertActive).toHaveBeenCalledWith('s1', 'u1');
   });
 

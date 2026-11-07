@@ -19,7 +19,14 @@ export const ACTIVITY_WRITE_INTERVAL_MS = 60_000;
 
 export const SESSION_EXPIRED_MESSAGE = 'Tu sesión expiró. Inicia sesión de nuevo.';
 
-export type RevokeReason = 'logout' | 'inactividad' | 'vencida' | 'reutilizacion' | 'cambio_contrasena';
+export type RevokeReason =
+  | 'logout'
+  | 'inactividad'
+  | 'vencida'
+  | 'reutilizacion'
+  | 'cambio_contrasena'
+  | 'revocada_usuario'
+  | 'revocada_admin';
 
 export interface IssuedTokens {
   access_token: string;
