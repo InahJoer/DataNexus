@@ -6,6 +6,7 @@ import { DateRangeFilter, dateColumns, describeDateFilter, type DateFilter } fro
 import { objectLabel, type CatalogObject, type ExplorerTarget } from '@/components/explorer/explorer-tree';
 import { ColumnStats } from '@/components/explorer/column-stats';
 import { ColumnManager, mergeColumns, type ColumnSetting } from '@/components/results/column-manager';
+import { ExportModal } from '@/components/results/export-modal';
 import { Icon } from '@/components/icons';
 import { apiErrorMessage, NETWORK_ERROR_MESSAGE } from '@/lib/api/errors';
 import { useApiCall } from '@/lib/api/use-api-call';
@@ -90,6 +91,11 @@ function cellType(value: unknown) {
   return typeof value;
 }
 
+/** Filtros de la vista con su lógica: con O y más de una condición se envían como un grupo OR. */
+function filterTree<T>(filters: T[], logic: 'AND' | 'OR'): (T | { logica: 'OR'; filtros: T[] })[] {
+  return logic === 'OR' && filters.length > 1 ? [{ logica: 'OR', filtros: filters }] : filters;
+}
+
 type DataViewProps = Readonly<{
   target: ExplorerTarget;
   /** Subcolecciones conocidas de esta colección (Firestore): se ofrecen en el panel del documento. */
@@ -114,6 +120,7 @@ export function DataView({ target, subcollections, onOpen }: DataViewProps) {
   const [sort, setSort] = useState<{ column: string; direction: 'asc' | 'desc' } | null>(null);
   const [columnSettings, setColumnSettings] = useState<ColumnSetting[]>([]);
   const [showColumns, setShowColumns] = useState(false);
+  const [showExport, setShowExport] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; rowIndex: number; column: string } | null>(null);
   const [statsColumn, setStatsColumn] = useState<string | null>(null);
   const [cursors, setCursors] = useState<(string | undefined)[]>([undefined]);
@@ -142,7 +149,7 @@ export function DataView({ target, subcollections, onOpen }: DataViewProps) {
               ...(object.schema ? { esquema: object.schema } : {}),
               limite: pageSize,
               ...(cursor ? { cursor } : {}),
-              ...(filters.length ? { filtros: JSON.stringify(logic === 'OR' && filters.length > 1 ? [{ logica: 'OR', filtros: filters }] : filters) } : {}),
+              ...(filters.length ? { filtros: JSON.stringify(filterTree(filters, logic)) } : {}),
             },
           },
         }),
@@ -313,20 +320,6 @@ export function DataView({ target, subcollections, onOpen }: DataViewProps) {
     changeFilters([...filters, { campo: column, operador, valor }]);
   }
 
-  function downloadPageCsv() {
-    const escape = (value: unknown) => {
-      let text = value === null || value === undefined ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value);
-      if (/^[=+\-@]/.test(text)) text = `'${text}`;
-      return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-    };
-    const csv = [visibleColumns.map(escape).join(','), ...displayRows.map(({ row }) => visibleColumns.map((column) => escape(row[column])).join(','))].join('\n');
-    const url = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' }));
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `${objectLabel(object)}-pagina-${cursors.length}.csv`;
-    anchor.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
   const pageNumber = cursors.length;
   const isGroup = object.name.includes('/*/');
   const selectedDocId = selected && typeof selected.__documentId === 'string' ? selected.__documentId : null;
@@ -350,7 +343,7 @@ export function DataView({ target, subcollections, onOpen }: DataViewProps) {
             {PAGE_SIZES.map((size) => <option key={size} value={size}>{size} filas</option>)}
           </select>
           <button className="button form-secondary compact-button" type="button" aria-pressed={showColumns} onClick={() => setShowColumns((value) => !value)}><Icon name="table" size={13} />Columnas {visibleColumns.length}/{columns.length}</button>
-          <button className="button form-secondary compact-button" type="button" disabled={rows.length === 0} onClick={downloadPageCsv}><Icon name="arrow-up-right" size={13} />CSV</button>
+          <button className="button button--primary compact-button" type="button" disabled={rows.length === 0} onClick={() => setShowExport(true)} title="Excel, CSV, PDF, Word o JSON con los filtros, el orden y las columnas visibles"><Icon name="arrow-up-right" size={13} />Exportar</button>
           <button className="shell-icon-button" type="button" onClick={() => void load()} aria-label="Recargar" disabled={isLoading}><Icon name="refresh" size={15} /></button>
         </div>
       </header>
@@ -519,6 +512,25 @@ export function DataView({ target, subcollections, onOpen }: DataViewProps) {
         );
       })()}
       {statsColumn && <ColumnStats column={statsColumn} rows={rows} onClose={() => setStatsColumn(null)} onFilter={(value) => quickFilter(statsColumn, value === null || value === undefined ? 'isNull' : 'eq', value)} />}
+
+      {showExport && (
+        <ExportModal
+          target={{
+            kind: 'data',
+            body: {
+              conexionId: connection.id,
+              entidad: object.name,
+              ...(object.schema ? { esquema: object.schema } : {}),
+              ...(filters.length ? { filtros: filterTree(filters, logic) as never } : {}),
+              ...(sort ? { ordenarPor: [{ campo: sort.column, direccion: sort.direction === 'asc' ? 'ASC' : 'DESC' }] } : {}),
+              ...(columnSettings.length ? { columnas: visibleColumns } : {}),
+            },
+          }}
+          defaultName={objectLabel(object).replace(/[^\w-]+/g, '-')}
+          summary={`${objectLabel(object)}${filters.length ? ` con ${filters.length} filtro(s)` : ' completa'}, ${visibleColumns.length} columna(s)${sort ? `, ordenada por ${sort.column}` : ''}.`}
+          onClose={() => setShowExport(false)}
+        />
+      )}
 
       <footer className="explorer-footer">
         <span>{rows.length} registros en la página {pageNumber}{canEdit ? ' · doble clic en una celda para editarla' : ''}</span>

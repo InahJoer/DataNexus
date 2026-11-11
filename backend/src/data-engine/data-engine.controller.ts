@@ -38,7 +38,7 @@ import { RequirePermission } from '../auth/decorators/roles.decorator.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-user.interface.js';
 import { AuditService } from '../audit/audit.service.js';
 import { DataEngineService } from './data-engine.service.js';
-import { buildBrowseAuditEvent, buildDataAccessAuditEvent } from './data-access-audit.js';
+import { buildBrowseAuditEvent, buildDataAccessAuditEvent, buildDataExportAuditEvent } from './data-access-audit.js';
 import { BrowseDataQueryDto, BrowseDataResponseDto } from './dto/browse-data.dto.js';
 import { CrossJoinDto, ExportCrossJoinDto } from './dto/cross-join.dto.js';
 import { ConnectionHealthResponseDto } from './dto/connection-health.dto.js';
@@ -46,6 +46,7 @@ import { ConnectionFieldsResponseDto, ConnectionSchemaResponseDto } from './dto/
 import { PaginatedCrossJoinResultDto } from './dto/cross-join-result.dto.js';
 import { ExploreFieldsQueryDto } from './dto/explore-fields.dto.js';
 import { UpdateRecordDto } from './dto/update-record.dto.js';
+import { ExportDataDto, MAX_DATA_EXPORT_ROWS } from './dto/export-data.dto.js';
 
 @ApiTags('Engine - Cross-Join & Analytics')
 @ApiBearerAuth()
@@ -313,6 +314,46 @@ export class DataEngineController {
     });
 
     res.end(buffer);
+  }
+
+  @Throttle({ export: { limit: 20, ttl: 60000 } })
+  @Post('export/data')
+  @RequirePermission('EXPORT_DATA')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Exportar una tabla o colección del explorador (Excel, CSV, PDF, JSON o Word)',
+    description:
+      `Exporta lo que se ve en el explorador: mismos filtros, orden y columnas visibles con su encabezado, hasta ${MAX_DATA_EXPORT_ROWS} filas. ` +
+      'Los campos sensibles salen enmascarados según el rol. La cabecera X-DataNexus-Truncated indica si había más filas.',
+  })
+  @ApiOkResponse({ description: 'Archivo descargable.' })
+  @ApiBadRequestResponse({ description: 'Formato, filtros o motor no soportados.' })
+  @ApiUnauthorizedResponse({ description: 'Token JWT inválido o ausente.' })
+  @ApiForbiddenResponse({ description: 'Se requiere rol ADMIN u OPERADOR para exportar.' })
+  @ApiNotFoundResponse({ description: 'Conexión fuera del workspace o inexistente.' })
+  @ApiBadGatewayResponse({ description: 'Falló la lectura en la fuente externa.' })
+  @ApiGatewayTimeoutResponse({ description: 'La lectura superó el tiempo máximo.' })
+  async exportData(@Req() request: AuthenticatedRequest, @Body() input: ExportDataDto, @Res() res: Response) {
+    let file: Awaited<ReturnType<DataEngineService['exportData']>>;
+    try {
+      file = await this.dataEngineService.exportData(request.user, input);
+    } catch (error) {
+      try {
+        await this.auditService.record(buildDataExportAuditEvent(request, input, { error }));
+      } catch {
+        // El error de negocio original es el que debe llegar al cliente.
+      }
+      throw error;
+    }
+    await this.auditService.record(buildDataExportAuditEvent(request, input, { totalFilas: file.totalRows }));
+    res.set({
+      'Content-Type': file.contentType,
+      'Content-Disposition': `attachment; filename="${file.filename}"`,
+      'Content-Length': file.buffer.length,
+      'X-DataNexus-Truncated': String(file.truncated),
+      'Access-Control-Expose-Headers': 'Content-Disposition, X-DataNexus-Truncated',
+    });
+    res.end(file.buffer);
   }
 
   /** Registra el intento fallido sin ocultar el error original si la bitácora también falla. */

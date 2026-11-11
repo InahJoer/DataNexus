@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal } from '@/components/app-shell/modal';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { StatusView } from '@/components/app-shell/status-view';
@@ -13,7 +13,7 @@ import { apiErrorMessage, NETWORK_ERROR_MESSAGE } from '@/lib/api/errors';
 import { useApiCall } from '@/lib/api/use-api-call';
 import { useApiQuery } from '@/lib/api/use-api-query';
 
-type Dialog = { kind: 'form'; schedule?: Schedule } | { kind: 'delete'; schedule: Schedule } | null;
+type Dialog = { kind: 'form'; schedule?: Schedule; queryId?: string } | { kind: 'delete'; schedule: Schedule } | null;
 
 /** Tareas programadas (#70): reportes automáticos de consultas guardadas. */
 export default function ScheduledTasksPage() {
@@ -25,6 +25,12 @@ export default function ScheduledTasksPage() {
   const [dialog, setDialog] = useState<Dialog>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+
+  // Enlace desde el editor de consultas: /scheduled-tasks?consulta=<id> abre el alta con ese reporte elegido.
+  useEffect(() => {
+    const queryId = new URLSearchParams(window.location.search).get('consulta');
+    if (queryId) setDialog({ kind: 'form', queryId });
+  }, []);
 
   const reload = () => {
     void schedules.reload();
@@ -155,7 +161,7 @@ export default function ScheduledTasksPage() {
         </div>
       )}
 
-      {dialog?.kind === 'form' && <ScheduleForm schedule={dialog.schedule} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); setNotice({ tone: 'ok', text: 'Tarea guardada.' }); reload(); }} />}
+      {dialog?.kind === 'form' && <ScheduleForm schedule={dialog.schedule} initialQueryId={dialog.queryId} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); setNotice({ tone: 'ok', text: 'Tarea guardada.' }); reload(); }} />}
       {dialog?.kind === 'delete' && (
         <Modal
           title="Eliminar tarea"

@@ -12,16 +12,16 @@ import { useApiCall } from '@/lib/api/use-api-call';
 import { useApiQuery } from '@/lib/api/use-api-query';
 import { useAuth } from '@/lib/auth-context';
 
-type ScheduleFormProps = Readonly<{ schedule?: Schedule; onClose: () => void; onSaved: () => void }>;
+type ScheduleFormProps = Readonly<{ schedule?: Schedule; /** Consulta elegida de antemano (enlace "Programar" del editor). */ initialQueryId?: string; onClose: () => void; onSaved: () => void }>;
 
 /** Alta y edición de una tarea programada (#70): consulta guardada, frecuencia, hora, zona horaria, formato y envío. */
-export function ScheduleForm({ schedule, onClose, onSaved }: ScheduleFormProps) {
+export function ScheduleForm({ schedule, initialQueryId, onClose, onSaved }: ScheduleFormProps) {
   const call = useApiCall();
   const { workspace } = useWorkspace();
   const { session } = useAuth();
   const queries = useApiQuery(useCallback((api: ApiClient) => api.GET('/queries'), []));
   const [title, setTitle] = useState(schedule?.reportTitle ?? '');
-  const [queryId, setQueryId] = useState(schedule?.savedQueryId ?? '');
+  const [queryId, setQueryId] = useState(schedule?.savedQueryId ?? initialQueryId ?? '');
   const [frequency, setFrequency] = useState<Schedule['frequency']>(schedule?.frequency ?? 'daily');
   const [time, setTime] = useState(schedule?.time ?? '08:00');
   const [dayOfWeek, setDayOfWeek] = useState(asNumber(schedule?.dayOfWeek) ?? 1);
