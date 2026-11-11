@@ -46,7 +46,7 @@ export function SaveQueryModal({ definition, columns, onClose, onSaved }: SaveQu
 
   if (saved) {
     return (
-      <Modal title="Consulta guardada" description={`"${saved}" quedó guardada con sus fuentes, relaciones y ${columns} columnas.`} onClose={onClose}
+      <Modal title="Reporte guardado" description={`"${saved}" quedó guardado con sus fuentes, uniones, filtros, orden y ${columns} columnas.`} onClose={onClose}
         footer={<><button className="button form-secondary" type="button" onClick={onClose}>Cerrar</button><Link className="button button--primary form-primary" href="/scheduled-tasks"><Icon name="clock" size={14} />Programar reporte</Link></>}>
         <p className="modal-text">Ahora puedes programarla para recibir el reporte por correo cada día, semana o mes.</p>
       </Modal>
@@ -55,7 +55,7 @@ export function SaveQueryModal({ definition, columns, onClose, onSaved }: SaveQu
 
   return (
     <Modal
-      title="Guardar consulta"
+      title="Guardar reporte"
       description={`Se guardan las fuentes, las relaciones y las ${columns} columnas visibles en su orden.`}
       onClose={onClose}
       footer={<><button className="button form-secondary" type="button" onClick={onClose}>Cancelar</button><button className="button button--primary form-primary" type="submit" form="save-query-form" disabled={isSaving || !name.trim()}>{isSaving ? 'Guardando…' : 'Guardar'}</button></>}

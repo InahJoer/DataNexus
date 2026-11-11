@@ -29,11 +29,11 @@ export class TriggerReportDto {
   recipients: string[];
 
   @ApiProperty({
-    description: 'Formato del archivo de reporte (Excel, PDF, JSON o Word)',
+    description: 'Formato del archivo de reporte (Excel, CSV, PDF, JSON o Word)',
     enum: EXPORT_FORMATS,
     example: 'excel',
   })
-  @IsIn(EXPORT_FORMATS, { message: 'El formato debe ser excel, pdf, json o word' })
+  @IsIn(EXPORT_FORMATS, { message: 'El formato debe ser excel, csv, pdf, json o word' })
   format: ExportFormat;
 
   @ApiProperty({

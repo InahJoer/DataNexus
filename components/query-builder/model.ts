@@ -35,9 +35,17 @@ export type QbModel = {
   metrics: QbMetric[];
   sort: QbSort[];
   limit: 50 | 100 | 500 | 1000 | null;
+  /** Filtros sobre la tabla combinada (columnas de salida); con agrupación funcionan como HAVING. */
+  resultFilters: QbFilter[];
+  resultLogic: 'AND' | 'OR';
 };
 
-export const EMPTY_MODEL: QbModel = { sources: [], links: [], columns: [], groupBy: [], metrics: [], sort: [], limit: null };
+export const EMPTY_MODEL: QbModel = { sources: [], links: [], columns: [], groupBy: [], metrics: [], sort: [], limit: null, resultFilters: [], resultLogic: 'AND' };
+
+/** Completa un modelo guardado con una versión anterior (borradores sin los campos nuevos). */
+export function normalizeModel(raw: Partial<QbModel> | null | undefined): QbModel {
+  return { ...EMPTY_MODEL, ...raw, resultFilters: raw?.resultFilters ?? [], resultLogic: raw?.resultLogic ?? 'AND' };
+}
 export const CARD_WIDTH = 230;
 export const CARD_HEADER = 46;
 export const FIELD_HEIGHT = 26;
@@ -108,40 +116,124 @@ export function joinCompatibility(a: FieldType, b: FieldType): 'ok' | 'warning' 
 /** Formas singulares posibles de un nombre de tabla: clientes → cliente, pedidos → pedido, ciudades → ciudad. */
 const singulars = (word: string) => [...new Set([word.replace(/s$/i, ''), word.replace(/es$/i, ''), word])].filter(Boolean);
 
-/**
- * Uniones probables entre fuentes que aún no están unidas: `cliente_id` ↔ `clientes.id`, campos con el mismo nombre
- * terminado en id, y documento ↔ subcolección (`__documentId` ↔ `__parentId`).
- */
-export function suggestLinks(model: QbModel): QbLink[] {
-  const suggestions: QbLink[] = [];
-  const linked = (a: string, b: string) => model.links.some((link) => (link.from.source === a && link.to.source === b) || (link.from.source === b && link.to.source === a));
-  for (const left of model.sources) {
-    for (const right of model.sources) {
-      if (left.id >= right.id || linked(left.id, right.id)) continue;
-      const add = (from: QbSource, fromField: string, to: QbSource, toField: string) => {
-        if (!suggestions.some((item) => (item.from.source === from.id && item.to.source === to.id) || (item.from.source === to.id && item.to.source === from.id))) {
-          suggestions.push({ id: uid('s'), from: { source: from.id, field: fromField }, to: { source: to.id, field: toField }, type: 'INNER' });
-        }
-      };
-      for (const [a, b] of [[left, right], [right, left]] as const) {
-        const names = new Set(b.fields.map((field) => field.name));
-        const entities = singulars(a.entity.split('/').filter((part) => part !== '*').pop() ?? '');
-        // pedidos.cliente_id ↔ clientes.id (o clientes._id / __documentId)
-        for (const candidate of entities.flatMap((entity) => [`${entity}_id`, `${entity}id`, `id_${entity}`])) {
-          const match = b.fields.find((field) => field.name.toLowerCase() === candidate.toLowerCase());
-          const key = a.fields.find((field) => ['id', '_id', '__documentId'].includes(field.name));
-          if (match && key) add(a, key.name, b, match.name);
-        }
-        // Subcolección con su documento padre (Firestore)
-        if (b.entity.startsWith(`${a.entity}/*/`) && names.has('__parentId')) add(a, '__documentId', b, '__parentId');
-      }
-      // Mismo nombre de campo terminado en id (codigo, producto_id…)
-      for (const field of left.fields) {
-        if (/(_id|Id|codigo|code)$/.test(field.name) && right.fields.some((other) => other.name === field.name)) add(left, field.name, right, field.name);
-      }
+/** Filas de muestra de cada fuente (por id de fuente), para comparar valores reales al sugerir uniones. */
+export type Samples = Record<string, Record<string, unknown>[]>;
+export type LinkSuggestion = { link: QbLink; score: number; reasons: string[] };
+
+const normName = (name: string) => name.normalize('NFD').toLowerCase().replace(/[^a-z0-9]/g, '');
+const entityName = (source: QbSource) => source.entity.split('/').filter((part) => part !== '*').pop() ?? source.entity;
+const KEY_FIELDS = new Set(['id', '_id', '__documentId', 'uuid', 'codigo', 'code', 'clave', 'sku']);
+const KEYISH = /(id|codigo|code|ref|clave|key|sku|uuid)$/;
+const JOINABLE: FieldType[] = ['número', 'texto', 'desconocido', 'fecha'];
+
+/** Evidencia por nombre de que `a.fa` y `b.fb` son la misma llave (0 = ninguna, 1 = segura). */
+function nameEvidence(a: QbSource, fa: string, b: QbSource, fb: string): { score: number; reason: string } | null {
+  const na = normName(fa);
+  const nb = normName(fb);
+  if (fa === '__documentId' && fb === '__parentId' && b.entity.startsWith(`${a.entity}/`)) return { score: 1, reason: `${b.alias} es subcolección de ${a.alias}` };
+  for (const [x, fx, y, ny] of [[a, fa, b, nb], [b, fb, a, na]] as const) {
+    if (!KEY_FIELDS.has(fx)) continue;
+    const stems = singulars(entityName(x)).map(normName);
+    if (stems.some((stem) => [`${stem}id`, `id${stem}`, `${stem}ref`, `${stem}codigo`, `${stem}code`].includes(ny))) {
+      return { score: 0.95, reason: `${y.alias}.${fx === fa ? fb : fa} apunta a la llave ${x.alias}.${fx}` };
     }
   }
-  return suggestions;
+  if (na === nb && na.length > 2 && KEYISH.test(na)) return { score: 0.8, reason: `Ambas fuentes tienen la llave "${fa}"` };
+  for (const [x, y, nx, ny] of [[a, b, na, nb], [b, a, nb, na]] as const) {
+    const stems = singulars(entityName(y)).map(normName);
+    if (stems.some((stem) => stem.length > 2 && nx.startsWith(stem)) && KEYISH.test(nx) && KEYISH.test(ny)) {
+      return { score: 0.6, reason: `El campo de ${x.alias} menciona a ${y.alias}` };
+    }
+  }
+  if (na === nb && na.length > 2) return { score: 0.3, reason: `Mismo nombre de campo ("${fa}")` };
+  return null;
+}
+
+const scalarKey = (value: unknown) => (value === null || value === undefined || value === '' || typeof value === 'object' ? null : String(value).trim().toLowerCase());
+
+/** Comparación de valores de muestra: cuántos valores de un lado aparecen en el otro y si alguno parece llave única. */
+function valueEvidence(rowsA: Record<string, unknown>[], fa: string, rowsB: Record<string, unknown>[], fb: string) {
+  const listA = rowsA.map((row) => scalarKey(row[fa])).filter((value): value is string => value !== null);
+  const listB = rowsB.map((row) => scalarKey(row[fb])).filter((value): value is string => value !== null);
+  const setA = new Set(listA);
+  const setB = new Set(listB);
+  if (setA.size < 2 || setB.size < 2) return { overlap: 0, matches: 0, smaller: 0, unique: false, trivial: true };
+  let matches = 0;
+  for (const value of setA) if (setB.has(value)) matches += 1;
+  const smaller = Math.min(setA.size, setB.size);
+  const unique = setA.size === listA.length || setB.size === listB.length;
+  // Valores numéricos pequeños (1, 2, 3…) coinciden por casualidad: cantidades, estados, posiciones.
+  const trivial = [...setA, ...setB].every((value) => /^-?\d{1,2}$/.test(value));
+  return { overlap: matches / smaller, matches, smaller, unique, trivial };
+}
+
+/**
+ * Detección inteligente de uniones entre fuentes que aún no están unidas. Combina el nombre de los campos
+ * (`cliente_id` ↔ `clientes.id`, misma llave en ambas, documento ↔ subcolección) con los valores reales de la
+ * muestra (qué parte coincide y si un lado es llave única). Devuelve la mejor unión de cada par, de más a menos segura.
+ */
+export function detectLinks(model: QbModel, samples: Samples = {}): LinkSuggestion[] {
+  const linked = (a: string, b: string) => model.links.some((link) => (link.from.source === a && link.to.source === b) || (link.from.source === b && link.to.source === a));
+  const result: LinkSuggestion[] = [];
+  for (const [i, left] of model.sources.entries()) {
+    for (const right of model.sources.slice(i + 1)) {
+      if (linked(left.id, right.id)) continue;
+      let best: LinkSuggestion | null = null;
+      for (const fa of left.fields) {
+        if (!JOINABLE.includes(fa.type)) continue;
+        for (const fb of right.fields) {
+          if (!JOINABLE.includes(fb.type) || joinCompatibility(fa.type, fb.type) === 'error') continue;
+          const named = nameEvidence(left, fa.name, right, fb.name);
+          const values = valueEvidence(samples[left.id] ?? [], fa.name, samples[right.id] ?? [], fb.name);
+          const reasons: string[] = [];
+          let score: number;
+          if (named) {
+            reasons.push(named.reason);
+            score = values.smaller ? 0.55 * named.score + 0.45 * values.overlap : named.score * 0.85;
+          } else {
+            // Solo por valores: exige mucha coincidencia, un lado con valores únicos y valores no triviales.
+            if (values.trivial || !values.unique || values.overlap < 0.6) continue;
+            score = 0.7 * values.overlap;
+          }
+          if (values.smaller) reasons.push(`${Math.round(values.overlap * 100)}% de los valores de muestra coinciden (${values.matches} de ${values.smaller})`);
+          if (values.unique && values.overlap > 0) reasons.push('Uno de los lados tiene valores únicos (parece llave)');
+          if (joinCompatibility(fa.type, fb.type) === 'warning') {
+            score -= 0.1;
+            reasons.push(`Tipos distintos (${fa.type} y ${fb.type})`);
+          }
+          if (score < 0.35 || (best && best.score >= score)) continue;
+          best = { link: { id: `s-${left.id}-${right.id}`, from: { source: left.id, field: fa.name }, to: { source: right.id, field: fb.name }, type: 'INNER' }, score: Math.min(1, score), reasons };
+        }
+      }
+      if (best) result.push(best);
+    }
+  }
+  return result.sort((a, b) => b.score - a.score);
+}
+
+/** Uniones sugeridas (solo la unión, sin puntaje). */
+export function suggestLinks(model: QbModel, samples: Samples = {}): QbLink[] {
+  return detectLinks(model, samples).map((item) => item.link);
+}
+
+/** Columnas que producirá el cruce: un nombre repetido entre fuentes se califica con el alias (como el motor). */
+export function outputFields(model: QbModel): { name: string; type: FieldType }[] {
+  const { order } = plan(model);
+  const sources = order.length ? order : model.sources;
+  const count = new Map<string, number>();
+  for (const source of sources) for (const field of source.fields) count.set(field.name, (count.get(field.name) ?? 0) + 1);
+  return sources.flatMap((source) => source.fields.map((field) => ({ name: (count.get(field.name) ?? 0) > 1 ? `${source.alias}.${field.name}` : field.name, type: field.type })));
+}
+
+/**
+ * Completa la lista de columnas de un reporte guardado: las que no estaban en `columnas` se habían ocultado, así que
+ * se agregan ocultas al final (sin lista guardada, se muestran todas).
+ */
+export function withHiddenColumns(model: QbModel): QbModel {
+  if (!model.columns.length) return model;
+  const known = new Set(model.columns.map((column) => column.name));
+  const missing = outputFields(model).filter((field) => !known.has(field.name)).map((field) => ({ name: field.name, visible: false, alias: '' }));
+  return missing.length ? { ...model, columns: [...model.columns, ...missing] } : model;
 }
 
 /** Orden de las fuentes para el motor: la primera y luego cada una unida a alguna anterior (recorrido por uniones). */
@@ -169,6 +261,22 @@ export function plan(model: QbModel): { order: QbSource[]; relations: { left: Qb
     }
   }
   return { order, relations, disconnected: model.sources.filter((source) => !order.includes(source)) };
+}
+
+/** Valor de un filtro sobre la tabla combinada: el motor compara números y texto con flexibilidad. */
+function resultFilterValue(filter: QbFilter): unknown {
+  const parse = (raw: string) => (raw === 'true' ? true : raw === 'false' ? false : raw);
+  if (filter.operador === 'isNull') return true;
+  if (filter.operador === 'in') return filter.valor.split(',').map((item) => item.trim()).filter(Boolean).map(parse);
+  if (filter.operador === 'between') return [filter.valor, filter.valor2 ?? ''];
+  return ['contains', 'startsWith'].includes(filter.operador) ? filter.valor : parse(filter.valor);
+}
+
+/** Filtros válidos de la tabla combinada, con su lógica Y/O. */
+export function resultFilterNodes(model: QbModel) {
+  const valid = model.resultFilters.filter((filter) => filter.campo && (filter.operador === 'isNull' || filter.valor !== '') && (filter.operador !== 'between' || (filter.valor2 ?? '') !== ''));
+  const nodes = valid.map((filter) => ({ campo: filter.campo, operador: filter.operador, valor: resultFilterValue(filter) }));
+  return model.resultLogic === 'OR' && nodes.length > 1 ? [{ logica: 'OR' as const, filtros: nodes }] : nodes;
 }
 
 function filterValue(filter: QbFilter, type: FieldType | undefined): unknown {
@@ -219,6 +327,7 @@ export function toPayload(model: QbModel, options: { includeOutput?: boolean } =
     ...(options.includeOutput !== false && !aggregated && model.columns.length && !allVisible && visible.length ? { columnas: visible.map((column) => column.name) } : {}),
     ...(options.includeOutput !== false && model.columns.some((column) => column.alias.trim()) ? { aliasColumnas: Object.fromEntries(model.columns.filter((column) => column.alias.trim()).map((column) => [column.name, column.alias.trim()])) } : {}),
     ...(model.sort.length ? { ordenarPor: model.sort } : {}),
+    ...(resultFilterNodes(model).length ? { filtrosResultado: resultFilterNodes(model) } : {}),
     ...(model.limit ? { limiteFilas: model.limit } : {}),
     lienzo: { version: 1, fuentes: Object.fromEntries(model.sources.map((source) => [source.alias, { x: Math.round(source.x), y: Math.round(source.y) }])) },
   };
@@ -257,10 +366,34 @@ export function toSql(model: QbModel): string {
   });
   if (where.length) lines.push(`WHERE ${where.join('\n  AND ')}`);
   if (model.groupBy.length) lines.push(`GROUP BY ${model.groupBy.map(quote).join(', ')}`);
+  const resultParts = model.resultFilters.filter((filter) => filter.campo).map((filter) => {
+    const column = quote(filter.campo);
+    if (filter.operador === 'isNull') return `${column} IS NULL`;
+    if (filter.operador === 'contains') return `${column} LIKE ${literal(`%${filter.valor}%`)}`;
+    if (filter.operador === 'startsWith') return `${column} LIKE ${literal(`${filter.valor}%`)}`;
+    if (filter.operador === 'between') return `${column} BETWEEN ${literal(filter.valor)} AND ${literal(filter.valor2 ?? '')}`;
+    if (filter.operador === 'in') return `${column} IN ${literal(filter.valor.split(',').map((item) => item.trim()))}`;
+    return `${column} ${OPERATORS[filter.operador].replace('≠', '<>').replace('≥', '>=').replace('≤', '<=')} ${literal(filter.valor)}`;
+  });
+  if (resultParts.length) {
+    const joined = resultParts.join(model.resultLogic === 'OR' ? ' OR ' : ' AND ');
+    lines.push(model.groupBy.length || model.metrics.length ? `HAVING ${joined}` : `-- Filtro sobre la tabla combinada:\n--   ${joined}`);
+  }
   if (model.sort.length) lines.push(`ORDER BY ${model.sort.map((item) => `${quote(item.campo)} ${item.direccion}`).join(', ')}`);
   if (model.limit) lines.push(`LIMIT ${model.limit}`);
   if (disconnected.length) lines.push(`-- Sin unir: ${disconnected.map((source) => source.alias).join(', ')}`);
   return `${lines.join('\n')};`;
+}
+
+/** Filtro del motor → filtro editable (los valores de lista y rango vuelven a texto). */
+function toQbFilter(filter: { campo: string; operador: Operator; valor: unknown }): QbFilter {
+  return {
+    id: uid('f'),
+    campo: filter.campo,
+    operador: filter.operador,
+    valor: Array.isArray(filter.valor) ? (filter.operador === 'between' ? String(filter.valor[0]) : filter.valor.join(', ')) : filter.operador === 'isNull' ? '' : String(filter.valor ?? ''),
+    valor2: Array.isArray(filter.valor) && filter.operador === 'between' ? String(filter.valor[1]) : undefined,
+  };
 }
 
 /** Reconstruye el lienzo desde una consulta guardada (fuentes, relaciones, salida y posiciones). */
@@ -274,6 +407,7 @@ export function fromDefinition(definition: JoinPayload, base: Omit<QbSource, 'x'
     aggregations?: { operation: Aggregation; field?: string; as: string }[];
     ordenarPor?: QbSort[];
     limiteFilas?: QbModel['limit'];
+    filtrosResultado?: unknown[];
     lienzo?: { fuentes?: Record<string, { x: number; y: number }> };
   };
   const sources: QbSource[] = base.map((source, index) => {
@@ -289,13 +423,7 @@ export function fromDefinition(definition: JoinPayload, base: Omit<QbSource, 'x'
       x: position?.x ?? 40 + index * (CARD_WIDTH + 90),
       y: position?.y ?? 70 + (index % 2) * 60,
       logic: isOr ? 'OR' : 'AND',
-      filters: flat.map((filter) => ({
-        id: uid('f'),
-        campo: filter.campo,
-        operador: filter.operador,
-        valor: Array.isArray(filter.valor) ? (filter.operador === 'between' ? String(filter.valor[0]) : filter.valor.join(', ')) : filter.operador === 'isNull' ? '' : String(filter.valor ?? ''),
-        valor2: Array.isArray(filter.valor) && filter.operador === 'between' ? String(filter.valor[1]) : undefined,
-      })),
+      filters: flat.map(toQbFilter),
     };
   });
   const byAlias = (alias: string) => sources.find((source) => source.alias === alias);
@@ -313,5 +441,10 @@ export function fromDefinition(definition: JoinPayload, base: Omit<QbSource, 'x'
     metrics: (raw.aggregations ?? []).map((metric) => ({ id: uid('m'), operation: metric.operation, field: metric.field ?? '', as: metric.as })),
     sort: raw.ordenarPor ?? [],
     limit: raw.limiteFilas ?? null,
+    resultLogic: (raw.filtrosResultado ?? []).some((item) => (item as { logica?: string }).logica === 'OR') ? 'OR' : 'AND',
+    resultFilters: ((raw.filtrosResultado ?? []).flatMap((item) => {
+      const node = item as { logica?: string; filtros?: unknown[] };
+      return node.logica ? (node.filtros ?? []) : [node];
+    }) as { campo: string; operador: Operator; valor: unknown }[]).map(toQbFilter),
   };
 }

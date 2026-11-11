@@ -778,6 +778,39 @@ describe('DataEngineService aggregation pipeline', () => {
     ]);
   });
 
+  it('filtra la tabla combinada por sus columnas de salida, también después de agrupar (HAVING)', async () => {
+    const { service } = createEngine(
+      [
+        { client_id: 'C1', status: 'sql-status' },
+        { client_id: 'C2', status: 'sql-status' },
+      ],
+      [
+        { client_ref: 'C1', status: 'paid', amount: 12 },
+        { client_ref: 'C1', status: 'paid', amount: 40 },
+        { client_ref: 'C2', status: 'cancelled', amount: 30 },
+      ],
+    );
+
+    const grouped = await service.executeCrossJoin(
+      {
+        ...basePayload,
+        groupBy: ['nosql.status'],
+        aggregations: [{ operation: 'SUM', field: 'amount', as: 'total' }],
+        aliasColumnas: { 'nosql.status': 'Estado' },
+        filtrosResultado: [{ campo: 'total', operador: 'gt', valor: 40 }],
+      } as any,
+      actorWithAccess,
+    );
+    expect(grouped.data).toEqual([{ Estado: 'paid', total: 52 }]);
+    expect(grouped.total).toBe(1);
+
+    const detail = await service.executeCrossJoin(
+      { ...basePayload, filtrosResultado: [{ logica: 'OR', filtros: [{ campo: 'amount', operador: 'lt', valor: 15 }, { campo: 'amount', operador: 'eq', valor: 30 }] }] } as any,
+      actorWithAccess,
+    );
+    expect(detail.data.map((row) => row.amount).sort()).toEqual([12, 30]);
+  });
+
   it('returns an empty grouped result and a zero-row global aggregate', async () => {
     const { service } = createEngine([], []);
     const grouped = await service.executeCrossJoin(

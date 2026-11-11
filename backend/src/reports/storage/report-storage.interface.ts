@@ -27,9 +27,10 @@ export const REPORT_CONTENT_TYPES_BY_EXTENSION = {
   pdf: 'application/pdf',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   json: 'application/json',
+  csv: 'text/csv; charset=utf-8',
 } as const;
 
-export const REPORT_FILENAME_PATTERN = /^datanexus_export_[0-9TZ-]+\.(xlsx|pdf|docx|json)$/;
+export const REPORT_FILENAME_PATTERN = /^datanexus_export_[0-9TZ-]+\.(xlsx|csv|pdf|docx|json)$/;
 
 export function isReportContentType(contentType: string): boolean {
   return (Object.values(REPORT_CONTENT_TYPES_BY_EXTENSION) as string[]).includes(contentType);

@@ -26,6 +26,36 @@ import PDFDocument from 'pdfkit';
 export const WORD_CONTENT_TYPE =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
+export const CSV_CONTENT_TYPE = 'text/csv; charset=utf-8';
+
+/** Columnas de un conjunto de filas: las de la primera fila en su orden y luego las que aparezcan después. */
+export function exportColumns(data: Record<string, unknown>[]): string[] {
+  const columns = new Set<string>();
+  for (const row of data) for (const key of Object.keys(row)) columns.add(key);
+  return [...columns];
+}
+
+/** Valor apto para una celda: objetos y listas (documentos NoSQL) se escriben como JSON. */
+export function cellValue(value: unknown): string | number | boolean | Date | null {
+  if (value === null || value === undefined) return null;
+  if (value instanceof Date || typeof value === 'number' || typeof value === 'boolean' || typeof value === 'string') return value;
+  if (typeof value === 'bigint') return value.toString();
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+/** Escapa un valor CSV (RFC 4180) y neutraliza fórmulas (=, +, -, @) para que Excel no las ejecute. */
+export function csvCell(value: unknown): string {
+  const cell = cellValue(value);
+  if (cell === null) return '';
+  let text = cell instanceof Date ? cell.toISOString() : String(cell);
+  if (typeof cell === 'string' && /^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
 /** Metadatos que acompañan al documento Word (RF-21). */
 export interface WordExportOptions {
   title: string;
@@ -81,9 +111,9 @@ export class ExportService {
     const worksheet = workbook.addWorksheet('Datos Cross-Join');
 
     if (data.length > 0) {
-      const keys = Object.keys(data[0]);
+      const keys = exportColumns(data);
       worksheet.columns = keys.map((key) => ({
-        header: key.toUpperCase(),
+        header: key,
         key,
         width: Math.max(key.length + 6, 18),
       }));
@@ -101,7 +131,7 @@ export class ExportService {
 
       // Filas de datos
       data.forEach((item) => {
-        worksheet.addRow(item);
+        worksheet.addRow(Object.fromEntries(keys.map((key) => [key, cellValue(item[key])])));
       });
 
       // Bordes y alineación
@@ -137,9 +167,9 @@ export class ExportService {
     const worksheet = workbook.addWorksheet('Datos Cross-Join');
 
     if (data.length > 0) {
-      const keys = Object.keys(data[0]);
+      const keys = exportColumns(data);
       worksheet.columns = keys.map((key) => ({
-        header: key.toUpperCase(),
+        header: key,
         key,
         width: Math.max(key.length + 6, 18),
       }));
@@ -156,7 +186,7 @@ export class ExportService {
       headerRow.commit();
 
       for (const item of data) {
-        const row = worksheet.addRow(item);
+        const row = worksheet.addRow(Object.fromEntries(keys.map((key) => [key, cellValue(item[key])])));
         row.eachCell((cell) => {
           cell.border = {
             top: { style: 'thin', color: { argb: 'FFE0E0E0' } },
@@ -426,6 +456,24 @@ export class ExportService {
         yield JSON.stringify(row) ?? '{}';
       }
       yield ']';
+    })();
+    await pipeline(Readable.from(chunks), destination);
+  }
+
+  /** CSV con BOM (para que Excel respete los acentos) y separador coma. */
+  exportToCsv(data: Record<string, unknown>[]): Buffer {
+    this.logger.log(`Generando exportación CSV para ${data.length} registros`);
+    const columns = exportColumns(data);
+    const lines = [columns.map(csvCell).join(','), ...data.map((row) => columns.map((column) => csvCell(row[column])).join(','))];
+    return Buffer.from(`﻿${lines.join('\r\n')}\r\n`, 'utf8');
+  }
+
+  async writeCsv(data: Record<string, unknown>[], destination: Writable): Promise<void> {
+    this.logger.log(`Generando exportación CSV en streaming para ${data.length} registros`);
+    const columns = exportColumns(data);
+    const chunks = (function* () {
+      yield `﻿${columns.map(csvCell).join(',')}\r\n`;
+      for (const row of data) yield `${columns.map((column) => csvCell(row[column])).join(',')}\r\n`;
     })();
     await pipeline(Readable.from(chunks), destination);
   }

@@ -27,7 +27,8 @@ import { selectColumns, sortRows } from './join/select-columns.js';
 import { SensitiveFieldsService, type SensitiveSource } from './masking/sensitive-fields.service.js';
 import { hasPermission } from '../auth/interfaces/user-role.js';
 import { UsageMeterService } from '../usage/usage-meter.service.js';
-import { ExportService, WORD_CONTENT_TYPE } from './export/export.service.js';
+import { CSV_CONTENT_TYPE, ExportService, WORD_CONTENT_TYPE } from './export/export.service.js';
+import { MAX_DATA_EXPORT_ROWS, type ExportDataDto } from './dto/export-data.dto.js';
 import type { ConnectionHealthItemDto, ConnectionHealthResponseDto } from './dto/connection-health.dto.js';
 import type { ConnectionFieldsResponseDto } from './dto/connection-schema.dto.js';
 import {
@@ -58,6 +59,7 @@ import { resolveJoinPlan } from './join/resolve-join-plan.js';
 import { assertValidFilters, matchesFilters, parseFilterQuery, splitFiltersForPushdown } from './filters/filter-tree.js';
 import {
   DEFAULT_PAGE_SIZE,
+  MAX_PAGE_SIZE,
   cursorBinding,
   decodeCursor,
   encodeCursor,
@@ -367,7 +369,7 @@ export class DataEngineService {
     const { rows: combinedData, truncated, rules } = await this.performJoin(payload, user);
 
     // Enmascaramiento si es LECTOR
-    const securedData = selectColumns(sortRows(this.maskingService.maskDataset(combinedData, user.role, rules), payload.ordenarPor), payload.columnas, payload.aliasColumnas);
+    const securedData = this.shapeResult(combinedData, payload, user, rules);
 
     // Paginación nativa en memoria
     const limit = payload.limit ?? 50;
@@ -391,56 +393,9 @@ export class DataEngineService {
     user: AuthenticatedUser,
   ): Promise<ExportResult> {
     const { rows: combinedData, rules } = await this.performJoin(payload, user);
-    const securedData = selectColumns(sortRows(this.maskingService.maskDataset(combinedData, user.role, rules), payload.ordenarPor), payload.columnas, payload.aliasColumnas);
+    const securedData = this.shapeResult(combinedData, payload, user, rules);
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-
-    switch (payload.format) {
-      case 'excel': {
-        const buffer = await this.exportService.exportToExcel(securedData);
-        return {
-          buffer,
-          contentType:
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          filename: `datanexus_export_${timestamp}.xlsx`,
-          totalRows: securedData.length,
-        };
-      }
-      case 'pdf': {
-        const buffer = await this.exportService.exportToPdf(
-          securedData,
-          `DataNexus - Join ${describeJoinPlan(resolveJoinPlan(payload))}`,
-        );
-        return {
-          buffer,
-          contentType: 'application/pdf',
-          filename: `datanexus_export_${timestamp}.pdf`,
-          totalRows: securedData.length,
-        };
-      }
-      case 'word': {
-        const buffer = await this.exportService.exportToWord(securedData, {
-          title: `DataNexus - Join ${describeJoinPlan(resolveJoinPlan(payload))}`,
-          masked: !hasPermission(user.role, 'VIEW_UNMASKED_DATA'),
-        });
-        return {
-          buffer,
-          contentType: WORD_CONTENT_TYPE,
-          filename: `datanexus_export_${timestamp}.docx`,
-          totalRows: securedData.length,
-        };
-      }
-      case 'json':
-      default: {
-        const buffer = this.exportService.exportToJson(securedData);
-        return {
-          buffer,
-          contentType: 'application/json',
-          filename: `datanexus_export_${timestamp}.json`,
-          totalRows: securedData.length,
-        };
-      }
-    }
+    return this.buildExportFile(securedData, payload.format, `DataNexus - Join ${describeJoinPlan(resolveJoinPlan(payload))}`, user);
   }
 
   async executeCrossJoinToStream(
@@ -453,7 +408,7 @@ export class DataEngineService {
     }
 
     const { rows: combinedData, rules } = await this.performJoin(payload, user);
-    const securedData = selectColumns(sortRows(this.maskingService.maskDataset(combinedData, user.role, rules), payload.ordenarPor), payload.columnas, payload.aliasColumnas);
+    const securedData = this.shapeResult(combinedData, payload, user, rules);
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
 
     if (payload.format === 'excel') {
@@ -463,6 +418,11 @@ export class DataEngineService {
         filename: `datanexus_export_${timestamp}.xlsx`,
         totalRows: securedData.length,
       };
+    }
+
+    if (payload.format === 'csv') {
+      await this.exportService.writeCsv(securedData, destination);
+      return { contentType: CSV_CONTENT_TYPE, filename: `datanexus_export_${timestamp}.csv`, totalRows: securedData.length };
     }
 
     if (payload.format === 'word') {
@@ -503,6 +463,112 @@ export class DataEngineService {
   }
 
   /**
+   * Filas de salida del cruce: enmascara según el rol, ordena, elige y renombra columnas y, al final, aplica los
+   * filtros sobre la tabla combinada (`filtrosResultado`, con los nombres de salida; con agrupación son un HAVING).
+   */
+  private shapeResult(
+    rows: Record<string, any>[],
+    payload: Pick<CrossJoinDto, 'ordenarPor' | 'columnas' | 'aliasColumnas' | 'filtrosResultado'>,
+    user: AuthenticatedUser,
+    rules: SensitiveRule[],
+  ): Record<string, any>[] {
+    const shaped = selectColumns(sortRows(this.maskingService.maskDataset(rows, user.role, rules), payload.ordenarPor), payload.columnas, payload.aliasColumnas);
+    return payload.filtrosResultado?.length ? shaped.filter((row) => matchesFilters(row, payload.filtrosResultado)) : shaped;
+  }
+
+  /** Archivo en memoria (Excel, CSV, PDF, Word o JSON) con las filas ya preparadas. */
+  private async buildExportFile(
+    rows: Record<string, any>[],
+    format: ExportFormat,
+    title: string,
+    user: AuthenticatedUser,
+    baseName = 'datanexus_export',
+  ): Promise<ExportResult> {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filename = (ext: string) => `${baseName}_${timestamp}.${ext}`;
+    switch (format) {
+      case 'excel':
+        return {
+          buffer: await this.exportService.exportToExcel(rows),
+          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          filename: filename('xlsx'),
+          totalRows: rows.length,
+        };
+      case 'csv':
+        return { buffer: this.exportService.exportToCsv(rows), contentType: CSV_CONTENT_TYPE, filename: filename('csv'), totalRows: rows.length };
+      case 'pdf':
+        return { buffer: await this.exportService.exportToPdf(rows, title), contentType: 'application/pdf', filename: filename('pdf'), totalRows: rows.length };
+      case 'word':
+        return {
+          buffer: await this.exportService.exportToWord(rows, { title, masked: !hasPermission(user.role, 'VIEW_UNMASKED_DATA') }),
+          contentType: WORD_CONTENT_TYPE,
+          filename: filename('docx'),
+          totalRows: rows.length,
+        };
+      case 'json':
+      default:
+        return { buffer: this.exportService.exportToJson(rows), contentType: 'application/json', filename: filename('json'), totalRows: rows.length };
+    }
+  }
+
+  /**
+   * Exporta una tabla o colección desde el explorador (`POST /engine/export/data`): recorre las páginas con el
+   * cursor nativo aplicando los mismos filtros que la vista hasta `limiteFilas` (máx. 10 000), enmascara
+   * según el rol, ordena, deja las columnas visibles con su encabezado y genera el archivo.
+   */
+  async exportData(user: AuthenticatedUser, input: ExportDataDto): Promise<ExportResult & { truncated: boolean }> {
+    assertValidFilters(input.filtros);
+    const limit = Math.min(input.limiteFilas ?? MAX_DATA_EXPORT_ROWS, MAX_DATA_EXPORT_ROWS);
+    const connection = await this.connectionsService.getConnectionForExploration(input.conexionId, user.workspaceId);
+    const adapter = this.adapters.get(connection.tipoMotor);
+    if (!adapter?.readPage) {
+      throw new BadRequestException('La exportación no está disponible para este motor');
+    }
+    const { pushed, residual } = splitFiltersForPushdown(
+      input.filtros,
+      (filter) => adapter.canPushDown?.(filter) ?? true,
+      adapter.pushesFilterGroups ?? true,
+    );
+
+    const rows: Record<string, unknown>[] = [];
+    let after: DataPage['lastKey'] | undefined;
+    let truncated = false;
+    try {
+      for (;;) {
+        const page: DataPage = await this.runWithDeadline(connection, Date.now() + EXPLORATION_TIMEOUT_MS, () =>
+          adapter.readPage!(connection, input.entidad, {
+            ...(input.esquema ? { schema: input.esquema } : {}),
+            ...(pushed.length ? { filters: pushed } : {}),
+            pageSize: MAX_PAGE_SIZE,
+            ...(after ? { after } : {}),
+          }),
+        );
+        for (const row of page.rows) {
+          if (residual.length && !matchesFilters(row, residual)) continue;
+          if (rows.length >= limit) {
+            truncated = true;
+            break;
+          }
+          rows.push(row);
+        }
+        if (truncated || !page.lastKey || page.rows.length === 0) break;
+        after = page.lastKey;
+      }
+    } catch (error) {
+      if (error instanceof HttpException) throw error;
+      if (this.isTimeoutError(error)) throw new GatewayTimeoutException('La lectura para exportar excedió el tiempo permitido');
+      this.logger.warn(`Falló la exportación en la conexión ${connection.id} (${adapter.tipoMotor})`);
+      throw new BadGatewayException('No fue posible leer datos de la fuente externa');
+    }
+
+    const rules = await this.maskingRules(user, [{ conexionId: connection.id, entidad: input.entidad }]);
+    const shaped = this.shapeResult(rows, input, user, rules);
+    const name = (input.esquema ? `${input.esquema}_${input.entidad}` : input.entidad).replace(/[^\w-]+/g, '_').slice(0, 80) || 'datos';
+    const file = await this.buildExportFile(shaped, input.format, `DataNexus - ${input.esquema ? `${input.esquema}.` : ''}${input.entidad}`, user, name);
+    return { ...file, truncated };
+  }
+
+  /**
    * Lógica nuclear de Inner Join en memoria indexada O(N + M).
    */
   /**
@@ -517,7 +583,7 @@ export class DataEngineService {
   ): Promise<{ rows: Record<string, any>[]; truncated: boolean }> {
     const { rows, truncated, rules } = await this.performJoin(payload, user, { ...options, cooperative: true });
     options.signal?.throwIfAborted();
-    const secured = selectColumns(sortRows(this.maskingService.maskDataset(rows, user.role, rules), payload.ordenarPor), payload.columnas, payload.aliasColumnas);
+    const secured = this.shapeResult(rows, payload, user, rules);
     options.onProgress?.(1);
     return { rows: secured, truncated };
   }

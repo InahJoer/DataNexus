@@ -383,10 +383,21 @@ export interface paths {
         trace?: never;
     };
     "/connections/firestore/databases": {
-        post: {
-            requestBody: { content: { "application/json": { serviceAccount: Record<string, unknown> } } };
-            responses: { 200: { headers: { [name: string]: unknown }; content: { "application/json": { databaseIds: string[]; partial: boolean } } } };
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
+        get?: never;
+        put?: never;
+        /** Listar las bases Cloud Firestore del proyecto de la cuenta de servicio */
+        post: operations["ConnectionsController_listFirestoreDatabases"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
     "/connections/firestore": {
         parameters: {
@@ -588,11 +599,21 @@ export interface paths {
         trace?: never;
     };
     "/users/{id}/password": {
-        patch: {
-            parameters: { path: { id: string } };
-            requestBody: { content: { "application/json": { newPassword: string } } };
-            responses: { 204: { headers: { [name: string]: unknown }; content?: never } };
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
         };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Cambiar la contraseña de otro miembro del workspace */
+        patch: operations["UsersController_resetMemberPassword"];
+        trace?: never;
     };
     "/users/{id}/role": {
         parameters: {
@@ -939,6 +960,46 @@ export interface paths {
          * @description Genera y descarga el archivo con los datos combinados. Disponible para ADMIN y OPERADOR.
          */
         post: operations["DataEngineController_exportJoin[1]"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/engine/export/data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Exportar una tabla o colección del explorador (Excel, CSV, PDF, JSON o Word)
+         * @description Exporta lo que se ve en el explorador: mismos filtros, orden y columnas visibles con su encabezado, hasta 10000 filas. Los campos sensibles salen enmascarados según el rol. La cabecera X-DataNexus-Truncated indica si había más filas.
+         */
+        post: operations["DataEngineController_exportData[0]"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/data-engine/export/data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Exportar una tabla o colección del explorador (Excel, CSV, PDF, JSON o Word)
+         * @description Exporta lo que se ve en el explorador: mismos filtros, orden y columnas visibles con su encabezado, hasta 10000 filas. Los campos sensibles salen enmascarados según el rol. La cabecera X-DataNexus-Truncated indica si había más filas.
+         */
+        post: operations["DataEngineController_exportData[1]"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1846,6 +1907,16 @@ export interface components {
              */
             timeoutMs?: number;
         };
+        ListFirestoreDatabasesDto: {
+            /** @description Contenido del JSON de Service Account de Firebase (type, project_id, private_key, client_email...). También puede subirse como archivo en POST /connections/firestore. */
+            serviceAccount: {
+                [key: string]: unknown;
+            };
+        };
+        FirestoreDatabasesResponseDto: {
+            databaseIds: string[];
+            partial: boolean;
+        };
         UpdateConnectionDto: {
             /**
              * @description Nombre descriptivo de la conexión
@@ -1933,6 +2004,13 @@ export interface components {
             invitedBy: components["schemas"]["InvitationInviterDto"] | null;
             /** @description Solo en invitar/reenviar: false si el correo no pudo enviarse (se puede reenviar). */
             correoEnviado?: boolean;
+        };
+        ResetMemberPasswordDto: {
+            /**
+             * @description Entre 10 y 72 caracteres, con al menos una mayúscula, una minúscula, un número y un símbolo. No puede contener tu correo ni contraseñas comunes.
+             * @example NuevaClave#2026
+             */
+            newPassword: string;
         };
         UpdateUserRoleDto: {
             /**
@@ -2246,6 +2324,8 @@ export interface components {
             };
             /** @description Orden del resultado (ORDER BY) por una o más columnas, antes de paginar */
             ordenarPor?: components["schemas"]["SortSpecDto"][];
+            /** @description Filtros sobre la tabla combinada (como en el explorador): se aplican al final, sobre las columnas de salida con su nombre o alias. Con agrupación funcionan como HAVING. Se combinan con AND; usa grupos { logica: 'OR', filtros: [...] } para OR. Máximo 20 condiciones. */
+            filtrosResultado?: (components["schemas"]["DataFilterDto"] | components["schemas"]["FilterGroupDto"])[];
             /** @description Disposición visual del Query Builder (posiciones de las tarjetas). El motor la ignora. */
             lienzo?: {
                 [key: string]: unknown;
@@ -2368,6 +2448,8 @@ export interface components {
             };
             /** @description Orden del resultado (ORDER BY) por una o más columnas, antes de paginar */
             ordenarPor?: components["schemas"]["SortSpecDto"][];
+            /** @description Filtros sobre la tabla combinada (como en el explorador): se aplican al final, sobre las columnas de salida con su nombre o alias. Con agrupación funcionan como HAVING. Se combinan con AND; usa grupos { logica: 'OR', filtros: [...] } para OR. Máximo 20 condiciones. */
+            filtrosResultado?: (components["schemas"]["DataFilterDto"] | components["schemas"]["FilterGroupDto"])[];
             /** @description Disposición visual del Query Builder (posiciones de las tarjetas). El motor la ignora. */
             lienzo?: {
                 [key: string]: unknown;
@@ -2393,7 +2475,44 @@ export interface components {
              * @example excel
              * @enum {string}
              */
-            format: "excel" | "pdf" | "json" | "word";
+            format: "excel" | "csv" | "pdf" | "json" | "word";
+        };
+        ExportDataDto: {
+            /**
+             * Format: uuid
+             * @description Conexión del workspace
+             */
+            conexionId: string;
+            /**
+             * @description Tabla, vista o colección
+             * @example clientes
+             */
+            entidad: string;
+            /**
+             * @description Esquema SQL o base de datos
+             * @example public
+             */
+            esquema?: string;
+            /** @description Filtros de la vista (los mismos que en el explorador). Se combinan con AND; usa grupos { logica: 'OR', filtros: [...] } para OR. Máximo 20 condiciones. */
+            filtros?: (components["schemas"]["DataFilterDto"] | components["schemas"]["FilterGroupDto"])[];
+            /** @description Orden de las filas exportadas */
+            ordenarPor?: components["schemas"]["SortSpecDto"][];
+            /** @description Columnas visibles en orden; sin lista se exportan todas */
+            columnas?: string[];
+            /** @description Encabezados personalizados por columna */
+            aliasColumnas?: {
+                [key: string]: string;
+            };
+            /**
+             * @example excel
+             * @enum {string}
+             */
+            format: "excel" | "csv" | "pdf" | "json" | "word";
+            /**
+             * @description Máximo de filas del archivo (1 a 10000)
+             * @default 10000
+             */
+            limiteFilas?: number;
         };
         JobResultPageDto: {
             /** @example 120000 */
@@ -2534,11 +2653,11 @@ export interface components {
              */
             recipients: string[];
             /**
-             * @description Formato del archivo de reporte (Excel, PDF, JSON o Word)
+             * @description Formato del archivo de reporte (Excel, CSV, PDF, JSON o Word)
              * @example excel
              * @enum {string}
              */
-            format: "excel" | "pdf" | "json" | "word";
+            format: "excel" | "csv" | "pdf" | "json" | "word";
             /** @description Parámetros del Cross-Join para extraer y combinar los datos */
             crossJoinParams: components["schemas"]["CrossJoinDto"];
             /**
@@ -3816,6 +3935,29 @@ export interface operations {
             };
         };
     };
+    ConnectionsController_listFirestoreDatabases: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListFirestoreDatabasesDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FirestoreDatabasesResponseDto"];
+                };
+            };
+        };
+    };
     ConnectionsController_createFirestore: {
         parameters: {
             query?: never;
@@ -4230,6 +4372,29 @@ export interface operations {
             };
             /** @description La invitación ya fue aceptada o revocada. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    UsersController_resetMemberPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResetMemberPasswordDto"];
+            };
+        };
+        responses: {
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -5348,6 +5513,134 @@ export interface operations {
                 content?: never;
             };
             /** @description La consulta a una fuente externa agotó el tiempo. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "DataEngineController_exportData[0]": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExportDataDto"];
+            };
+        };
+        responses: {
+            /** @description Archivo descargable. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Formato, filtros o motor no soportados. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Se requiere rol ADMIN u OPERADOR para exportar. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Conexión fuera del workspace o inexistente. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Falló la lectura en la fuente externa. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description La lectura superó el tiempo máximo. */
+            504: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    "DataEngineController_exportData[1]": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExportDataDto"];
+            };
+        };
+        responses: {
+            /** @description Archivo descargable. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Formato, filtros o motor no soportados. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Token JWT inválido o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Se requiere rol ADMIN u OPERADOR para exportar. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Conexión fuera del workspace o inexistente. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Falló la lectura en la fuente externa. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description La lectura superó el tiempo máximo. */
             504: {
                 headers: {
                     [name: string]: unknown;
