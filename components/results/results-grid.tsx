@@ -4,7 +4,8 @@ import { useMemo, useState } from 'react';
 import { Icon } from '@/components/icons';
 
 type Row = Record<string, unknown>;
-type Sort = { column: string; direction: 'asc' | 'desc' } | null;
+export type GridSort = { column: string; direction: 'asc' | 'desc' } | null;
+type Sort = GridSort;
 
 export function displayValue(value: unknown): string {
   if (value === null || value === undefined) return '—';
@@ -29,9 +30,13 @@ function compare(a: unknown, b: unknown) {
  * Data Grid de resultados (#46): encabezado fijo, orden por columna, filtro sobre la página cargada y resaltado de
  * campos enmascarados. La paginación del servidor la maneja quien lo usa.
  */
-/** `columns`: columnas visibles y su orden (editor de consultas); sin ella se muestran todas. */
-export function ResultsGrid({ rows, caption, columns: chosen }: Readonly<{ rows: Row[]; caption: string; columns?: string[] }>) {
-  const [sort, setSort] = useState<Sort>(null);
+/**
+ * `columns`: columnas visibles y su orden (editor de consultas); sin ella se muestran todas.
+ * `sort` + `onSortChange`: orden controlado por quien lo usa (p. ej. el servidor ordena todo el resultado, no solo la página).
+ */
+export function ResultsGrid({ rows, caption, columns: chosen, sort: controlledSort, onSortChange }: Readonly<{ rows: Row[]; caption: string; columns?: string[]; sort?: Sort; onSortChange?: (sort: Sort) => void }>) {
+  const [localSort, setLocalSort] = useState<Sort>(null);
+  const sort = onSortChange ? (controlledSort ?? null) : localSort;
   const [filter, setFilter] = useState('');
   const columns = useMemo(() => chosen ?? [...new Set(rows.flatMap((row) => Object.keys(row)))], [rows, chosen]);
   const maskedCount = useMemo(() => rows.reduce((count, row) => count + Object.values(row).filter(isMasked).length, 0), [rows]);
@@ -39,13 +44,14 @@ export function ResultsGrid({ rows, caption, columns: chosen }: Readonly<{ rows:
   const visible = useMemo(() => {
     const term = filter.trim().toLowerCase();
     const filtered = term ? rows.filter((row) => columns.some((column) => displayValue(row[column]).toLowerCase().includes(term))) : rows;
-    if (!sort) return filtered;
+    if (!sort || onSortChange) return filtered;
     const sign = sort.direction === 'asc' ? 1 : -1;
     return [...filtered].sort((a, b) => sign * compare(a[sort.column], b[sort.column]));
-  }, [rows, columns, filter, sort]);
+  }, [rows, columns, filter, sort, onSortChange]);
 
-  const toggleSort = (column: string) =>
-    setSort((current) => (current?.column !== column ? { column, direction: 'asc' } : current.direction === 'asc' ? { column, direction: 'desc' } : null));
+  const nextSort = (current: Sort, column: string): Sort =>
+    current?.column !== column ? { column, direction: 'asc' } : current.direction === 'asc' ? { column, direction: 'desc' } : null;
+  const toggleSort = (column: string) => (onSortChange ? onSortChange(nextSort(sort, column)) : setLocalSort((current) => nextSort(current, column)));
 
   return (
     <div className="results-grid">

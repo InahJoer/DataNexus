@@ -22,6 +22,8 @@ type PanelProps = Readonly<{
   /** Columnas que producirá el cruce (con nombre calificado si se repite entre fuentes). */
   outputColumns: { name: string; type: string; sensitive: boolean }[];
   update: (recipe: (model: QbModel) => QbModel) => void;
+  /** En Resultados no hay tarjeta elegida: se ocultan alias y condiciones de la fuente. */
+  hideSourceTab?: boolean;
 }>;
 
 const NUMERIC_OPS: Aggregation[] = ['SUM', 'AVG', 'MIN', 'MAX'];
@@ -42,7 +44,7 @@ function renameIfAuto(item: QbMetric, next: QbMetric, all: QbMetric[]): QbMetric
 }
 
 /** Panel derecho del Query Builder: filtros de la fuente elegida y configuración de la salida. */
-export function OutputPanel({ model, tab, onTab, selected, outputColumns, update }: PanelProps) {
+export function OutputPanel({ model, tab, onTab, selected, outputColumns, update, hideSourceTab = false }: PanelProps) {
   const setSource = (id: string, recipe: (source: QbSource) => QbSource) =>
     update((current) => ({ ...current, sources: current.sources.map((source) => (source.id === id ? recipe(source) : source)) }));
   const columns: QbColumn[] = model.columns.length ? model.columns : outputColumns.map((column) => ({ name: column.name, visible: true, alias: '' }));
@@ -53,7 +55,7 @@ export function OutputPanel({ model, tab, onTab, selected, outputColumns, update
   return (
     <aside className="qb-panel" aria-label="Configuración de la consulta">
       <div className="segmented qb-panel-tabs" role="tablist">
-        {([['source', 'Fuente'], ['columns', 'Columnas'], ['group', 'Agrupar'], ['sort', 'Orden']] as const).map(([value, label]) => (
+        {([['source', 'Fuente'], ['columns', 'Columnas'], ['group', 'Agrupar'], ['sort', 'Orden']] as const).filter(([value]) => !hideSourceTab || value !== 'source').map(([value, label]) => (
           <button key={value} type="button" role="tab" aria-selected={tab === value} aria-pressed={tab === value} onClick={() => onTab(value)}>{label}</button>
         ))}
       </div>

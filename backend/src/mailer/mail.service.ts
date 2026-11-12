@@ -119,6 +119,16 @@ export class MailService {
     };
   }
 
+  /** true si hay un servidor SMTP real configurado; false si se usa el transporter simulado. */
+  isConfigured(): boolean {
+    return this.hasSmtp;
+  }
+
+  /** Comprueba que el servidor SMTP acepta la conexión y las credenciales (health check, issue #51). */
+  async verify(): Promise<void> {
+    await this.transporter.verify();
+  }
+
   // Método auxiliar para testing e inyección de transportes
   setTransporter(customTransporter: Transporter) {
     this.transporter = customTransporter;

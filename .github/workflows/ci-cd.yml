@@ -94,6 +94,17 @@ jobs:
           --coverage.exclude='src/**/*.spec.ts'
         working-directory: backend
 
+      # Flujos críticos, matriz RBAC y aislamiento entre workspaces contra la API completa (issue #50).
+      # Cada suite crea y borra su propio esquema de PostgreSQL.
+      - name: Run backend e2e tests
+        run: npm run test:e2e
+        working-directory: backend
+
+      # Revisión OWASP (issue #52): falla si una dependencia de producción tiene vulnerabilidades altas o críticas.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+        working-directory: backend
+
       - name: Publish coverage summary
         if: ${{ always() && hashFiles('backend/coverage/coverage-summary.json') != '' }}
         run: node .github/scripts/coverage-summary.mjs backend/coverage/coverage-summary.json >> "$GITHUB_STEP_SUMMARY"
@@ -187,6 +198,24 @@ jobs:
           cache-from: type=gha,scope=datanexus-frontend
           cache-to: type=gha,scope=datanexus-frontend,mode=max
 
+      # NEXT_PUBLIC_API_URL queda incrustada en el bundle: staging necesita su propia imagen del frontend
+      # apuntando a su API (issue #49). El backend no lleva URLs y se reutiliza con el tag `staging`.
+      - name: Publish staging frontend image
+        if: ${{ github.ref == 'refs/heads/main' && vars.ENABLE_STAGING_CD == 'true' && vars.STAGING_API_URL != '' }}
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ghcr.io/inahjoer/datanexus-frontend:staging
+            ghcr.io/inahjoer/datanexus-frontend:staging-sha-${{ github.sha }}
+          labels: ${{ steps.frontend-meta.outputs.labels }}
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ vars.STAGING_API_URL }}
+          cache-from: type=gha,scope=datanexus-frontend
+          cache-to: type=gha,scope=datanexus-frontend,mode=max
+
       - name: Backend image metadata
         id: backend-meta
         uses: docker/metadata-action@v6
@@ -195,6 +224,7 @@ jobs:
           tags: |
             type=sha,prefix=sha-
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=staging,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=dockercicd,enable=${{ github.ref == 'refs/heads/DOCKERCICD' }}
 
       - name: Publish backend image
@@ -207,6 +237,63 @@ jobs:
           labels: ${{ steps.backend-meta.outputs.labels }}
           cache-from: type=gha,scope=datanexus-backend
           cache-to: type=gha,scope=datanexus-backend,mode=max
+
+  # Staging (issue #49): cada push a main que pasa las pruebas y publica imágenes se despliega en el entorno
+  # staging de Railway y se verifica /health. Producción (deploy-railway) sigue siendo un paso aparte.
+  deploy-staging:
+    name: Deploy staging (disabled until enabled)
+    needs: publish-images
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ENABLE_STAGING_CD == 'true' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_FRONTEND_URL }}
+    concurrency:
+      group: datanexus-staging
+      cancel-in-progress: false
+    env:
+      # Token de proyecto de Railway limitado al entorno staging: nunca reutilices el de producción.
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
+      RAILWAY_FRONTEND_SERVICE_ID: ${{ secrets.RAILWAY_STAGING_FRONTEND_SERVICE_ID }}
+      RAILWAY_BACKEND_SERVICE_ID: ${{ secrets.RAILWAY_STAGING_BACKEND_SERVICE_ID }}
+      STAGING_API_URL: ${{ vars.STAGING_API_URL }}
+    steps:
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.22.3
+
+      - name: Install Railway CLI
+        run: npm install --global @railway/cli@5.71.0
+
+      - name: Require staging configuration
+        run: |
+          missing=0
+          for name in RAILWAY_TOKEN RAILWAY_FRONTEND_SERVICE_ID RAILWAY_BACKEND_SERVICE_ID STAGING_API_URL; do
+            if [ -z "${!name}" ]; then echo "::error::Falta $name para el despliegue a staging"; missing=1; fi
+          done
+          exit "$missing"
+
+      - name: Redeploy staging backend and frontend
+        run: |
+          railway redeploy --service "$RAILWAY_BACKEND_SERVICE_ID" --from-source --yes
+          railway redeploy --service "$RAILWAY_FRONTEND_SERVICE_ID" --from-source --yes
+
+      - name: Smoke test staging API
+        run: |
+          # Da tiempo a que Railway construya y cambie de despliegue antes de comprobar /health.
+          sleep 60
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error --max-time 10 "${STAGING_API_URL%/}/health"; then
+              echo
+              echo "Staging responde en ${STAGING_API_URL%/}/health"
+              exit 0
+            fi
+            echo "Intento $attempt: staging aún no responde; reintento en 10 s"
+            sleep 10
+          done
+          echo "::error::Staging no respondió en /health tras el despliegue"
+          exit 1
 
   deploy-railway:
     name: Deploy Railway services (disabled until enabled)

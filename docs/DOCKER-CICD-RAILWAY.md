@@ -6,11 +6,48 @@ La guía del curso usa Nginx para servir un sitio estático. DataNexus necesita 
 
 Requiere Docker Compose v2.20 o posterior por el uso de `include`.
 
-1. Copia `.env.docker.example` a `.env` en la raíz.
-2. Ejecuta `docker compose up --build`.
-3. Abre `http://localhost:3000` y `http://localhost:3001/api/docs`.
+1. Ejecuta `docker compose up --build` en la raíz. El `.env` es opcional: sin él se usan los valores de desarrollo de `.env.docker.example` (cópialo como `.env` solo para cambiarlos).
+2. Abre `http://localhost:3000` y `http://localhost:3001/api/docs`. El correo enviado por la API se ve en `http://localhost:8025` (Mailpit).
+3. Inicia sesión con `admin@datanexus.demo` / `DataNexus2026!` (también `operador@`, `lector@` y `auditor@datanexus.demo`).
 
 Compose monta el código fuente, usa los scripts de desarrollo existentes y aplica las migraciones pendientes con `prisma migrate deploy` antes de iniciar el backend. El proyecto Compose conserva el nombre `backend` para reutilizar el contenedor y el volumen PostgreSQL (`backend_datanexus-pgdata`) creados por la configuración anterior. `docker compose down` detiene los servicios sin borrar ese volumen.
+
+### Entorno de demo (issue #49)
+
+`docker compose up` levanta además una fuente de cada motor soportado con datos de ejemplo deterministas, pensados para probar cross-joins:
+
+| Servicio | Motor | Datos | Puerto local |
+| --- | --- | --- | --- |
+| `sqlserver` | SQL Server 2022 | `erp.dbo.clientes`: 24 clientes | 1433 |
+| `mysql` | MySQL 8.4 | `tienda.pedidos`: 75 pedidos (clientes 1–20) | 3306 |
+| `postgres-demo` | PostgreSQL 16 | `logistica.public.envios`: 40 envíos | 5433 |
+| `mongo` | MongoDB 7 | `app_eventos.eventos`: 120 eventos | 27017 |
+| `firestore` | Emulador de Firestore | colección `tickets`: 30 tickets | 8080 |
+| `mailpit` | SMTP de pruebas | bandeja web | 8025 (SMTP 1025) |
+
+Los datos están en `docker/demo/` y `backend/prisma/demo/`. Incluyen casos para los distintos tipos de join: clientes sin pedidos (21–24) y pedidos sin envío. Al arrancar, el backend ejecuta en orden:
+
+1. `db:deploy`
+2. `db:seed` (workspace "DataNexus Demo S.A." y sus usuarios)
+3. `db:seed:demo`, que:
+   - registra las cinco conexiones (credenciales cifradas con `ENCRYPTION_KEY`);
+   - carga los tickets en el emulador;
+   - publica dos consultas guardadas listas para ejecutar: **Clientes, pedidos y envíos** (SQL Server × MySQL × PostgreSQL) y **Actividad y soporte por cliente** (SQL Server × MongoDB × Firestore).
+
+`db:seed:demo` es idempotente. Al repetirlo, actualiza las conexiones demo, pero no pisa las consultas si alguien las editó. Solo escribe en Firestore si existe `FIRESTORE_EMULATOR_HOST`, así que nunca toca un proyecto real.
+
+Las fuentes de la demo no usan volúmenes con nombre: `docker compose down` y `up` las dejan como nuevas. La base interna de la API sí conserva su volumen. La imagen de SQL Server solo existe para `amd64`; en Mac con Apple Silicon corre emulada y tarda más en arrancar. Si un puerto está ocupado, cámbialo con las variables `DEMO_*_PORT` de `.env.docker.example`.
+
+Para correr la API fuera de Docker contra estas fuentes, sigue estos pasos:
+
+1. Levántalas con `docker compose up -d sqlserver sqlserver-init mysql postgres-demo mongo firestore mailpit`.
+2. Desde `backend/`, ejecuta:
+
+   ```sh
+   FIRESTORE_EMULATOR_HOST=localhost:8080 DEMO_SOURCES_HOST=localhost npm run db:seed:demo
+   ```
+
+3. Arranca la API con `FIRESTORE_EMULATOR_HOST=localhost:8080`.
 
 El Compose de producción construye las imágenes optimizadas y requiere una conexión PostgreSQL externa. Prepara un archivo separado para producción:
 
@@ -32,7 +69,7 @@ Que falten funcionalidades no impide construir la imagen: el código actual debe
 
 ## GitHub Actions y GHCR
 
-`.github/workflows/ci-cd.yml` corre en pushes a `DOCKERCICD` y `main`, Pull Requests hacia `main` y ejecuciones manuales. El job **Validate backend** inicia PostgreSQL y Redis y ejecuta, en orden: `npm ci`, `prisma generate`, `prisma validate`, migraciones, `npm run lint` (oxlint `--type-aware`), `npm run build` y las pruebas con cobertura. Después, **Build and validate Docker images** construye las dos imágenes. Solo cuando ambas compilaciones Docker terminan correctamente, otro job publica las imágenes desde pushes.
+`.github/workflows/ci-cd.yml` corre en pushes a `DOCKERCICD` y `main`, Pull Requests hacia `main` y ejecuciones manuales. El job **Validate backend** inicia PostgreSQL y Redis y ejecuta, en orden: `npm ci`, `prisma generate`, `prisma validate`, migraciones, `npm run lint` (oxlint `--type-aware`), `npm run build`, las pruebas con cobertura, las pruebas e2e (`npm run test:e2e`) y `npm audit --omit=dev --audit-level=high`. Después, **Build and validate Docker images** construye las dos imágenes. Solo cuando ambas compilaciones Docker terminan correctamente, otro job publica las imágenes desde pushes.
 
 ### Cobertura (issue #48)
 
@@ -76,3 +113,27 @@ Cuando estén listos para conectarlo:
 El job de Railway solo se ejecuta en un push a `main`, tras el éxito de CI y la publicación de imágenes, y cuando `ENABLE_RAILWAY_CD` vale exactamente `true`. El job usa Railway CLI 5.71.0 y `railway redeploy --from-source` para desplegar la imagen nueva desde el tag `latest` configurado en cada servicio. Esa variable y los secretos no están configurados por este cambio, por lo que el workflow queda apagado y no despliega.
 
 El servicio backend aplica migraciones existentes con `prisma migrate deploy`; no ejecuta resets ni modifica datos mediante una migración destructiva.
+
+## Despliegue a staging (issue #49)
+
+En cada push a `main` con el CI en verde y las imágenes ya publicadas, el job **Deploy staging** hace dos cosas:
+
+1. Redespliega los servicios del entorno `staging` de Railway.
+2. Comprueba `GET /health` de la API de staging.
+
+Las imágenes de staging son:
+
+- **Backend:** el workflow publica `ghcr.io/inahjoer/datanexus-backend:staging`, la misma imagen que `latest`.
+- **Frontend:** tiene su propia imagen, `ghcr.io/inahjoer/datanexus-frontend:staging`, construida con `NEXT_PUBLIC_API_URL=STAGING_API_URL`. La URL de la API queda incrustada en el bundle, así que no puede reutilizar la de producción.
+
+El job de producción (`deploy-railway`) sigue siendo independiente.
+
+Para activarlo:
+
+1. En Railway, crea un entorno `staging` en el proyecto, con su propio PostgreSQL. Crea también dos servicios de imagen: `ghcr.io/inahjoer/datanexus-backend:staging` y `ghcr.io/inahjoer/datanexus-frontend:staging`.
+2. Configura las variables del backend de staging, igual que en producción, con claves propias. Para cargar las cuentas demo, ejecuta una vez `npm run db:seed` contra la base de staging.
+3. En GitHub, ve a **Settings → Environments** y crea el entorno `staging`. Ahí agrega los secretos `RAILWAY_STAGING_TOKEN` (token de proyecto limitado al entorno staging), `RAILWAY_STAGING_FRONTEND_SERVICE_ID` y `RAILWAY_STAGING_BACKEND_SERVICE_ID`.
+4. Crea las variables de repositorio `STAGING_API_URL` (URL pública de la API de staging, sin `/` final) y `STAGING_FRONTEND_URL`.
+5. Activa el pipeline con la variable de repositorio `ENABLE_STAGING_CD=true`.
+
+Los nombres de los secretos son distintos a los de producción a propósito. Si faltara alguno, el job falla en vez de usar por error el token de producción.

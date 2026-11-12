@@ -109,7 +109,7 @@ const FILTER_LIST_SCHEMA = {
 };
 
 /** Decoradores comunes de una lista de filtros de una fuente. */
-function FilterList(description: string): PropertyDecorator {
+export function FilterList(description: string): PropertyDecorator {
   return applyDecorators(
     ApiPropertyOptional({
       description: `${description}. Se combinan con AND; usa grupos { logica: 'OR', filtros: [...] } para OR. Máximo ${MAX_FILTER_CONDITIONS} condiciones.`,
@@ -126,7 +126,7 @@ export const AGGREGATION_OPERATIONS = ['COUNT', 'COUNT_DISTINCT', 'SUM', 'AVG', 
 export type AggregationOperation = (typeof AGGREGATION_OPERATIONS)[number];
 
 @ValidatorConstraint({ name: 'columnAliases' })
-class ColumnAliasesConstraint implements ValidatorConstraintInterface {
+export class ColumnAliasesConstraint implements ValidatorConstraintInterface {
   validate(value: unknown) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
     const entries = Object.entries(value);
@@ -444,6 +444,12 @@ export class CrossJoinDto {
   @Type(() => SortSpecDto)
   ordenarPor?: SortSpecDto[];
 
+  @FilterList(
+    'Filtros sobre la tabla combinada (como en el explorador): se aplican al final, sobre las columnas de salida con ' +
+      'su nombre o alias. Con agrupación funcionan como HAVING',
+  )
+  filtrosResultado?: FilterNode[];
+
   @ApiPropertyOptional({
     description: 'Disposición visual del Query Builder (posiciones de las tarjetas). El motor la ignora.',
     type: 'object',
@@ -491,7 +497,7 @@ export class CrossJoinDto {
   limiteFilas?: RowLimitOption;
 }
 
-export const EXPORT_FORMATS = ['excel', 'pdf', 'json', 'word'] as const;
+export const EXPORT_FORMATS = ['excel', 'csv', 'pdf', 'json', 'word'] as const;
 export type ExportFormat = (typeof EXPORT_FORMATS)[number];
 
 /** Formatos de los reportes enviados por correo (se generan en streaming hacia el almacenamiento). */

@@ -74,6 +74,38 @@ function describeError(error: unknown): string {
   return 'Error';
 }
 
+/** Evento EXPORT de una tabla o colección exportada desde el explorador: qué se exportó, nunca filtros ni filas. */
+export function buildDataExportAuditEvent(
+  request: AuthenticatedRequest,
+  input: { conexionId: string; entidad: string; esquema?: string; format: string; filtros?: unknown },
+  result: { totalFilas?: number; error?: unknown },
+): AuditEventInput {
+  const user: AuthenticatedUser = request.user;
+  const failed = result.error !== undefined;
+  const entidad = input.esquema ? `${input.esquema}.${input.entidad}` : input.entidad;
+  return {
+    eventType: 'EXPORT',
+    outcome: failed ? 'FAILURE' : 'SUCCESS',
+    actorUserId: user.id,
+    actorEmail: user.email,
+    workspaceId: user.workspaceId,
+    targetType: 'CONNECTION',
+    targetId: input.conexionId,
+    details: {
+      entidades: entidad,
+      conexiones: input.conexionId,
+      fuentes: 1,
+      filtros: Array.isArray(input.filtros) ? countConditions(input.filtros as never) : 0,
+      formato: input.format,
+      enmascarado: !hasPermission(user.role, 'VIEW_UNMASKED_DATA'),
+      ...(result.totalFilas !== undefined ? { totalFilas: result.totalFilas } : {}),
+      ...(failed ? { error: describeError(result.error) } : {}),
+    },
+    ipAddress: request.ip,
+    userAgent: request.get?.('user-agent') ?? undefined,
+  };
+}
+
 /** Evento BROWSE_DATA de la exploración paginada (issue #32): qué tabla o colección, nunca filtros ni filas. */
 export function buildBrowseAuditEvent(
   request: AuthenticatedRequest,

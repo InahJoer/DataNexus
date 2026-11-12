@@ -1,0 +1,55 @@
+-- Datos de ejemplo de DataNexus (issue #49). Generados de forma determinista: los mismos en cada entorno.
+-- Logística: envíos. PostgreSQL lo ejecuta al crear el volumen (docker-entrypoint-initdb.d).
+CREATE TABLE IF NOT EXISTS envios (
+  id INTEGER PRIMARY KEY,
+  pedido_id INTEGER NOT NULL,
+  transportista TEXT NOT NULL,
+  estado TEXT NOT NULL,
+  ciudad TEXT NOT NULL,
+  fecha_envio TIMESTAMP NOT NULL,
+  fecha_entrega TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_envios_pedido ON envios (pedido_id);
+
+INSERT INTO envios (id, pedido_id, transportista, estado, ciudad, fecha_envio, fecha_entrega) VALUES
+  (5001, 1001, 'FedEx', 'entregado', 'San José', '2026-10-31 14:00:00', '2026-11-05 14:00:00'),
+  (5002, 1003, 'FedEx', 'entregado', 'Tegucigalpa', '2026-09-21 17:00:00', '2026-09-24 17:00:00'),
+  (5003, 1006, 'Cargo Expreso', 'entregado', 'Tegucigalpa', '2026-10-26 10:00:00', '2026-10-30 10:00:00'),
+  (5004, 1009, 'FedEx', 'entregado', 'San Salvador', '2026-10-12 15:00:00', '2026-10-16 15:00:00'),
+  (5005, 1010, 'Correos de Nicaragua', 'entregado', 'San Salvador', '2026-10-23 17:00:00', '2026-10-28 17:00:00'),
+  (5006, 1012, 'Correos de Nicaragua', 'entregado', 'San Salvador', '2026-08-21 19:00:00', '2026-08-27 19:00:00'),
+  (5007, 1013, 'FedEx', 'entregado', 'Ciudad de Guatemala', '2026-09-17 12:00:00', '2026-09-23 12:00:00'),
+  (5008, 1016, 'Cargo Expreso', 'en_transito', 'Ciudad de Guatemala', '2026-10-29 17:00:00', NULL),
+  (5009, 1018, 'Correos de Nicaragua', 'entregado', 'Ciudad de Panamá', '2026-09-18 10:00:00', '2026-09-21 10:00:00'),
+  (5010, 1019, 'Correos de Nicaragua', 'entregado', 'Ciudad de Panamá', '2026-09-28 09:00:00', '2026-10-01 09:00:00'),
+  (5011, 1020, 'DHL', 'en_transito', 'Ciudad de Panamá', '2026-10-10 10:00:00', NULL),
+  (5012, 1023, 'Correos de Nicaragua', 'entregado', 'Managua', '2026-10-29 11:00:00', '2026-11-02 11:00:00'),
+  (5013, 1025, 'DHL', 'en_transito', 'Managua', '2026-08-12 15:00:00', NULL),
+  (5014, 1026, 'Cargo Expreso', 'en_transito', 'Managua', '2026-09-10 17:00:00', NULL),
+  (5015, 1029, 'FedEx', 'entregado', 'San José', '2026-10-06 16:00:00', '2026-10-08 16:00:00'),
+  (5016, 1031, 'FedEx', 'en_transito', 'Tegucigalpa', '2026-08-23 11:00:00', NULL),
+  (5017, 1032, 'FedEx', 'en_transito', 'Tegucigalpa', '2026-10-20 14:00:00', NULL),
+  (5018, 1036, 'Cargo Expreso', 'en_transito', 'San Salvador', '2026-08-04 11:00:00', NULL),
+  (5019, 1037, 'DHL', 'entregado', 'Ciudad de Guatemala', '2026-08-22 19:00:00', '2026-08-24 19:00:00'),
+  (5020, 1039, 'Cargo Expreso', 'entregado', 'Ciudad de Guatemala', '2026-09-10 11:00:00', '2026-09-16 11:00:00'),
+  (5021, 1040, 'FedEx', 'en_transito', 'Ciudad de Panamá', '2026-11-09 15:00:00', NULL),
+  (5022, 1042, 'DHL', 'en_transito', 'Ciudad de Panamá', '2026-09-06 10:00:00', NULL),
+  (5023, 1043, 'Correos de Nicaragua', 'entregado', 'Ciudad de Panamá', '2026-08-13 16:00:00', '2026-08-18 16:00:00'),
+  (5024, 1048, 'Cargo Expreso', 'entregado', 'San José', '2026-08-14 13:00:00', '2026-08-20 13:00:00'),
+  (5025, 1049, 'DHL', 'entregado', 'San José', '2026-08-15 19:00:00', '2026-08-21 19:00:00'),
+  (5026, 1051, 'Cargo Expreso', 'entregado', 'Tegucigalpa', '2026-10-16 10:00:00', '2026-10-18 10:00:00'),
+  (5027, 1052, 'FedEx', 'entregado', 'Tegucigalpa', '2026-09-04 13:00:00', '2026-09-09 13:00:00'),
+  (5028, 1053, 'FedEx', 'en_transito', 'Tegucigalpa', '2026-09-24 09:00:00', NULL),
+  (5029, 1056, 'DHL', 'entregado', 'San Salvador', '2026-10-19 09:00:00', '2026-10-23 09:00:00'),
+  (5030, 1060, 'Cargo Expreso', 'entregado', 'Ciudad de Guatemala', '2026-08-05 13:00:00', '2026-08-11 13:00:00'),
+  (5031, 1061, 'FedEx', 'entregado', 'Ciudad de Guatemala', '2026-11-08 10:00:00', '2026-11-11 10:00:00'),
+  (5032, 1062, 'FedEx', 'entregado', 'Ciudad de Guatemala', '2026-10-15 09:00:00', '2026-10-19 09:00:00'),
+  (5033, 1064, 'Cargo Expreso', 'entregado', 'Ciudad de Panamá', '2026-08-17 09:00:00', '2026-08-21 09:00:00'),
+  (5034, 1065, 'Cargo Expreso', 'entregado', 'Ciudad de Panamá', '2026-10-23 19:00:00', '2026-10-28 19:00:00'),
+  (5035, 1066, 'DHL', 'en_transito', 'Managua', '2026-09-16 15:00:00', NULL),
+  (5036, 1067, 'Correos de Nicaragua', 'en_transito', 'Managua', '2026-10-25 12:00:00', NULL),
+  (5037, 1070, 'FedEx', 'entregado', 'San José', '2026-10-10 16:00:00', '2026-10-15 16:00:00'),
+  (5038, 1071, 'Cargo Expreso', 'en_transito', 'San José', '2026-10-21 18:00:00', NULL),
+  (5039, 1074, 'DHL', 'en_transito', 'Tegucigalpa', '2026-10-25 09:00:00', NULL),
+  (5040, 1075, 'Cargo Expreso', 'en_transito', 'Tegucigalpa', '2026-08-09 12:00:00', NULL)
+ON CONFLICT (id) DO NOTHING;

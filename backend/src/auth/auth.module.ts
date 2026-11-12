@@ -13,6 +13,8 @@ import { JwtStrategy } from './strategies/jwt.strategy.js';
 import { RolesGuard } from './guards/roles.guard.js';
 import { getJwtSecret } from './jwt-secret.js';
 import { AuditModule } from '../audit/audit.module.js';
+import { PersonalAccessTokensController } from './pat/personal-access-tokens.controller.js';
+import { PersonalAccessTokensService } from './pat/personal-access-tokens.service.js';
 
 @Module({
   imports: [
@@ -29,8 +31,17 @@ import { AuditModule } from '../audit/audit.module.js';
       }),
     }),
   ],
-  controllers: [AuthController, AccountController],
-  providers: [AuthService, AccountService, SessionsService, PasswordResetService, JwtStrategy, JwtAuthGuard, RolesGuard],
-  exports: [AuthService, SessionsService, JwtAuthGuard, RolesGuard, PassportModule, JwtModule],
+  controllers: [AuthController, AccountController, PersonalAccessTokensController],
+  providers: [
+    AuthService,
+    AccountService,
+    SessionsService,
+    PasswordResetService,
+    PersonalAccessTokensService,
+    JwtStrategy,
+    JwtAuthGuard,
+    RolesGuard,
+  ],
+  exports: [AuthService, SessionsService, PersonalAccessTokensService, JwtAuthGuard, RolesGuard, PassportModule, JwtModule],
 })
 export class AuthModule {}

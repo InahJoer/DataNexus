@@ -35,6 +35,10 @@ export const EVENT_LABELS: Record<string, string> = {
   SCHEDULED_REPORT_RUN: 'Tarea ejecutada',
   REPORT_GENERATED_AND_SENT: 'Reporte enviado',
   AUDIT_LOG_EXPORTED: 'Bitácora exportada',
+  PAT_CREATED: 'Token de acceso creado',
+  PAT_ROTATED: 'Token de acceso rotado',
+  PAT_REVOKED: 'Token de acceso revocado',
+  PAT_USED: 'Token de acceso usado',
 };
 
 export const IMPACT_VIEW: Record<'BAJO' | 'MEDIO' | 'ALTO', { label: string; tone: string }> = {

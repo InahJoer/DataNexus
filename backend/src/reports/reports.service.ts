@@ -30,6 +30,7 @@ const REPORT_CONTENT_TYPES: Record<ExportFormat, string> = {
   pdf: REPORT_CONTENT_TYPES_BY_EXTENSION.pdf,
   word: REPORT_CONTENT_TYPES_BY_EXTENSION.docx,
   json: REPORT_CONTENT_TYPES_BY_EXTENSION.json,
+  csv: REPORT_CONTENT_TYPES_BY_EXTENSION.csv,
 };
 
 export interface ReportExecutionResult {
