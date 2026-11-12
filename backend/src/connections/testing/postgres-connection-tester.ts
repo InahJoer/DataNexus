@@ -4,6 +4,7 @@ import {
   type ConnectionPingResult,
   type ConnectionTester,
 } from './connection-tester.interface.js';
+import { postgresClientConfig } from '../credentials/tls-ca.js';
 
 export class PostgresConnectionTester implements ConnectionTester {
   private client?: Client;
@@ -21,7 +22,7 @@ export class PostgresConnectionTester implements ConnectionTester {
     url.pathname = `/${encodeURIComponent(dbName)}`;
 
     this.client = new Client({
-      connectionString: url.toString(),
+      ...postgresClientConfig(url),
       connectionTimeoutMillis: timeoutMs,
       query_timeout: timeoutMs,
       statement_timeout: timeoutMs,

@@ -24,6 +24,7 @@ import {
   type DataPage,
   type DataPageOptions,
 } from '../pagination/keyset.js';
+import { postgresClientConfig } from '../../connections/credentials/tls-ca.js';
 
 const MAX_IDENTIFIER_LENGTH = 63;
 const SOURCE_ALIAS = '"__dn_src"';
@@ -407,7 +408,7 @@ export class PostgresAdapter implements IDataSourceAdapter {
     }
     url.pathname = `/${encodeURIComponent(connection.dbName)}`;
     const pool = new Pool({
-      connectionString: url.toString(),
+      ...postgresClientConfig(url),
       max: 4,
       idleTimeoutMillis: 60_000,
       connectionTimeoutMillis: EXTERNAL_QUERY_TIMEOUT_MS,

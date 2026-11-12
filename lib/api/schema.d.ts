@@ -1969,8 +1969,10 @@ export interface components {
              * @example S3creta#2026
              */
             password: string;
+            /** @description PEM de la CA del servidor (p. ej. Supabase). Requiere ssl; se verifica el servidor con esa CA */
+            caCertificate?: string;
             /**
-             * @description Exigir TLS (sslmode=require)
+             * @description Exigir TLS y verificar el certificado del servidor
              * @default false
              */
             ssl?: boolean;
@@ -1998,6 +2000,8 @@ export interface components {
              * @example S3creta#2026
              */
             password: string;
+            /** @description PEM de la CA del servidor (p. ej. Supabase). Requiere ssl; se verifica el servidor con esa CA */
+            caCertificate?: string;
             /**
              * @description Conectar con TLS
              * @default false
