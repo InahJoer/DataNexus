@@ -54,6 +54,7 @@ import {
   executeJoinPlanAsync,
   yieldToEventLoop,
   type AsyncJoinOptions,
+  semiJoinKeys,
 } from './join/join-plan.js';
 import { resolveJoinPlan } from './join/resolve-join-plan.js';
 import { assertValidFilters, matchesFilters, parseFilterQuery, splitFiltersForPushdown } from './filters/filter-tree.js';
@@ -615,22 +616,38 @@ export class DataEngineService {
       ),
     );
 
-    // 2. Extraer cada fuente aplicando sus filtros en el motor (filter pushdown)
-    const extracted = await Promise.all(
-      plan.sources.map(async (source) => {
-        const options: ExtractOptions = {
-          ...(source.esquema ? { schema: source.esquema } : {}),
-          ...(source.filtros?.length ? { filters: source.filtros } : {}),
-        };
-        const records = await this.extract(
-          connections.get(source.conexionId)!,
-          source.entidad,
-          Object.keys(options).length ? options : undefined,
-        );
-        return [source.alias, records] as const;
-      }),
+    // 2. Extraer cada fuente aplicando sus filtros en el motor (filter pushdown). Las fuentes que admiten semi-join
+    //    (hojas de Excel de millones de filas) esperan a la fuente con la que se unen y piden solo los registros cuya
+    //    llave existe en ella: el cruce no necesita traer la hoja completa.
+    const recordsByAlias = new Map<string, Record<string, any>[]>();
+    const extractSource = async (source: (typeof plan.sources)[number], keyIn?: ExtractOptions['keyIn']) => {
+      const options: ExtractOptions = {
+        ...(source.esquema ? { schema: source.esquema } : {}),
+        ...(source.filtros?.length ? { filters: source.filtros } : {}),
+        ...(keyIn ? { keyIn } : {}),
+      };
+      const records = await this.extract(
+        connections.get(source.conexionId)!,
+        source.entidad,
+        Object.keys(options).length ? options : undefined,
+      );
+      recordsByAlias.set(source.alias, records);
+    };
+    const deferred = new Set(
+      plan.sources
+        .filter((source) => this.adapters.get(connections.get(source.conexionId)!.tipoMotor)?.supportsKeyIn)
+        .map((source) => source.alias),
     );
-    const recordsByAlias = new Map(extracted);
+    await Promise.all(plan.sources.filter((source) => !deferred.has(source.alias)).map((source) => extractSource(source)));
+    let pending = plan.sources.filter((source) => deferred.has(source.alias));
+    while (pending.length) {
+      const candidates = pending.map((source) => ({ source, keyIn: semiJoinKeys(plan, source.alias, recordsByAlias) }));
+      const ready = candidates.filter((candidate) => candidate.keyIn);
+      // Si ninguna puede reducirse todavía (todas son hojas de Excel), la primera se extrae completa.
+      await Promise.all((ready.length ? ready : [candidates[0]]).map((candidate) => extractSource(candidate.source, candidate.keyIn ?? undefined)));
+      pending = pending.filter((source) => !recordsByAlias.has(source.alias));
+    }
+    const extracted = [...recordsByAlias.entries()];
     // Datos procesados del dashboard (issue #40): bytes extraídos de las fuentes, antes del join.
     this.usageMeter?.recordBytesProcessed(
       user.workspaceId,
@@ -937,6 +954,7 @@ export class DataEngineService {
     const adapterOptions: ExtractOptions = {
       ...(options?.schema ? { schema: options.schema } : {}),
       ...(pushed.length ? { filters: pushed } : {}),
+      ...(options?.keyIn && adapter.supportsKeyIn ? { keyIn: options.keyIn } : {}),
     };
 
     try {

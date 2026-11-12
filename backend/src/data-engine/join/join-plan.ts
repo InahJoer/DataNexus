@@ -351,3 +351,38 @@ function assignUnique(target: Record<string, any>, preferred: string, value: unk
 export function describeJoinPlan(plan: JoinPlan): string {
   return plan.sources.map((source) => (source.esquema ? `${source.esquema}.${source.entidad}` : source.entidad)).join(' x ');
 }
+
+/** Llaves distintas máximas que se envían en un semi-join; con más, la fuente se extrae sin reducir. */
+export const MAX_SEMI_JOIN_KEYS = 50_000;
+
+/**
+ * Semi-join: llaves con las que se puede reducir la fuente `alias` antes de extraerla, a partir de una fuente ya
+ * extraída con la que se une. Solo se usa una relación donde un registro de `alias` sin pareja se descarta de todos
+ * modos (INNER, la fuente añadida de un LEFT o la de partida de un RIGHT), así que el resultado no cambia.
+ * Devuelve null si no hay ninguna relación así.
+ */
+export function semiJoinKeys(
+  plan: JoinPlan,
+  alias: string,
+  extracted: ReadonlyMap<string, Record<string, any>[]>,
+): { field: string; values: string[] } | null {
+  for (const relation of plan.relations) {
+    const isLeft = relation.izquierda === alias;
+    const isRight = relation.derecha === alias;
+    if (!isLeft && !isRight) continue;
+    const dropsUnmatched = relation.tipo === 'INNER' || (isRight && relation.tipo === 'LEFT') || (isLeft && relation.tipo === 'RIGHT');
+    const other = extracted.get(isLeft ? relation.derecha : relation.izquierda);
+    if (!dropsUnmatched || !other) continue;
+    const [pair] = relation.llaves;
+    const otherField = isLeft ? pair.derecha : pair.izquierda;
+    const values = new Set<string>();
+    for (const record of other) {
+      const key = normalizeJoinKey(ownValue(record, otherField));
+      if (key !== null) values.add(key);
+      if (values.size > MAX_SEMI_JOIN_KEYS) break;
+    }
+    if (values.size > MAX_SEMI_JOIN_KEYS) continue;
+    return { field: isLeft ? pair.izquierda : pair.derecha, values: [...values] };
+  }
+  return null;
+}

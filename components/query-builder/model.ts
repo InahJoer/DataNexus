@@ -233,6 +233,24 @@ export function outputFields(model: QbModel): { name: string; type: FieldType }[
   return sources.flatMap((source) => source.fields.map((field) => ({ name: (count.get(field.name) ?? 0) > 1 ? `${source.alias}.${field.name}` : field.name, type: field.type })));
 }
 
+/** Nombre de salida de un campo de una fuente (igual que outputFields): con el alias si el nombre se repite. */
+export function outputName(model: QbModel, source: QbSource, field: string): string {
+  const repeated = model.sources.filter((item) => item.fields.some((candidate) => candidate.name === field)).length > 1;
+  return repeated ? `${source.alias}.${field}` : field;
+}
+
+/**
+ * Incluye o quita columnas del resultado antes de ejecutar (desde las tarjetas del lienzo). Sin lista configurada, se
+ * parte de todas visibles. Nunca deja el resultado sin columnas: en ese caso no cambia nada.
+ */
+export function setOutputVisibility(model: QbModel, names: readonly string[], visible: boolean): QbModel {
+  const base = model.columns.length ? model.columns : outputFields(model).map((field) => ({ name: field.name, visible: true, alias: '' }));
+  const targets = new Set(names);
+  const columns = base.map((column) => (targets.has(column.name) ? { ...column, visible } : column));
+  if (!columns.some((column) => column.visible)) return model;
+  return { ...model, columns };
+}
+
 /**
  * Completa la lista de columnas de un reporte guardado: las que no estaban en `columnas` se habían ocultado, así que
  * se agregan ocultas al final (sin lista guardada, se muestran todas).

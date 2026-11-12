@@ -461,13 +461,28 @@ model PersonalAccessToken {
 
 /// Libro de Excel (o CSV) subido al workspace: una fuente de datos sin servidor. Cada hoja se explora como una tabla
 /// y se puede cruzar con las conexiones en el editor de consultas. Su id funciona como `conexionId` en el motor.
+enum EstadoExcel {
+  PROCESANDO
+  LISTO
+  ERROR
+}
+
 model ArchivoExcel {
   id            String      @id @default(uuid())
   nombre        String
   /// Nombre original del archivo subido (solo informativo).
   nombreArchivo String
-  tamanoBytes   Int
+  tamanoBytes   BigInt
   creadoPor     String
+  /// La carga corre en segundo plano: PROCESANDO mientras se leen y guardan las filas.
+  estado          EstadoExcel @default(LISTO)
+  /// Avance de la carga (0 a 100) y registros guardados hasta ahora.
+  progreso        Int         @default(100)
+  filasProcesadas Int         @default(0)
+  /// Motivo de la última carga fallida (si un reemplazo falla, los datos anteriores siguen disponibles).
+  error           String?
+  /// Observaciones de la última carga: encabezados ajustados, identificadores vacíos o repetidos.
+  avisos          Json        @default("[]")
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @default(now()) @updatedAt
   workspaceId   String
@@ -487,8 +502,12 @@ model HojaExcel {
   columnas   Json
   columnaId  String
   totalFilas Int
-  /// Registros como objetos { columna: valor } en el orden del archivo.
-  filas      Json
+  /// Tipo de cada columna en el orden de `columnas` (texto, numero o booleano).
+  tipos      Json         @default("[]")
+  /// Tabla de PostgreSQL con los registros (una columna c1..cN por columna del archivo y _fila como llave).
+  tabla      String?
+  /// Formato anterior: registros como JSON. Se migra a `tabla` al arrancar y queda en null.
+  filas      Json?
   archivoId  String
   archivo    ArchivoExcel @relation(fields: [archivoId], references: [id], onDelete: Cascade)
 

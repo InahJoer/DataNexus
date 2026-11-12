@@ -1224,7 +1224,7 @@ export interface paths {
         put?: never;
         /**
          * Subir un libro .xlsx o un .csv como fuente de datos
-         * @description Cada hoja con datos se convierte en una tabla: la fila 1 son los encabezados y la columna 1 el identificador de cada registro. Máximo 10 MB y 50000 registros. El id devuelto funciona como conexionId en el explorador, el editor de consultas y las exportaciones.
+         * @description Cada hoja con datos se convierte en una tabla: la fila 1 son los encabezados y la columna 1 el identificador de cada registro. La respuesta llega en cuanto el archivo se recibe (estado PROCESANDO); la lectura sigue en segundo plano por streaming, sin límite de registros, y el archivo pasa a LISTO al terminar (consulta GET /excel/{id}). El id devuelto funciona como conexionId en el explorador, el editor de consultas y las exportaciones.
          */
         post: operations["ExcelSourcesController_upload"];
         delete?: never;
@@ -2843,6 +2843,15 @@ export interface components {
             columnaId: string;
             /** @example 120 */
             totalFilas: number;
+            /**
+             * @description Tipo de cada columna en el orden de columnas: texto, numero o booleano.
+             * @example [
+             *       "texto",
+             *       "texto",
+             *       "numero"
+             *     ]
+             */
+            tipos: string[];
         };
         ExcelUsageDto: {
             id: string;
@@ -2864,8 +2873,25 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
             hojas: components["schemas"]["ExcelSheetResponseDto"][];
-            /** @description Observaciones de la lectura (solo al subir o reemplazar). */
-            avisos?: string[];
+            /**
+             * @description La carga corre en segundo plano: consulta el archivo hasta que esté LISTO.
+             * @enum {string}
+             */
+            estado: "PROCESANDO" | "LISTO" | "ERROR";
+            /**
+             * @description Avance de la carga, de 0 a 100.
+             * @example 100
+             */
+            progreso: number;
+            /**
+             * @description Registros guardados (durante la carga, los leídos hasta ahora).
+             * @example 1250000
+             */
+            filasProcesadas: number;
+            /** @description Motivo de la última carga fallida. Si falla un reemplazo, los datos anteriores siguen disponibles. */
+            error?: string | null;
+            /** @description Observaciones de la última carga (encabezados ajustados, identificadores vacíos o repetidos). */
+            avisos: string[];
             /** @description Reportes guardados que usan el archivo (solo en el detalle). */
             usadoEn?: components["schemas"]["ExcelUsageDto"][];
         };
@@ -6522,7 +6548,7 @@ export interface operations {
                 "multipart/form-data": {
                     /**
                      * Format: binary
-                     * @description Libro .xlsx o archivo .csv (máx. 10 MB).
+                     * @description Libro .xlsx o archivo .csv. Sin límite de tamaño salvo EXCEL_MAX_UPLOAD_MB.
                      */
                     archivo: string;
                     nombre?: string;
@@ -6530,7 +6556,8 @@ export interface operations {
             };
         };
         responses: {
-            201: {
+            /** @description Archivo recibido: se está procesando en segundo plano. */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6538,14 +6565,14 @@ export interface operations {
                     "application/json": components["schemas"]["ExcelFileResponseDto"];
                 };
             };
-            /** @description Archivo ausente, dañado, sin datos o con un formato no admitido. */
+            /** @description Archivo ausente, vacío o con un formato no admitido. */
             400: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            /** @description El archivo supera 10 MB. */
+            /** @description El archivo supera EXCEL_MAX_UPLOAD_MB (si está configurado). */
             413: {
                 headers: {
                     [name: string]: unknown;
@@ -6640,7 +6667,7 @@ export interface operations {
                 "multipart/form-data": {
                     /**
                      * Format: binary
-                     * @description Libro .xlsx o archivo .csv (máx. 10 MB).
+                     * @description Libro .xlsx o archivo .csv. Sin límite de tamaño salvo EXCEL_MAX_UPLOAD_MB.
                      */
                     archivo: string;
                     nombre?: string;
@@ -6648,13 +6675,21 @@ export interface operations {
             };
         };
         responses: {
-            200: {
+            /** @description Se procesa en segundo plano; los datos anteriores siguen disponibles hasta que termine. */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["ExcelFileResponseDto"];
                 };
+            };
+            /** @description El archivo todavía se está cargando. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

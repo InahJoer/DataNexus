@@ -1,3 +1,6 @@
+import { mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   BadRequestException,
   Body,
@@ -20,8 +23,8 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
   ApiBody,
+  ApiAcceptedResponse,
   ApiConsumes,
-  ApiCreatedResponse,
   ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
@@ -34,14 +37,22 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-user.interface.js';
 import { ExcelFileResponseDto, RenameExcelDto, UploadExcelFieldsDto, type UploadedExcelFile } from './dto/excel-file.dto.js';
-import { EXCEL_MAX_BYTES, EXCEL_MAX_ROWS } from './excel-parser.js';
+import { getExcelMaxUploadBytes } from './excel-parser.js';
 import { ExcelSourcesService } from './excel-sources.service.js';
 
-/** El archivo se procesa en memoria (multer sin `dest`) y nunca se escribe en disco; 413 si supera 10 MB. */
+/** Carpeta temporal de las subidas: el archivo se lee desde disco por streaming y se borra al terminar la carga. */
+const UPLOAD_DIR = join(tmpdir(), 'datanexus-excel');
+mkdirSync(UPLOAD_DIR, { recursive: true });
+
+/**
+ * El archivo va directo a disco (nunca entero en memoria), así que se admiten libros de cientos de MB o más. Sin
+ * EXCEL_MAX_UPLOAD_MB no hay límite de tamaño; con él, 413 al superarlo.
+ */
 const EXCEL_UPLOAD = FileInterceptor('archivo', {
-  limits: { fileSize: EXCEL_MAX_BYTES, files: 1, fields: 3, parts: 4 },
+  dest: UPLOAD_DIR,
+  limits: { fileSize: getExcelMaxUploadBytes(), files: 1, fields: 3, parts: 4 },
   fileFilter: (_request: unknown, file: { originalname: string }, callback: (error: Error | null, accept: boolean) => void) => {
-    const ok = /\.(xlsx|xlsm|csv|txt|xls)$/i.test(file.originalname);
+    const ok = /.(xlsx|xlsm|csv|txt|xls)$/i.test(file.originalname);
     callback(ok ? null : new BadRequestException('Sube un archivo .xlsx o .csv'), ok);
   },
 });
@@ -51,7 +62,7 @@ const UPLOAD_SCHEMA = {
     type: 'object',
     required: ['archivo'],
     properties: {
-      archivo: { type: 'string', format: 'binary', description: 'Libro .xlsx o archivo .csv (máx. 10 MB).' },
+      archivo: { type: 'string', format: 'binary', description: 'Libro .xlsx o archivo .csv. Sin límite de tamaño salvo EXCEL_MAX_UPLOAD_MB.' },
       nombre: { type: 'string', maxLength: 120 },
     },
   },
@@ -83,6 +94,7 @@ export class ExcelSourcesController {
 
   @Throttle({ default: { limit: 20, ttl: 60000 } })
   @Post()
+  @HttpCode(HttpStatus.ACCEPTED)
   @RequirePermission('MANAGE_EXCEL')
   @UseInterceptors(EXCEL_UPLOAD)
   @ApiConsumes('multipart/form-data')
@@ -90,25 +102,28 @@ export class ExcelSourcesController {
   @ApiOperation({
     summary: 'Subir un libro .xlsx o un .csv como fuente de datos',
     description:
-      `Cada hoja con datos se convierte en una tabla: la fila 1 son los encabezados y la columna 1 el identificador de ` +
-      `cada registro. Máximo 10 MB y ${EXCEL_MAX_ROWS} registros. El id devuelto funciona como conexionId en el explorador, ` +
-      'el editor de consultas y las exportaciones.',
+      'Cada hoja con datos se convierte en una tabla: la fila 1 son los encabezados y la columna 1 el identificador de ' +
+      'cada registro. La respuesta llega en cuanto el archivo se recibe (estado PROCESANDO); la lectura sigue en segundo ' +
+      'plano por streaming, sin límite de registros, y el archivo pasa a LISTO al terminar (consulta GET /excel/{id}). ' +
+      'El id devuelto funciona como conexionId en el explorador, el editor de consultas y las exportaciones.',
   })
-  @ApiCreatedResponse({ type: ExcelFileResponseDto })
-  @ApiResponse({ status: 400, description: 'Archivo ausente, dañado, sin datos o con un formato no admitido.' })
-  @ApiResponse({ status: 413, description: 'El archivo supera 10 MB.' })
+  @ApiAcceptedResponse({ type: ExcelFileResponseDto, description: 'Archivo recibido: se está procesando en segundo plano.' })
+  @ApiResponse({ status: 400, description: 'Archivo ausente, vacío o con un formato no admitido.' })
+  @ApiResponse({ status: 413, description: 'El archivo supera EXCEL_MAX_UPLOAD_MB (si está configurado).' })
   upload(@Req() request: AuthenticatedRequest, @UploadedFile() file: UploadedExcelFile | undefined, @Body() fields: UploadExcelFieldsDto) {
     return this.excel.upload(request.user, file, fields.nombre, this.auditContext(request));
   }
 
   @Throttle({ default: { limit: 20, ttl: 60000 } })
   @Put(':id/archivo')
+  @HttpCode(HttpStatus.ACCEPTED)
   @RequirePermission('MANAGE_EXCEL')
   @UseInterceptors(EXCEL_UPLOAD)
   @ApiConsumes('multipart/form-data')
   @ApiBody(UPLOAD_SCHEMA)
   @ApiOperation({ summary: 'Reemplazar el contenido del Excel conservando su id (los reportes que lo usan siguen funcionando)' })
-  @ApiOkResponse({ type: ExcelFileResponseDto })
+  @ApiAcceptedResponse({ type: ExcelFileResponseDto, description: 'Se procesa en segundo plano; los datos anteriores siguen disponibles hasta que termine.' })
+  @ApiResponse({ status: 409, description: 'El archivo todavía se está cargando.' })
   replace(
     @Req() request: AuthenticatedRequest,
     @Param('id', new ParseUUIDPipe()) id: string,

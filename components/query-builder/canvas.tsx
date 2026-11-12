@@ -32,6 +32,10 @@ type CanvasProps = Readonly<{
   onAcceptSuggestion: (link: QbLink) => void;
   onDropObject: (data: string, at: Point) => void;
   onAutoLayout: () => void;
+  /** Si el campo de la fuente está fuera del resultado (se quitó antes de ejecutar). */
+  isExcluded: (source: QbSource, field: string) => boolean;
+  /** Incluye o quita campos del resultado; sigue pudiendo usarse para unir. */
+  onToggleFields: (source: QbSource, fields: string[], include: boolean) => void;
 }>;
 
 function fieldIndex(source: QbSource, field: string, expanded: boolean) {
@@ -207,18 +211,40 @@ export function QueryCanvas(props: CanvasProps) {
             const shown = isExpanded ? source.fields : source.fields.slice(0, MAX_FIELDS_SHOWN);
             const linkedFields = new Set(model.links.flatMap((link) => [link.from.source === source.id ? link.from.field : '', link.to.source === source.id ? link.to.field : '']));
             const engine = ENGINES[source.engine as Engine];
+            const excludedCount = source.fields.filter((field) => props.isExcluded(source, field.name)).length;
+            const allIncluded = excludedCount === 0;
             return (
               <article key={source.id} className="qb-card" data-card={source.id} data-selected={selectedSource === source.id || undefined} style={{ left: source.x, top: source.y, width: CARD_WIDTH }}>
                 <header>
                   <span className="engine-badge" data-engine={source.engine}>{engine?.short ?? '?'}</span>
                   <div><strong>{source.alias}</strong><small title={`${source.connectionName} · ${source.entity}`}>{source.entity} · {source.connectionName}</small></div>
                   {source.filters.length > 0 && <span className="qb-filter-count" title="Filtros de esta fuente">{source.filters.length}</span>}
+                  {source.fields.length > 0 && (
+                    <button
+                      type="button"
+                      className="qb-fields-toggle"
+                      data-partial={excludedCount > 0 || undefined}
+                      title={allIncluded ? 'Quitar todos los campos de esta fuente del resultado' : 'Incluir todos los campos de esta fuente en el resultado'}
+                      aria-label={allIncluded ? `Quitar todos los campos de ${source.alias}` : `Incluir todos los campos de ${source.alias}`}
+                      onClick={() => props.onToggleFields(source, source.fields.map((field) => field.name), !allIncluded)}
+                    >
+                      {source.fields.length - excludedCount}/{source.fields.length}
+                    </button>
+                  )}
                   <button type="button" aria-label={`Quitar ${source.alias}`} onClick={() => props.onRemoveSource(source.id)}>×</button>
                 </header>
                 <ul>
                   {shown.map((field) => (
-                    <li key={field.name} data-field={field.name} data-source={source.id} data-linked={linkedFields.has(field.name) || undefined}>
+                    <li key={field.name} data-field={field.name} data-source={source.id} data-linked={linkedFields.has(field.name) || undefined} data-excluded={props.isExcluded(source, field.name) || undefined}>
                       <span className="qb-port qb-port--left" data-port onPointerDown={(event) => startLink(event, source, field.name, 'left')} />
+                      <input
+                        type="checkbox"
+                        className="qb-field-check"
+                        checked={!props.isExcluded(source, field.name)}
+                        title={props.isExcluded(source, field.name) ? 'Fuera del resultado (sigue disponible para unir). Clic para incluirlo.' : 'En el resultado. Clic para quitarlo.'}
+                        aria-label={`Incluir ${field.name} de ${source.alias} en el resultado`}
+                        onChange={(event) => props.onToggleFields(source, [field.name], event.target.checked)}
+                      />
                       <span className="qb-type" title={field.type}>{TYPE_ICON[field.type]}</span>
                       <span className="qb-field-name" title={field.name}>{field.name}</span>
                       <span className="qb-port qb-port--right" data-port onPointerDown={(event) => startLink(event, source, field.name, 'right')} />

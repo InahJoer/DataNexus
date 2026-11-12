@@ -1,12 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useRef, useState, type DragEvent, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react';
 import { Modal } from '@/components/app-shell/modal';
 import type { DataSource } from '@/components/connections/engines';
 import type { CatalogObject } from '@/components/explorer/explorer-tree';
 import { Icon } from '@/components/icons';
-import type { ApiClient } from '@/lib/api/client';
+import { apiBaseUrl } from '@/lib/api/client';
 import { apiErrorMessage, NETWORK_ERROR_MESSAGE } from '@/lib/api/errors';
 import type { components } from '@/lib/api/schema';
 import { useApiCall } from '@/lib/api/use-api-call';
@@ -17,29 +17,62 @@ export type ExcelFile = components['schemas']['ExcelFileResponseDto'];
 type ExcelTarget = Readonly<{ connection: DataSource; object: CatalogObject }>;
 
 export const EXCEL_ACCEPT = '.xlsx,.xlsm,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv';
-const MAX_BYTES = 10 * 1024 * 1024;
 
 /** El archivo como fuente del explorador y del editor: su id funciona como conexionId. */
 export const excelSource = (file: ExcelFile): DataSource => ({ id: file.id, nombre: file.nombre, dbName: file.nombreArchivo, tipoMotor: 'EXCEL' });
 export const sheetObject = (name: string): CatalogObject => ({ name, type: 'TABLE' });
 
-const formatBytes = (bytes: number) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`);
+const formatBytes = (bytes: number) =>
+  bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : bytes < 1024 ** 3 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${(bytes / 1024 ** 3).toFixed(2)} GB`;
 const formatDate = (value: string) => new Date(value).toLocaleString('es', { dateStyle: 'medium', timeStyle: 'short' });
 
-/** Sube un archivo nuevo (o reemplaza uno existente) como multipart/form-data. */
-async function sendFile(api: ApiClient, file: File, replaceId?: string) {
-  const form = new FormData();
-  form.append('archivo', file, file.name);
-  const options = { body: form as unknown as { archivo: string }, bodySerializer: (body: unknown) => body as FormData };
-  return replaceId
-    ? api.PUT('/excel/{id}/archivo', { params: { path: { id: replaceId } }, ...options })
-    : api.POST('/excel', options);
+type UploadResult = { status: number; body: unknown };
+
+/**
+ * Sube un archivo nuevo (o reemplaza uno existente) como multipart/form-data con XMLHttpRequest, que, a diferencia de
+ * fetch, informa el avance del envío: con archivos de cientos de MB el usuario ve cuánto falta.
+ */
+function sendFile(token: string, file: File, replaceId: string | undefined, onProgress: (fraction: number) => void): Promise<UploadResult> {
+  return new Promise((resolve, reject) => {
+    const form = new FormData();
+    form.append('archivo', file, file.name);
+    const request = new XMLHttpRequest();
+    request.open(replaceId ? 'PUT' : 'POST', replaceId ? `${apiBaseUrl}/excel/${encodeURIComponent(replaceId)}/archivo` : `${apiBaseUrl}/excel`);
+    request.setRequestHeader('Authorization', `Bearer ${token}`);
+    request.responseType = 'json';
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(event.loaded / event.total);
+    };
+    request.onload = () => resolve({ status: request.status, body: request.response });
+    request.onerror = () => reject(new Error('network'));
+    request.send(form);
+  });
 }
 
 function localError(file: File): string | null {
   if (!/\.(xlsx|xlsm|csv)$/i.test(file.name)) return /\.xls$/i.test(file.name) ? 'El formato .xls (Excel 97-2003) no se admite: guárdalo como .xlsx.' : 'Elige un archivo .xlsx o .csv.';
-  if (file.size > MAX_BYTES) return 'El archivo supera el máximo de 10 MB.';
+  if (!file.size) return 'El archivo está vacío.';
   return null;
+}
+
+/** Mientras algún archivo se está cargando en el servidor, vuelve a pedir la lista cada segundo y medio. */
+export function useExcelProcessingRefresh(files: ExcelFile[] | null | undefined, reload: () => Promise<void> | void) {
+  const processing = (files ?? []).some((file) => file.estado === 'PROCESANDO');
+  useEffect(() => {
+    if (!processing) return;
+    const timer = window.setInterval(() => void reload(), 1500);
+    return () => window.clearInterval(timer);
+  }, [processing, reload]);
+}
+
+/** Avance de la carga en el servidor (lectura e inserción de filas). */
+export function ExcelProgress({ file }: Readonly<{ file: ExcelFile }>) {
+  return (
+    <div className="excel-progress" role="status">
+      <progress max={100} value={file.progreso} aria-label={`Procesando ${file.nombre}`} />
+      <span>Procesando… {file.progreso}% · {file.filasProcesadas.toLocaleString('es')} registros leídos</span>
+    </div>
+  );
 }
 
 type ExcelTreeProps = Readonly<{
@@ -55,7 +88,7 @@ export function ExcelTree({ files, selected, onSelect, onLibrary }: ExcelTreePro
   const term = filter.trim().toLowerCase();
   const visible = files
     .map((file) => ({ file, sheets: file.hojas.filter((sheet) => !term || sheet.nombre.toLowerCase().includes(term) || file.nombre.toLowerCase().includes(term)) }))
-    .filter((item) => item.sheets.length);
+    .filter((item) => item.sheets.length || (item.file.estado !== 'LISTO' && (!term || item.file.nombre.toLowerCase().includes(term))));
   return (
     <nav className="explorer-tree" aria-label="Archivos de Excel">
       <button type="button" className="button form-secondary compact-button excel-tree-library" aria-pressed={!selected} onClick={onLibrary}>
@@ -71,7 +104,10 @@ export function ExcelTree({ files, selected, onSelect, onLibrary }: ExcelTreePro
           <li key={file.id}>
             <span className="tree-connection excel-tree-file" title={file.nombreArchivo}>
               <span className="engine-badge" data-engine="EXCEL">XL</span>
-              <span className="tree-connection-name">{file.nombre}<small>{file.hojas.length === 1 ? '1 hoja' : `${file.hojas.length} hojas`}</small></span>
+              <span className="tree-connection-name">
+                {file.nombre}
+                <small>{file.estado === 'PROCESANDO' ? `Procesando… ${file.progreso}%` : file.estado === 'ERROR' ? 'Error al cargar' : file.hojas.length === 1 ? '1 hoja' : `${file.hojas.length} hojas`}</small>
+              </span>
             </span>
             <ul className="tree-children">
               {sheets.map((sheet) => (
@@ -108,12 +144,12 @@ type Notice = { tone: 'ok' | 'error'; text: string; avisos?: string[] } | null;
 /** Biblioteca de archivos: subir (arrastrando o eligiendo), abrir hojas, reemplazar, renombrar y eliminar. */
 export function ExcelLibrary({ files, onChanged, onOpen }: ExcelLibraryProps) {
   const call = useApiCall();
-  const { session } = useAuth();
+  const { session, refreshSession } = useAuth();
   const canManage = hasPermission(session?.user.role, 'MANAGE_EXCEL');
   const picker = useRef<HTMLInputElement>(null);
   const replacePicker = useRef<HTMLInputElement>(null);
   const [replacing, setReplacing] = useState<ExcelFile | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState<{ label: string; fraction: number } | null>(null);
   const [dragging, setDragging] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
   const [renaming, setRenaming] = useState<{ file: ExcelFile; nombre: string } | null>(null);
@@ -125,20 +161,27 @@ export function ExcelLibrary({ files, onChanged, onOpen }: ExcelLibraryProps) {
       setNotice({ tone: 'error', text: problem });
       return;
     }
-    setBusy(target ? `Reemplazando ${target.nombre}…` : `Leyendo ${file.name}…`);
+    const label = `${target ? 'Reemplazando' : 'Subiendo'} ${file.name} (${formatBytes(file.size)})`;
+    setBusy({ label, fraction: 0 });
     setNotice(null);
     try {
-      const result = await call((api) => sendFile(api, file, target?.id));
-      if (!result.response.ok || !result.data) {
-        setNotice({ tone: 'error', text: apiErrorMessage(result.error, result.response.status) });
+      const onProgress = (fraction: number) => setBusy({ label, fraction });
+      let token = session?.accessToken;
+      if (!token) throw new Error('Sin sesión');
+      let result = await sendFile(token, file, target?.id, onProgress);
+      if (result.status === 401) {
+        // El token pudo vencer durante una subida larga: se renueva y se reintenta una vez.
+        token = (await refreshSession()) ?? undefined;
+        if (token) result = await sendFile(token, file, target?.id, onProgress);
+      }
+      if (result.status < 200 || result.status >= 300) {
+        setNotice({ tone: 'error', text: apiErrorMessage(result.body as never, result.status) });
         return;
       }
-      const saved = result.data;
-      const rows = saved.hojas.reduce((sum, sheet) => sum + sheet.totalFilas, 0);
+      const saved = result.body as ExcelFile;
       setNotice({
         tone: 'ok',
-        text: `${target ? 'Reemplazado' : 'Subido'} "${saved.nombre}": ${saved.hojas.length === 1 ? '1 hoja' : `${saved.hojas.length} hojas`} y ${rows.toLocaleString('es')} registros. La primera columna de cada hoja es su identificador.`,
-        avisos: saved.avisos ?? [],
+        text: `"${saved.nombre}" se recibió y se está procesando en segundo plano. Puedes seguir trabajando: aparecerá listo en esta lista.`,
       });
       await onChanged();
     } catch {
@@ -207,8 +250,12 @@ export function ExcelLibrary({ files, onChanged, onOpen }: ExcelLibraryProps) {
         >
           <span className="excel-drop-icon" aria-hidden="true"><Icon name="file" size={22} /></span>
           <div>
-            <strong>{busy ?? 'Arrastra aquí un archivo .xlsx o .csv'}</strong>
-            <span>Hasta 10 MB y 50.000 registros. Se leen todas las hojas visibles.</span>
+            <strong>{busy ? `${busy.label}… ${Math.round(busy.fraction * 100)}%` : 'Arrastra aquí un archivo .xlsx o .csv'}</strong>
+            {busy ? (
+              <progress className="excel-upload-progress" max={1} value={busy.fraction} aria-label="Avance de la subida" />
+            ) : (
+              <span>Sin límite de tamaño ni de registros: los archivos grandes (cientos de MB, millones de filas) se procesan en segundo plano. Se leen todas las hojas visibles.</span>
+            )}
           </div>
           <button type="button" className="button button--primary compact-button" disabled={Boolean(busy)} onClick={() => picker.current?.click()}>Elegir archivo</button>
           <input ref={picker} type="file" accept={EXCEL_ACCEPT} hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(file); event.target.value = ''; }} />
@@ -242,17 +289,25 @@ export function ExcelLibrary({ files, onChanged, onOpen }: ExcelLibraryProps) {
                 ) : (
                   <div className="excel-file-title">
                     <strong>{file.nombre}</strong>
-                    <small>{file.nombreArchivo} · {formatBytes(file.tamanoBytes)} · {file.creadoPor} · {formatDate(String(file.updatedAt))}</small>
+                    <small>{file.nombreArchivo} · {formatBytes(file.tamanoBytes)}{file.estado === 'LISTO' ? ` · ${file.filasProcesadas.toLocaleString('es')} registros` : ''} · {file.creadoPor} · {formatDate(String(file.updatedAt))}</small>
                   </div>
                 )}
                 {canManage && renaming?.file.id !== file.id && (
                   <div className="excel-file-actions">
                     <button type="button" className="row-action" onClick={() => setRenaming({ file, nombre: file.nombre })}>Renombrar</button>
-                    <button type="button" className="row-action" disabled={Boolean(busy)} onClick={() => { setReplacing(file); replacePicker.current?.click(); }}>Reemplazar</button>
+                    <button type="button" className="row-action" disabled={Boolean(busy) || file.estado === 'PROCESANDO'} onClick={() => { setReplacing(file); replacePicker.current?.click(); }}>Reemplazar</button>
                     <button type="button" className="row-action row-action--danger" onClick={() => void askDelete(file)}>Eliminar</button>
                   </div>
                 )}
               </div>
+              {file.estado === 'PROCESANDO' && <ExcelProgress file={file} />}
+              {file.error && <p className={file.estado === 'ERROR' ? 'form-error excel-file-error' : 'excel-file-warning'} role="alert">{file.error}</p>}
+              {file.avisos.length > 0 && file.estado === 'LISTO' && (
+                <details className="excel-file-notes">
+                  <summary>{file.avisos.length === 1 ? '1 observación de la carga' : `${file.avisos.length} observaciones de la carga`}</summary>
+                  <ul className="excel-warnings">{file.avisos.map((aviso) => <li key={aviso}>{aviso}</li>)}</ul>
+                </details>
+              )}
               <ul className="excel-sheets">
                 {file.hojas.map((sheet) => (
                   <li key={sheet.nombre}>
