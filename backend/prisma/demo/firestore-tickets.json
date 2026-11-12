@@ -1,0 +1,242 @@
+[
+ {
+  "id": "TCK-2001",
+  "cliente_id": 9,
+  "asunto": "Consulta de garantía",
+  "prioridad": "alta",
+  "estado": "en_proceso",
+  "creado": "2026-10-13T01:00:00Z"
+ },
+ {
+  "id": "TCK-2002",
+  "cliente_id": 16,
+  "asunto": "Cambio de dirección",
+  "prioridad": "baja",
+  "estado": "abierto",
+  "creado": "2026-09-30T07:00:00Z"
+ },
+ {
+  "id": "TCK-2003",
+  "cliente_id": 20,
+  "asunto": "No llegó mi pedido",
+  "prioridad": "baja",
+  "estado": "abierto",
+  "creado": "2026-10-21T18:00:00Z"
+ },
+ {
+  "id": "TCK-2004",
+  "cliente_id": 23,
+  "asunto": "Consulta de garantía",
+  "prioridad": "media",
+  "estado": "abierto",
+  "creado": "2026-09-30T03:00:00Z"
+ },
+ {
+  "id": "TCK-2005",
+  "cliente_id": 23,
+  "asunto": "Cambio de dirección",
+  "prioridad": "baja",
+  "estado": "abierto",
+  "creado": "2026-10-31T17:00:00Z"
+ },
+ {
+  "id": "TCK-2006",
+  "cliente_id": 8,
+  "asunto": "Cobro duplicado",
+  "prioridad": "alta",
+  "estado": "en_proceso",
+  "creado": "2026-10-07T20:00:00Z"
+ },
+ {
+  "id": "TCK-2007",
+  "cliente_id": 21,
+  "asunto": "Producto dañado",
+  "prioridad": "baja",
+  "estado": "resuelto",
+  "creado": "2026-10-20T18:00:00Z"
+ },
+ {
+  "id": "TCK-2008",
+  "cliente_id": 18,
+  "asunto": "Factura incorrecta",
+  "prioridad": "alta",
+  "estado": "en_proceso",
+  "creado": "2026-09-30T20:00:00Z"
+ },
+ {
+  "id": "TCK-2009",
+  "cliente_id": 23,
+  "asunto": "Cambio de dirección",
+  "prioridad": "media",
+  "estado": "abierto",
+  "creado": "2026-09-27T11:00:00Z"
+ },
+ {
+  "id": "TCK-2010",
+  "cliente_id": 6,
+  "asunto": "Cambio de dirección",
+  "prioridad": "baja",
+  "estado": "resuelto",
+  "creado": "2026-10-18T09:00:00Z"
+ },
+ {
+  "id": "TCK-2011",
+  "cliente_id": 20,
+  "asunto": "Cambio de dirección",
+  "prioridad": "baja",
+  "estado": "en_proceso",
+  "creado": "2026-09-21T16:00:00Z"
+ },
+ {
+  "id": "TCK-2012",
+  "cliente_id": 22,
+  "asunto": "Cobro duplicado",
+  "prioridad": "media",
+  "estado": "en_proceso",
+  "creado": "2026-10-24T12:00:00Z"
+ },
+ {
+  "id": "TCK-2013",
+  "cliente_id": 21,
+  "asunto": "Consulta de garantía",
+  "prioridad": "baja",
+  "estado": "resuelto",
+  "creado": "2026-10-17T09:00:00Z"
+ },
+ {
+  "id": "TCK-2014",
+  "cliente_id": 10,
+  "asunto": "No llegó mi pedido",
+  "prioridad": "alta",
+  "estado": "resuelto",
+  "creado": "2026-11-06T23:00:00Z"
+ },
+ {
+  "id": "TCK-2015",
+  "cliente_id": 11,
+  "asunto": "Cambio de dirección",
+  "prioridad": "media",
+  "estado": "abierto",
+  "creado": "2026-10-22T22:00:00Z"
+ },
+ {
+  "id": "TCK-2016",
+  "cliente_id": 23,
+  "asunto": "Factura incorrecta",
+  "prioridad": "alta",
+  "estado": "en_proceso",
+  "creado": "2026-10-28T17:00:00Z"
+ },
+ {
+  "id": "TCK-2017",
+  "cliente_id": 22,
+  "asunto": "Factura incorrecta",
+  "prioridad": "media",
+  "estado": "en_proceso",
+  "creado": "2026-10-27T10:00:00Z"
+ },
+ {
+  "id": "TCK-2018",
+  "cliente_id": 13,
+  "asunto": "Cobro duplicado",
+  "prioridad": "baja",
+  "estado": "en_proceso",
+  "creado": "2026-10-19T20:00:00Z"
+ },
+ {
+  "id": "TCK-2019",
+  "cliente_id": 17,
+  "asunto": "Producto dañado",
+  "prioridad": "alta",
+  "estado": "en_proceso",
+  "creado": "2026-10-11T15:00:00Z"
+ },
+ {
+  "id": "TCK-2020",
+  "cliente_id": 8,
+  "asunto": "Factura incorrecta",
+  "prioridad": "media",
+  "estado": "en_proceso",
+  "creado": "2026-10-22T17:00:00Z"
+ },
+ {
+  "id": "TCK-2021",
+  "cliente_id": 24,
+  "asunto": "No llegó mi pedido",
+  "prioridad": "baja",
+  "estado": "abierto",
+  "creado": "2026-09-07T11:00:00Z"
+ },
+ {
+  "id": "TCK-2022",
+  "cliente_id": 6,
+  "asunto": "Factura incorrecta",
+  "prioridad": "media",
+  "estado": "en_proceso",
+  "creado": "2026-10-16T20:00:00Z"
+ },
+ {
+  "id": "TCK-2023",
+  "cliente_id": 6,
+  "asunto": "Factura incorrecta",
+  "prioridad": "baja",
+  "estado": "en_proceso",
+  "creado": "2026-10-12T03:00:00Z"
+ },
+ {
+  "id": "TCK-2024",
+  "cliente_id": 1,
+  "asunto": "No llegó mi pedido",
+  "prioridad": "baja",
+  "estado": "abierto",
+  "creado": "2026-10-21T12:00:00Z"
+ },
+ {
+  "id": "TCK-2025",
+  "cliente_id": 7,
+  "asunto": "No llegó mi pedido",
+  "prioridad": "media",
+  "estado": "resuelto",
+  "creado": "2026-10-08T22:00:00Z"
+ },
+ {
+  "id": "TCK-2026",
+  "cliente_id": 12,
+  "asunto": "Factura incorrecta",
+  "prioridad": "alta",
+  "estado": "abierto",
+  "creado": "2026-10-29T06:00:00Z"
+ },
+ {
+  "id": "TCK-2027",
+  "cliente_id": 14,
+  "asunto": "Cambio de dirección",
+  "prioridad": "media",
+  "estado": "abierto",
+  "creado": "2026-09-25T01:00:00Z"
+ },
+ {
+  "id": "TCK-2028",
+  "cliente_id": 4,
+  "asunto": "Cambio de dirección",
+  "prioridad": "alta",
+  "estado": "abierto",
+  "creado": "2026-09-10T15:00:00Z"
+ },
+ {
+  "id": "TCK-2029",
+  "cliente_id": 15,
+  "asunto": "Producto dañado",
+  "prioridad": "baja",
+  "estado": "resuelto",
+  "creado": "2026-10-28T12:00:00Z"
+ },
+ {
+  "id": "TCK-2030",
+  "cliente_id": 4,
+  "asunto": "Factura incorrecta",
+  "prioridad": "media",
+  "estado": "en_proceso",
+  "creado": "2026-09-21T06:00:00Z"
+ }
+]
