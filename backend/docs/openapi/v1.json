@@ -731,7 +731,10 @@
                 "PAT_CREATED",
                 "PAT_ROTATED",
                 "PAT_REVOKED",
-                "PAT_USED"
+                "PAT_USED",
+                "EXCEL_UPLOADED",
+                "EXCEL_REPLACED",
+                "EXCEL_DELETED"
               ]
             }
           },
@@ -940,7 +943,10 @@
                 "PAT_CREATED",
                 "PAT_ROTATED",
                 "PAT_REVOKED",
-                "PAT_USED"
+                "PAT_USED",
+                "EXCEL_UPLOADED",
+                "EXCEL_REPLACED",
+                "EXCEL_DELETED"
               ]
             }
           },
@@ -3473,6 +3479,262 @@
         "summary": "Quitar un campo sensible",
         "tags": [
           "Workspace - Campos sensibles"
+        ]
+      }
+    },
+    "/excel": {
+      "get": {
+        "operationId": "ExcelSourcesController_list",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ExcelFileResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Listar los archivos de Excel del workspace con sus hojas",
+        "tags": [
+          "Archivos de Excel"
+        ]
+      },
+      "post": {
+        "description": "Cada hoja con datos se convierte en una tabla: la fila 1 son los encabezados y la columna 1 el identificador de cada registro. Máximo 10 MB y 50000 registros. El id devuelto funciona como conexionId en el explorador, el editor de consultas y las exportaciones.",
+        "operationId": "ExcelSourcesController_upload",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "archivo"
+                ],
+                "properties": {
+                  "archivo": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Libro .xlsx o archivo .csv (máx. 10 MB)."
+                  },
+                  "nombre": {
+                    "type": "string",
+                    "maxLength": 120
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExcelFileResponseDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Archivo ausente, dañado, sin datos o con un formato no admitido."
+          },
+          "413": {
+            "description": "El archivo supera 10 MB."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Subir un libro .xlsx o un .csv como fuente de datos",
+        "tags": [
+          "Archivos de Excel"
+        ]
+      }
+    },
+    "/excel/{id}": {
+      "get": {
+        "operationId": "ExcelSourcesController_get",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExcelFileResponseDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Archivo no encontrado en el workspace."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Detalle de un archivo de Excel y los reportes guardados que lo usan",
+        "tags": [
+          "Archivos de Excel"
+        ]
+      },
+      "patch": {
+        "operationId": "ExcelSourcesController_rename",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameExcelDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExcelFileResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Renombrar un archivo de Excel",
+        "tags": [
+          "Archivos de Excel"
+        ]
+      },
+      "delete": {
+        "operationId": "ExcelSourcesController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Eliminar un archivo de Excel (los reportes que lo usan dejarán de ejecutarse)",
+        "tags": [
+          "Archivos de Excel"
+        ]
+      }
+    },
+    "/excel/{id}/archivo": {
+      "put": {
+        "operationId": "ExcelSourcesController_replace",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "archivo"
+                ],
+                "properties": {
+                  "archivo": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Libro .xlsx o archivo .csv (máx. 10 MB)."
+                  },
+                  "nombre": {
+                    "type": "string",
+                    "maxLength": 120
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExcelFileResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Reemplazar el contenido del Excel conservando su id (los reportes que lo usan siguen funcionando)",
+        "tags": [
+          "Archivos de Excel"
         ]
       }
     },
@@ -7495,6 +7757,132 @@
         },
         "required": [
           "campo"
+        ]
+      },
+      "ExcelSheetResponseDto": {
+        "type": "object",
+        "properties": {
+          "nombre": {
+            "type": "string",
+            "example": "Clientes"
+          },
+          "columnas": {
+            "example": [
+              "codigo",
+              "nombre",
+              "meta"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "columnaId": {
+            "type": "string",
+            "description": "Primera columna de la hoja: identificador de cada registro.",
+            "example": "codigo"
+          },
+          "totalFilas": {
+            "type": "number",
+            "example": 120
+          }
+        },
+        "required": [
+          "nombre",
+          "columnas",
+          "columnaId",
+          "totalFilas"
+        ]
+      },
+      "ExcelUsageDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "nombre": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "nombre"
+        ]
+      },
+      "ExcelFileResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Se usa como conexionId en el explorador, el editor de consultas y las exportaciones."
+          },
+          "nombre": {
+            "type": "string",
+            "example": "Metas de ventas 2026"
+          },
+          "nombreArchivo": {
+            "type": "string",
+            "example": "metas_2026.xlsx"
+          },
+          "tamanoBytes": {
+            "type": "number",
+            "example": 48213
+          },
+          "creadoPor": {
+            "type": "string",
+            "example": "analista@empresa.com"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "hojas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExcelSheetResponseDto"
+            }
+          },
+          "avisos": {
+            "description": "Observaciones de la lectura (solo al subir o reemplazar).",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "usadoEn": {
+            "description": "Reportes guardados que usan el archivo (solo en el detalle).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExcelUsageDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "nombre",
+          "nombreArchivo",
+          "tamanoBytes",
+          "creadoPor",
+          "createdAt",
+          "updatedAt",
+          "hojas"
+        ]
+      },
+      "RenameExcelDto": {
+        "type": "object",
+        "properties": {
+          "nombre": {
+            "type": "string",
+            "example": "Metas de ventas 2026",
+            "maxLength": 120
+          }
+        },
+        "required": [
+          "nombre"
         ]
       },
       "ReportExecutionResponseDto": {

@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { normalizeTipoMotor, TIPOS_MOTOR, type TipoMotor } from '../../common/tipo-motor.js';
-import { DATA_SOURCE_ADAPTERS, type IDataSourceAdapter } from './data-source-adapter.interface.js';
+import { normalizeTipoMotor } from '../../common/tipo-motor.js';
+import { DATA_SOURCE_ADAPTERS, type AdapterEngine, type IDataSourceAdapter } from './data-source-adapter.interface.js';
 
 /**
  * Registro de adaptadores por TipoMotor (factory con inyección de Nest). Acepta los alias del motor
@@ -8,7 +8,7 @@ import { DATA_SOURCE_ADAPTERS, type IDataSourceAdapter } from './data-source-ada
  */
 @Injectable()
 export class AdapterRegistry {
-  private readonly adapters = new Map<TipoMotor, IDataSourceAdapter>();
+  private readonly adapters = new Map<string, IDataSourceAdapter>();
 
   constructor(@Inject(DATA_SOURCE_ADAPTERS) adapters: IDataSourceAdapter[]) {
     for (const adapter of adapters) {
@@ -22,13 +22,11 @@ export class AdapterRegistry {
   /** Adaptador del motor, o undefined si no hay ninguno registrado. */
   get(tipoMotor: string): IDataSourceAdapter | undefined {
     const normalized = normalizeTipoMotor(tipoMotor);
-    return typeof normalized === 'string' && (TIPOS_MOTOR as readonly string[]).includes(normalized)
-      ? this.adapters.get(normalized as TipoMotor)
-      : undefined;
+    return typeof normalized === 'string' ? this.adapters.get(normalized) : undefined;
   }
 
   /** Motores con adaptador y lo que soporta cada uno. */
-  supported(): { tipoMotor: TipoMotor; explore: boolean; fields: boolean; extract: boolean }[] {
+  supported(): { tipoMotor: AdapterEngine; explore: boolean; fields: boolean; extract: boolean }[] {
     return [...this.adapters.values()].map((adapter) => ({ tipoMotor: adapter.tipoMotor, ...adapter.capabilities }));
   }
 }

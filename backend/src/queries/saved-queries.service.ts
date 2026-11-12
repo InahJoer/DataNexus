@@ -79,7 +79,7 @@ function stableStringify(value: unknown): string {
   return JSON.stringify(value);
 }
 
-function connectionIdsOf(definition: StoredDefinition): string[] {
+export function connectionIdsOf(definition: StoredDefinition): string[] {
   const ids = new Set<string>();
   const sources = definition.fuentes;
   if (Array.isArray(sources)) {
@@ -397,10 +397,12 @@ export class SavedQueriesService {
   ): Promise<void> {
     const ids = connectionIdsOf(definition);
     if (ids.length === 0) return;
-    const found = await this.prisma.conexionDB.count({
-      where: { id: { in: ids }, workspaceId: actor.workspaceId },
-    });
-    if (found !== ids.length) {
+    // Las fuentes pueden ser conexiones o archivos de Excel del workspace.
+    const [connections, excels] = await Promise.all([
+      this.prisma.conexionDB.count({ where: { id: { in: ids }, workspaceId: actor.workspaceId } }),
+      this.prisma.archivoExcel.count({ where: { id: { in: ids }, workspaceId: actor.workspaceId } }),
+    ]);
+    if (connections + excels !== ids.length) {
       throw new NotFoundException('Alguna de las conexiones de la consulta no existe en el workspace');
     }
   }

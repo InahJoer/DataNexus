@@ -65,6 +65,7 @@ describe('ConnectionsService', () => {
     prismaService = {
       $transaction: vi.fn((callback: (client: unknown) => unknown) => callback(tx)),
       conexionDB: { findMany: vi.fn(), findFirst: vi.fn() },
+      archivoExcel: { findFirst: vi.fn().mockResolvedValue(null) },
     };
     encryptionService = {
       encrypt: vi.fn((text: string) => `encrypted_${text}`),

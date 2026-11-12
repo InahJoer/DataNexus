@@ -286,6 +286,10 @@ export class ConnectionsService {
    * como legado.
    */
   async getConnectionForExploration(id: string, workspaceId: string) {
+    // Un archivo de Excel subido al workspace también se explora y se cruza por su id (adaptador EXCEL).
+    const excel = await this.prisma.archivoExcel.findFirst({ where: { id, workspaceId }, select: { id: true, nombre: true } });
+    if (excel) return { id: excel.id, tipoMotor: 'EXCEL' as const, dbName: excel.nombre, connectionString: '' };
+
     const connection = await this.findConnectionForInternalUse(id, workspaceId);
 
     return {

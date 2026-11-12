@@ -68,6 +68,9 @@ enum AuditEventType {
   PAT_ROTATED
   PAT_REVOKED
   PAT_USED
+  EXCEL_UPLOADED
+  EXCEL_REPLACED
+  EXCEL_DELETED
 }
 
 /// Estado persistido de una invitación. La expiración se calcula con expiresAt (PENDIENTE vencida = EXPIRADA).
@@ -110,6 +113,7 @@ model Workspace {
   ejecucionesReportes            ReportExecution[]
   usoDiario                      WorkspaceUsageDaily[]
   tokensAcceso                   PersonalAccessToken[]
+  archivosExcel                  ArchivoExcel[]
 }
 
 model User {
@@ -453,4 +457,40 @@ model PersonalAccessToken {
 
   @@index([userId])
   @@index([workspaceId])
+}
+
+/// Libro de Excel (o CSV) subido al workspace: una fuente de datos sin servidor. Cada hoja se explora como una tabla
+/// y se puede cruzar con las conexiones en el editor de consultas. Su id funciona como `conexionId` en el motor.
+model ArchivoExcel {
+  id            String      @id @default(uuid())
+  nombre        String
+  /// Nombre original del archivo subido (solo informativo).
+  nombreArchivo String
+  tamanoBytes   Int
+  creadoPor     String
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @default(now()) @updatedAt
+  workspaceId   String
+  workspace     Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  hojas         HojaExcel[]
+
+  @@index([workspaceId])
+}
+
+/// Hoja de un libro de Excel ya normalizada: la primera fila son los nombres de columna y la primera columna es el
+/// identificador de cada registro (`columnaId`).
+model HojaExcel {
+  id         String       @id @default(uuid())
+  nombre     String
+  posicion   Int
+  /// Nombres de columna en el orden del archivo (string[]).
+  columnas   Json
+  columnaId  String
+  totalFilas Int
+  /// Registros como objetos { columna: valor } en el orden del archivo.
+  filas      Json
+  archivoId  String
+  archivo    ArchivoExcel @relation(fields: [archivoId], references: [id], onDelete: Cascade)
+
+  @@unique([archivoId, nombre])
 }

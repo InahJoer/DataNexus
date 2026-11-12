@@ -10,6 +10,7 @@ import { DataSourceClientPool } from '../pool/data-source-client-pool.js';
 import { MaskingService } from '../masking/masking.service.js';
 import { ExportService } from '../export/export.service.js';
 import { ConnectionsService } from '../../connections/connections.service.js';
+import { ExcelSheetStore } from '../../excel-sources/excel-sheet-store.js';
 
 const adapter = (tipoMotor: IDataSourceAdapter['tipoMotor']): IDataSourceAdapter => ({
   tipoMotor,
@@ -41,7 +42,7 @@ describe('AdapterRegistry', () => {
     expect(() => new AdapterRegistry([adapter('MYSQL'), adapter('MYSQL')])).toThrow(/duplicado/);
   });
 
-  it('Nest resuelve el pool, los cinco adaptadores, el registro y DataEngineService', async () => {
+  it('Nest resuelve el pool, los adaptadores (cinco motores y Excel), el registro y DataEngineService', async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [DataSourcePoolModule],
       providers: [
@@ -50,6 +51,7 @@ describe('AdapterRegistry', () => {
         MaskingService,
         ExportService,
         { provide: ConnectionsService, useValue: {} },
+        { provide: ExcelSheetStore, useValue: {} },
       ],
     }).compile();
 
@@ -59,6 +61,7 @@ describe('AdapterRegistry', () => {
       { tipoMotor: 'SQLSERVER', explore: true, fields: true, extract: true },
       { tipoMotor: 'FIRESTORE', explore: true, fields: true, extract: true },
       { tipoMotor: 'MONGODB', explore: true, fields: true, extract: true },
+      { tipoMotor: 'EXCEL', explore: true, fields: true, extract: true },
     ]);
     expect(moduleRef.get(DataEngineService)).toBeInstanceOf(DataEngineService);
     expect(moduleRef.get(DataSourceClientPool)).toBeInstanceOf(DataSourceClientPool);

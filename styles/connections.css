@@ -35,6 +35,7 @@
 .engine-badge[data-engine="SQLSERVER"] { color: #9d4b55; background: #fae9eb; }
 .engine-badge[data-engine="MONGODB"] { color: #2f8a4c; background: #e6f5ea; }
 .engine-badge[data-engine="FIRESTORE"] { color: #b4721d; background: #fff3d9; }
+.engine-badge[data-engine="EXCEL"] { color: #1d6f42; background: #e2f3e8; }
 
 /* Modal */
 .modal-overlay { position: fixed; z-index: 40; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(23, 37, 34, .45); }
