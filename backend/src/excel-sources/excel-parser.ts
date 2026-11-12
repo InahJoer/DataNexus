@@ -207,7 +207,7 @@ function baseName(fileName: string): string {
 
 function uniqueName(raw: string, used: Set<string>): string {
   // Sin caracteres de control (no imprimibles) en el nombre de la hoja.
-  const base = [...raw].filter((char) => char.charCodeAt(0) >= 32).join('').trim().slice(0, MAX_NAME_LENGTH) || 'Hoja';
+  const base = raw.replace(/\p{Cc}/gu, '').trim().slice(0, MAX_NAME_LENGTH) || 'Hoja';
   let name = base;
   for (let n = 2; used.has(name.toLowerCase()); n += 1) name = `${base} (${n})`;
   used.add(name.toLowerCase());
