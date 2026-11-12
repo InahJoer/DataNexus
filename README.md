@@ -17,15 +17,12 @@ Requisitos: Docker con Compose v2.20 o posterior.
 ```bash
 git clone https://github.com/InahJoer/DataNexus.git
 cd DataNexus
-cp .env.docker.example .env
 docker compose up --build
 ```
 
-Compose levanta PostgreSQL, Redis, la API (aplica las migraciones al arrancar) y el frontend. Cuando terminen los health checks, carga los usuarios demo:
+El `.env` es opcional: sin él se usan los valores de desarrollo de `.env.docker.example` (cópialo como `.env` solo si quieres cambiarlos).
 
-```bash
-docker compose exec backend npm run db:seed
-```
+Compose levanta PostgreSQL, Redis, la API y el frontend. También levanta una fuente de cada motor con datos de ejemplo (SQL Server, MySQL, PostgreSQL, MongoDB y el emulador de Firestore) y Mailpit para el correo. Al arrancar, la API aplica las migraciones y carga los usuarios demo. Además registra las cinco conexiones y publica dos consultas cross-join listas para ejecutar. Detalles en [Docker, CI/CD y Railway](docs/DOCKER-CICD-RAILWAY.md#entorno-de-demo-issue-49).
 
 ### Opción B · Node.js local
 
@@ -58,6 +55,7 @@ npm run dev
 | Frontend | http://localhost:3000 |
 | API (Swagger) | http://localhost:3001/api/docs |
 | Health check | http://localhost:3001/health/ready |
+| Correo enviado (solo Docker) | http://localhost:8025 |
 
 Entra con `admin@datanexus.demo` y la contraseña de `SEED_PASSWORD` (por defecto `DataNexus2026!`). También existen `operador@`, `lector@` y `auditor@datanexus.demo`, uno por rol.
 

@@ -35,31 +35,173 @@ services:
       context: ./backend
       dockerfile: Dockerfile
       target: development
+    # .env es opcional: sin él se usan los valores de desarrollo de abajo (nunca en producción).
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       NODE_ENV: development
       PORT: 3001
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       DATABASE_URL: postgresql://datanexus:datanexus@postgres:5432/datanexus?schema=public
       REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-cambia-esto-por-un-secreto-largo-y-aleatorio-de-64-caracteres}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      # Correo de la demo: todo lo que envía la API (invitaciones, reportes...) se ve en Mailpit.
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      SMTP_USER: demo
+      SMTP_PASS: demo
+      # El SDK de Firestore se conecta al emulador en lugar de a Google Cloud.
+      FIRESTORE_EMULATOR_HOST: firestore:8080
+      DEMO_SQLSERVER_PASSWORD: ${DEMO_SQLSERVER_PASSWORD:-DataNexus_Demo2026!}
+      DEMO_MYSQL_PASSWORD: ${DEMO_MYSQL_PASSWORD:-datanexus_demo}
+      DEMO_POSTGRES_PASSWORD: ${DEMO_POSTGRES_PASSWORD:-datanexus_demo}
     ports:
       - '${BACKEND_PORT:-3001}:3001'
     volumes:
       - ./backend:/app
       - backend_node_modules:/app/node_modules
-    command: ['sh', '-c', 'npm run db:deploy && npm run dev']
+    # Migraciones, usuarios demo, fuentes y consultas de ejemplo (idempotente) y API en modo watch.
+    command: ['sh', '-c', 'npm run db:deploy && npm run db:seed && npm run db:seed:demo && npm run dev']
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+      firestore:
+        condition: service_healthy
+      sqlserver-init:
+        condition: service_completed_successfully
+      mysql:
+        condition: service_healthy
+      postgres-demo:
+        condition: service_healthy
+      mongo:
         condition: service_healthy
     healthcheck:
       test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:3001/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 45s
+      start_period: 90s
+
+  # ---------------------------------------------------------------------------------------------
+  # Servicios de la demo (issue #49). Datos de ejemplo deterministas en docker/demo y
+  # backend/prisma/demo; el seed `db:seed:demo` registra una conexión a cada fuente y dos consultas
+  # cross-join publicadas. Sin volúmenes con nombre: `docker compose down` deja los datos como nuevos.
+  # ---------------------------------------------------------------------------------------------
+
+  # Bandeja SMTP de pruebas. Interfaz web: http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:latest
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    ports:
+      - '${MAILPIT_UI_PORT:-8025}:8025'
+      - '${MAILPIT_SMTP_PORT:-1025}:1025'
+    healthcheck:
+      test: ['CMD', '/mailpit', 'readyz']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ERP (SQL Server): dbo.clientes. La imagen solo existe para amd64 (en Apple Silicon corre emulada).
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64
+    environment:
+      ACCEPT_EULA: 'Y'
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${DEMO_SQLSERVER_PASSWORD:-DataNexus_Demo2026!}
+    ports:
+      - '${DEMO_SQLSERVER_PORT:-1433}:1433'
+    healthcheck:
+      test: ['CMD-SHELL', '/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$$MSSQL_SA_PASSWORD" -C -b -Q "SELECT 1" > /dev/null']
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 30s
+
+  # SQL Server no tiene docker-entrypoint-initdb.d: este contenedor carga los datos y termina.
+  sqlserver-init:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64
+    environment:
+      MSSQL_SA_PASSWORD: ${DEMO_SQLSERVER_PASSWORD:-DataNexus_Demo2026!}
+    volumes:
+      - ./docker/demo/sqlserver-init.sql:/init/init.sql:ro
+    entrypoint: ['sh', '-c', '/opt/mssql-tools18/bin/sqlcmd -S sqlserver -U sa -P "$$MSSQL_SA_PASSWORD" -C -b -i /init/init.sql']
+    restart: 'no'
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+
+  # Tienda (MySQL): pedidos.
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DEMO_MYSQL_ROOT_PASSWORD:-datanexus_root}
+      MYSQL_DATABASE: tienda
+      MYSQL_USER: datanexus
+      MYSQL_PASSWORD: ${DEMO_MYSQL_PASSWORD:-datanexus_demo}
+    ports:
+      - '${DEMO_MYSQL_PORT:-3306}:3306'
+    volumes:
+      - ./docker/demo/mysql-init.sql:/docker-entrypoint-initdb.d/01-tienda.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -u root -p"$$MYSQL_ROOT_PASSWORD" --silent']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  # Logística (PostgreSQL, distinta de la base de la API): envíos.
+  postgres-demo:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: datanexus
+      POSTGRES_PASSWORD: ${DEMO_POSTGRES_PASSWORD:-datanexus_demo}
+      POSTGRES_DB: logistica
+    ports:
+      - '${DEMO_POSTGRES_PORT:-5433}:5432'
+    volumes:
+      - ./docker/demo/postgres-init.sql:/docker-entrypoint-initdb.d/01-logistica.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U datanexus -d logistica']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # App (MongoDB): eventos de uso.
+  mongo:
+    image: mongo:7
+    ports:
+      - '${DEMO_MONGO_PORT:-27017}:27017'
+    volumes:
+      - ./docker/demo/mongo-init.js:/docker-entrypoint-initdb.d/01-eventos.js:ro
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', "quit(db.adminCommand('ping').ok ? 0 : 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  # Soporte (emulador de Firestore): colección tickets, la carga `db:seed:demo`.
+  firestore:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    command: ['gcloud', 'emulators', 'firestore', 'start', '--host-port=0.0.0.0:8080', '--project=datanexus-demo']
+    ports:
+      - '${DEMO_FIRESTORE_PORT:-8080}:8080'
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fs http://127.0.0.1:8080/ > /dev/null']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
 
 volumes:
   frontend_node_modules:
