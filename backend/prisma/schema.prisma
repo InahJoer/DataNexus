@@ -64,6 +64,10 @@ enum AuditEventType {
   PROFILE_UPDATED
   PASSWORD_CHANGED
   SESSIONS_REVOKED
+  PAT_CREATED
+  PAT_ROTATED
+  PAT_REVOKED
+  PAT_USED
 }
 
 /// Estado persistido de una invitación. La expiración se calcula con expiresAt (PENDIENTE vencida = EXPIRADA).
@@ -105,6 +109,7 @@ model Workspace {
   reportesProgramados   ScheduledReport[]
   ejecucionesReportes            ReportExecution[]
   usoDiario                      WorkspaceUsageDaily[]
+  tokensAcceso                   PersonalAccessToken[]
 }
 
 model User {
@@ -125,6 +130,7 @@ model User {
   consultasGuardadas  SavedQuery[]
   versionesConsultas  SavedQueryVersion[]
   programacionesCreadas ScheduledReport[]
+  tokensAcceso        PersonalAccessToken[]
 
   @@index([workspaceId])
 }
@@ -420,4 +426,31 @@ model WorkspaceUsageDaily {
   bytesProcesados BigInt    @default(0)
 
   @@id([workspaceId, dia])
+}
+
+/// Token de acceso personal para integraciones (BI, scripts) (issue #65).
+/// Solo se guarda el hash SHA-256: el token en claro se muestra una única vez al crearlo o rotarlo.
+model PersonalAccessToken {
+  id          String    @id @default(uuid())
+  nombre      String
+  /// SHA-256 hexadecimal del token completo (pat_...).
+  tokenHash   String    @unique
+  /// Primeros caracteres del token, para reconocerlo en la lista sin revelarlo.
+  prefijo     String
+  /// Alcances concedidos (queries:read, results:read...). Nunca dan más que el rol del dueño.
+  permisos    String[]
+  expiresAt   DateTime
+  lastUsedAt  DateTime?
+  lastUsedIp  String?
+  revokedAt   DateTime?
+  /// Token al que sustituye cuando se crea por rotación.
+  rotatedFromId String?
+  createdAt   DateTime  @default(now())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([workspaceId])
 }
