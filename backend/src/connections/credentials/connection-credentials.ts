@@ -9,6 +9,7 @@ import {
   PostgresCredentialsDto,
   SqlServerCredentialsDto,
 } from './credential-dtos.js';
+import { assertTlsPolicy } from './tls-policy.js';
 
 /** Versión del formato cifrado. 1 = cadena de conexión libre (legado); 2 = JSON estructurado. */
 export const LEGACY_CREDENTIALS_VERSION = 1;
@@ -156,7 +157,12 @@ export async function validateCredentials<T extends TipoMotor>(
   const errors = await validate(dto, { whitelist: true, forbidNonWhitelisted: true, stopAtFirstError: true });
   if (errors.length > 0) throw new BadRequestException(flattenErrors(errors));
 
-  const input = dto as Record<string, unknown>;
+  const credentials = buildCredentials(tipoMotor, dto as Record<string, unknown>);
+  assertTlsPolicy(tipoMotor, credentials);
+  return credentials;
+}
+
+function buildCredentials<T extends TipoMotor>(tipoMotor: T, input: Record<string, unknown>): CredentialsByEngine[T] {
   switch (tipoMotor) {
     case 'POSTGRESQL':
     case 'MYSQL':

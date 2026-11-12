@@ -229,6 +229,42 @@ export class EnvironmentVariables {
   @IsString()
   BLOCKED_EMAIL_DOMAINS?: string;
 
+  /** Formato de los logs (issue #51). Por defecto `json` en producción y `text` en el resto. */
+  @IsOptional()
+  @IsIn(['json', 'text'])
+  LOG_FORMAT?: 'json' | 'text';
+
+  /** Nivel mínimo de log (issue #51, por defecto `log`). */
+  @IsOptional()
+  @IsIn(['fatal', 'error', 'warn', 'log', 'debug', 'verbose'])
+  LOG_LEVEL?: string;
+
+  /** Tamaño máximo del cuerpo JSON/formulario (issue #52, por defecto 1mb). Formato de `bytes`: 512kb, 1mb, 5mb. */
+  @IsOptional()
+  @Matches(/^\d+(b|kb|mb)$/i, { message: 'BODY_LIMIT debe tener el formato 512kb o 1mb' })
+  BODY_LIMIT?: string;
+
+  /**
+   * Proxies inversos de confianza delante de la API (Railway, Nginx). Necesario para que el rate limiting
+   * y la auditoría usen la IP real del cliente. Número de saltos (1) o `false` (por defecto).
+   */
+  @IsOptional()
+  @Matches(/^(false|true|\d{1,2})$/, { message: 'TRUST_PROXY debe ser false, true o un número de saltos' })
+  TRUST_PROXY?: string;
+
+  /** Peticiones por minuto e IP del limitador general (por defecto 100). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(10)
+  @Max(100000)
+  RATE_LIMIT_PER_MINUTE?: number;
+
+  /** Exige TLS hacia las bases externas (issue #52). Por defecto true en producción y false en el resto. */
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  EXTERNAL_DB_REQUIRE_TLS?: 'true' | 'false';
+
   /** true desactiva la exigencia de correo corporativo (solo para demos). */
   @IsOptional()
   @IsIn(['true', 'false'])

@@ -18,6 +18,8 @@ import { WorkspacesModule } from './workspaces/workspaces.module.js';
 import { QueriesModule } from './queries/queries.module.js';
 import { UsageModule } from './usage/usage.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
+import { HealthModule } from './health/health.module.js';
+import { hasNamedThrottle } from './common/named-throttle.js';
 
 @Module({
   imports: [
@@ -30,12 +32,16 @@ import { DashboardModule } from './dashboard/dashboard.module.js';
       {
         name: 'default',
         ttl: 60000,
-        limit: 100,
+        // Peticiones por minuto e IP (issue #6). Configurable para entornos de carga o pruebas e2e.
+        limit: Number(process.env.RATE_LIMIT_PER_MINUTE ?? 100),
       },
       {
         name: 'export',
         ttl: 60000,
         limit: 20,
+        // Un throttler con nombre se aplica a todas las rutas: sin esto, toda la API quedaba limitada a
+        // 20 peticiones/min por IP. Solo cuenta en las rutas marcadas con @Throttle({ export: ... }) (issue #52).
+        skipIf: (context) => !hasNamedThrottle(context, 'export'),
       },
     ]),
     PrismaModule,
@@ -51,6 +57,7 @@ import { DashboardModule } from './dashboard/dashboard.module.js';
     QueriesModule,
     UsageModule,
     DashboardModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [
