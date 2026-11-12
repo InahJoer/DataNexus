@@ -11,6 +11,7 @@ import { MaskingService } from '../masking/masking.service.js';
 import { ExportService } from '../export/export.service.js';
 import { ConnectionsService } from '../../connections/connections.service.js';
 import { ExcelSheetStore } from '../../excel-sources/excel-sheet-store.js';
+import { ExcelTableStore } from '../../excel-sources/excel-table-store.js';
 
 const adapter = (tipoMotor: IDataSourceAdapter['tipoMotor']): IDataSourceAdapter => ({
   tipoMotor,
@@ -52,6 +53,7 @@ describe('AdapterRegistry', () => {
         ExportService,
         { provide: ConnectionsService, useValue: {} },
         { provide: ExcelSheetStore, useValue: {} },
+        { provide: ExcelTableStore, useValue: {} },
       ],
     }).compile();
 

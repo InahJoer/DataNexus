@@ -3512,7 +3512,7 @@
         ]
       },
       "post": {
-        "description": "Cada hoja con datos se convierte en una tabla: la fila 1 son los encabezados y la columna 1 el identificador de cada registro. Máximo 10 MB y 50000 registros. El id devuelto funciona como conexionId en el explorador, el editor de consultas y las exportaciones.",
+        "description": "Cada hoja con datos se convierte en una tabla: la fila 1 son los encabezados y la columna 1 el identificador de cada registro. La respuesta llega en cuanto el archivo se recibe (estado PROCESANDO); la lectura sigue en segundo plano por streaming, sin límite de registros, y el archivo pasa a LISTO al terminar (consulta GET /excel/{id}). El id devuelto funciona como conexionId en el explorador, el editor de consultas y las exportaciones.",
         "operationId": "ExcelSourcesController_upload",
         "parameters": [],
         "requestBody": {
@@ -3528,7 +3528,7 @@
                   "archivo": {
                     "type": "string",
                     "format": "binary",
-                    "description": "Libro .xlsx o archivo .csv (máx. 10 MB)."
+                    "description": "Libro .xlsx o archivo .csv. Sin límite de tamaño salvo EXCEL_MAX_UPLOAD_MB."
                   },
                   "nombre": {
                     "type": "string",
@@ -3540,8 +3540,8 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "",
+          "202": {
+            "description": "Archivo recibido: se está procesando en segundo plano.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3551,10 +3551,10 @@
             }
           },
           "400": {
-            "description": "Archivo ausente, dañado, sin datos o con un formato no admitido."
+            "description": "Archivo ausente, vacío o con un formato no admitido."
           },
           "413": {
-            "description": "El archivo supera 10 MB."
+            "description": "El archivo supera EXCEL_MAX_UPLOAD_MB (si está configurado)."
           }
         },
         "security": [
@@ -3704,7 +3704,7 @@
                   "archivo": {
                     "type": "string",
                     "format": "binary",
-                    "description": "Libro .xlsx o archivo .csv (máx. 10 MB)."
+                    "description": "Libro .xlsx o archivo .csv. Sin límite de tamaño salvo EXCEL_MAX_UPLOAD_MB."
                   },
                   "nombre": {
                     "type": "string",
@@ -3716,8 +3716,8 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "",
+          "202": {
+            "description": "Se procesa en segundo plano; los datos anteriores siguen disponibles hasta que termine.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3725,6 +3725,9 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "El archivo todavía se está cargando."
           }
         },
         "security": [
@@ -7785,13 +7788,26 @@
           "totalFilas": {
             "type": "number",
             "example": 120
+          },
+          "tipos": {
+            "description": "Tipo de cada columna en el orden de columnas: texto, numero o booleano.",
+            "example": [
+              "texto",
+              "texto",
+              "numero"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
           "nombre",
           "columnas",
           "columnaId",
-          "totalFilas"
+          "totalFilas",
+          "tipos"
         ]
       },
       "ExcelUsageDto": {
@@ -7846,8 +7862,32 @@
               "$ref": "#/components/schemas/ExcelSheetResponseDto"
             }
           },
+          "estado": {
+            "type": "string",
+            "enum": [
+              "PROCESANDO",
+              "LISTO",
+              "ERROR"
+            ],
+            "description": "La carga corre en segundo plano: consulta el archivo hasta que esté LISTO."
+          },
+          "progreso": {
+            "type": "number",
+            "description": "Avance de la carga, de 0 a 100.",
+            "example": 100
+          },
+          "filasProcesadas": {
+            "type": "number",
+            "description": "Registros guardados (durante la carga, los leídos hasta ahora).",
+            "example": 1250000
+          },
+          "error": {
+            "type": "string",
+            "description": "Motivo de la última carga fallida. Si falla un reemplazo, los datos anteriores siguen disponibles.",
+            "nullable": true
+          },
           "avisos": {
-            "description": "Observaciones de la lectura (solo al subir o reemplazar).",
+            "description": "Observaciones de la última carga (encabezados ajustados, identificadores vacíos o repetidos).",
             "type": "array",
             "items": {
               "type": "string"
@@ -7869,7 +7909,11 @@
           "creadoPor",
           "createdAt",
           "updatedAt",
-          "hojas"
+          "hojas",
+          "estado",
+          "progreso",
+          "filasProcesadas",
+          "avisos"
         ]
       },
       "RenameExcelDto": {

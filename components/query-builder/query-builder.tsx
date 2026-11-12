@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useWorkspace } from '@/components/app-shell/workspace-context';
 import { ENGINES, type Connection, type DataSource } from '@/components/connections/engines';
-import { excelSource } from '@/components/explorer/excel-library';
+import { excelSource, useExcelProcessingRefresh } from '@/components/explorer/excel-library';
 import { objectLabel, type CatalogObject } from '@/components/explorer/explorer-tree';
 import { Icon } from '@/components/icons';
 import { SaveQueryModal } from '@/components/joins/save-query-modal';
@@ -19,7 +19,9 @@ import {
   inferFields,
   normalizeModel,
   outputFields,
+  outputName,
   plan,
+  setOutputVisibility,
   toPayload,
   toSql,
   uid,
@@ -119,6 +121,7 @@ export function QueryBuilder() {
   const { workspace } = useWorkspace();
   const connections = useApiQuery(useCallback((api: ApiClient) => api.GET('/connections'), []));
   const excels = useApiQuery(useCallback((api: ApiClient) => api.GET('/excel'), []));
+  useExcelProcessingRefresh(excels.data, excels.reload);
   const saved = useApiQuery(useCallback((api: ApiClient) => api.GET('/queries'), []));
   const history = useHistory(EMPTY_MODEL);
   const { model } = history;
@@ -306,6 +309,8 @@ export function QueryBuilder() {
   }, [outputColumns, model.columns, history]);
 
   const suggestions = useMemo(() => detectLinks(model, samples), [model, samples]);
+  // Columnas quitadas del resultado (desde las tarjetas del lienzo o el panel Salida).
+  const hiddenOutputs = useMemo(() => new Set(model.columns.filter((column) => !column.visible).map((column) => column.name)), [model.columns]);
   const { disconnected } = plan(model);
   const payload = useMemo(() => toPayload(model), [model]);
   const sql = useMemo(() => toSql(model), [model]);
@@ -532,7 +537,18 @@ export function QueryBuilder() {
             <ul className="tree-root">
               {(excels.data ?? []).map((file) => {
                 const sheets = file.hojas.filter((sheet) => !term || sheet.nombre.toLowerCase().includes(term) || file.nombre.toLowerCase().includes(term));
-                if (!sheets.length) return null;
+                if (!sheets.length) {
+                  // Un Excel que aún se está cargando se muestra con su avance (sus hojas aparecen al terminar).
+                  if (file.estado !== 'PROCESANDO' || (term && !file.nombre.toLowerCase().includes(term))) return null;
+                  return (
+                    <li key={file.id}>
+                      <span className="tree-connection" title="Se está cargando en segundo plano">
+                        <span className="engine-badge" data-engine="EXCEL">XL</span>
+                        <span className="tree-connection-name">{file.nombre}<small>Procesando… {file.progreso}%</small></span>
+                      </span>
+                    </li>
+                  );
+                }
                 const open = openConnections[file.id] ?? true;
                 return (
                   <li key={file.id}>
@@ -586,6 +602,12 @@ export function QueryBuilder() {
                 onAcceptSuggestion={(link: QbLink) => history.set((value) => ({ ...value, links: [...value.links, { ...link, id: uid('l') }] }))}
                 onDropObject={(data, at) => { try { void addSource(JSON.parse(data) as DragObject, at); } catch { /* arrastre ajeno */ } }}
                 onAutoLayout={autoLayout}
+                isExcluded={(source, field) => hiddenOutputs.has(outputName(model, source, field))}
+                onToggleFields={(source, fields, include) => {
+                  const names = fields.map((field) => outputName(model, source, field));
+                  if (setOutputVisibility(model, names, include) === model) setNotice('El resultado necesita al menos una columna: deja marcado algún campo.');
+                  else history.set((value) => setOutputVisibility(value, names, include));
+                }}
               />
             ) : (
               <JoinTable

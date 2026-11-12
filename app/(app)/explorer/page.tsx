@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '@/components/app-shell/page-header';
 import { StatusView } from '@/components/app-shell/status-view';
 import { DataView } from '@/components/explorer/data-view';
-import { ExcelLibrary, ExcelTree } from '@/components/explorer/excel-library';
+import { ExcelLibrary, ExcelTree, useExcelProcessingRefresh } from '@/components/explorer/excel-library';
 import { ExplorerTree, type CatalogObject, type ExplorerTarget, type SchemaState } from '@/components/explorer/explorer-tree';
 import { Icon } from '@/components/icons';
 import type { ApiClient } from '@/lib/api/client';
@@ -22,6 +22,8 @@ export default function ExplorerPage() {
   const [target, setTarget] = useState<ExplorerTarget | null>(null);
   const [excelTarget, setExcelTarget] = useState<ExplorerTarget | null>(null);
   const [schemas, setSchemas] = useState<Record<string, SchemaState>>({});
+  // Archivos que se están cargando en el servidor: se refresca su avance hasta que terminan.
+  useExcelProcessingRefresh(excels.data, excels.reload);
 
   // ?vista=excel (enlace del editor de consultas) o la última pestaña usada en este dispositivo.
   useEffect(() => {

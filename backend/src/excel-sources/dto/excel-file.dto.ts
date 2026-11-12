@@ -35,6 +35,9 @@ export class ExcelSheetResponseDto {
 
   @ApiProperty({ example: 120 })
   totalFilas!: number;
+
+  @ApiProperty({ type: [String], description: "Tipo de cada columna en el orden de columnas: texto, numero o booleano.", example: ["texto", "texto", "numero"] })
+  tipos!: string[];
 }
 
 export class ExcelUsageDto {
@@ -70,8 +73,20 @@ export class ExcelFileResponseDto {
   @ApiProperty({ type: [ExcelSheetResponseDto] })
   hojas!: ExcelSheetResponseDto[];
 
-  @ApiPropertyOptional({ type: [String], description: 'Observaciones de la lectura (solo al subir o reemplazar).' })
-  avisos?: string[];
+  @ApiProperty({ enum: ['PROCESANDO', 'LISTO', 'ERROR'], description: 'La carga corre en segundo plano: consulta el archivo hasta que esté LISTO.' })
+  estado!: 'PROCESANDO' | 'LISTO' | 'ERROR';
+
+  @ApiProperty({ description: 'Avance de la carga, de 0 a 100.', example: 100 })
+  progreso!: number;
+
+  @ApiProperty({ description: 'Registros guardados (durante la carga, los leídos hasta ahora).', example: 1250000 })
+  filasProcesadas!: number;
+
+  @ApiPropertyOptional({ type: String, description: 'Motivo de la última carga fallida. Si falla un reemplazo, los datos anteriores siguen disponibles.', nullable: true })
+  error?: string | null;
+
+  @ApiProperty({ type: [String], description: 'Observaciones de la última carga (encabezados ajustados, identificadores vacíos o repetidos).' })
+  avisos!: string[];
 
   @ApiPropertyOptional({ type: [ExcelUsageDto], description: 'Reportes guardados que usan el archivo (solo en el detalle).' })
   usadoEn?: ExcelUsageDto[];
