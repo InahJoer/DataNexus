@@ -55,16 +55,28 @@ La contraseña es la de `SEED_PASSWORD` en tu `.env`.
 
 ## Módulos
 
-- Autenticación JWT y matriz RBAC de 4 roles por workspace.
+- Autenticación JWT con sesiones y matriz RBAC de 4 roles por workspace.
+- Tokens de acceso personal (`pat_...`) para integraciones.
 - Gestión de conexiones con credenciales cifradas.
 - Exploración de esquemas y cruces SQL/NoSQL, con exportación.
 - Auditoría paginada y filtrada por fecha y evento.
-- Gestión de miembros y reportes programados.
+- Consultas guardadas, gestión de miembros y reportes programados.
+- Health checks, logs JSON con `requestId` y hardening OWASP.
 
 ## Comandos
 
 ```bash
 npm run build
-npm run test         # la prueba de PrismaService necesita DATABASE_URL
-npm run db:reset     # borra y recrea la base local
+npm run test              # unitarias; las de integración se activan con DATABASE_URL
+npm run test:e2e          # e2e contra PostgreSQL (esquema aislado por suite)
+npm run lint              # oxlint --type-aware, igual que el CI
+npm run openapi:generate  # regenera docs/openapi/v1.yaml desde el código
+npm run db:reset          # borra y recrea la base local
 ```
+
+## Documentación
+
+[Arquitectura](docs/ARQUITECTURA.md) · [OpenAPI](docs/openapi/v1.yaml) · [Seguridad](docs/SEGURIDAD.md) ·
+[Observabilidad](docs/OBSERVABILIDAD.md) · [Pruebas](docs/PRUEBAS.md) · [DRP](docs/DRP.md) · [SLA/OLA](docs/SLA-OLA.md)
+
+Las variables de entorno opcionales están comentadas en [`.env.example`](.env.example).

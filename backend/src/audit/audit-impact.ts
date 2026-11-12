@@ -23,6 +23,9 @@ const HIGH: AuditEventType[] = [
   'SESSIONS_REVOKED',
   'MODIFY_RECORD',
   'WORKSPACE_UPDATED',
+  'PAT_CREATED',
+  'PAT_ROTATED',
+  'PAT_REVOKED',
 ];
 const MEDIUM: AuditEventType[] = [
   'EXECUTE_JOIN',
@@ -44,6 +47,7 @@ const MEDIUM: AuditEventType[] = [
   'LOGIN_FAILURE',
   'PASSWORD_RESET_REQUESTED',
   'ACCOUNT_CREATED',
+  'PAT_USED',
 ];
 
 export function impactOf(eventType: string): ImpactLevel {

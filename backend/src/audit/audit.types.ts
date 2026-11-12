@@ -40,6 +40,11 @@ export const AUDIT_EVENT_TYPES = [
   'PROFILE_UPDATED',
   'PASSWORD_CHANGED',
   'SESSIONS_REVOKED',
+  /** Tokens de acceso personal (issue #65). PAT_USED se registra como máximo una vez por hora y token. */
+  'PAT_CREATED',
+  'PAT_ROTATED',
+  'PAT_REVOKED',
+  'PAT_USED',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
@@ -50,7 +55,7 @@ export interface AuditEventInput {
   actorUserId?: string;
   actorEmail?: string;
   workspaceId?: string;
-  targetType?: 'USER' | 'CONNECTION' | 'REPORT' | 'CROSS_JOIN' | 'AUDIT_LOG' | 'RECORD' | 'SESSION' | 'WORKSPACE' | 'INVITATION' | 'SAVED_QUERY' | 'SCHEDULED_REPORT';
+  targetType?: 'USER' | 'CONNECTION' | 'REPORT' | 'CROSS_JOIN' | 'AUDIT_LOG' | 'RECORD' | 'SESSION' | 'WORKSPACE' | 'INVITATION' | 'SAVED_QUERY' | 'SCHEDULED_REPORT' | 'PERSONAL_ACCESS_TOKEN';
   targetId?: string;
   details?: Record<string, unknown>;
   ipAddress?: string;
