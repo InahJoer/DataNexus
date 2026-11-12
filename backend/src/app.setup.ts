@@ -107,13 +107,17 @@ export function configureApp(app: NestExpressApplication, env: NodeJS.ProcessEnv
   app.useGlobalFilters(new AllExceptionsFilter());
 }
 
-/** Documentación OpenAPI en /api/docs. */
-export function setupSwagger(app: NestExpressApplication): void {
+/** Documento OpenAPI de la API. Lo usan Swagger UI y `npm run openapi:generate` (docs/openapi/v1.yaml). */
+export function buildOpenApiDocument(app: NestExpressApplication) {
   const config = new DocumentBuilder()
     .setTitle('DataNexus API')
-    .setDescription('Plataforma Unificada de Gestión de Datos Mixtas y Business Intelligence')
-    .setVersion('1.2.0')
-    .addTag('Auth', 'Autenticación y generación de tokens JWT')
+    .setDescription(
+      'Plataforma Unificada de Gestión de Datos Mixtas y Business Intelligence. ' +
+        'Autenticación: `Authorization: Bearer <access_token>` de una sesión, o `Bearer pat_...` (token de acceso personal) ' +
+        'en los endpoints de integración. Todos los datos están aislados por workspace.',
+    )
+    .setVersion('1.3.0')
+    .addTag('Auth', 'Autenticación, sesiones, perfil y tokens de acceso personal')
     .addTag('Connections', 'Gestión y administración de conexiones DB encriptadas con AES-256')
     .addTag('Users', 'Gestión de usuarios y roles dentro del workspace')
     .addTag('Workspaces', 'Gestión del espacio de trabajo: datos, configuración y estadísticas')
@@ -123,7 +127,10 @@ export function setupSwagger(app: NestExpressApplication): void {
     .addTag('Health', 'Sondas de disponibilidad para el monitoreo (liveness y readiness)')
     .addBearerAuth()
     .build();
+  return SwaggerModule.createDocument(app, config);
+}
 
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document);
+/** Documentación OpenAPI en /api/docs. */
+export function setupSwagger(app: NestExpressApplication): void {
+  SwaggerModule.setup('api/docs', app, buildOpenApiDocument(app));
 }

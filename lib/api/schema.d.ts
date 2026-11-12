@@ -241,6 +241,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/tokens/scopes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Permisos que puede tener un token
+         * @description `disponible` indica si tu rol actual puede concederlo.
+         */
+        get: operations["PersonalAccessTokensController_scopes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mis tokens de acceso personal
+         * @description Activos y caducados, con su vencimiento y último uso. Nunca devuelve el token.
+         */
+        get: operations["PersonalAccessTokensController_list"];
+        put?: never;
+        /**
+         * Crear un token de acceso personal
+         * @description Devuelve el token completo **una sola vez**. Úsalo como `Authorization: Bearer pat_...`. Solo se pueden conceder permisos que tu rol tenga, y el token deja de servir para lo que tu rol pierda.
+         */
+        post: operations["PersonalAccessTokensController_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/tokens/{id}/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotar un token
+         * @description Revoca el token y emite otro con el mismo nombre, permisos y duración. El nuevo se muestra una sola vez.
+         */
+        post: operations["PersonalAccessTokensController_rotate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/tokens/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revocar un token
+         * @description Deja de funcionar al instante.
+         */
+        delete: operations["PersonalAccessTokensController_revoke"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/audit/logs": {
         parameters: {
             query?: never;
@@ -1481,6 +1565,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Liveness: el proceso responde
+         * @description No consulta dependencias. Úsala como health check del contenedor para no reiniciarlo por una caída de la base de datos.
+         */
+        get: operations["HealthController_live"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/health/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Readiness: PostgreSQL, Redis y SMTP
+         * @description Responde 503 si PostgreSQL o Redis (cuando REDIS_URL está configurado) no responden. Un fallo de SMTP deja el estado en `degraded` con HTTP 200: la API sigue sirviendo, pero los correos fallarán.
+         */
+        get: operations["HealthController_ready"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1627,6 +1751,69 @@ export interface components {
              * @example 3
              */
             revocadas: number;
+        };
+        PatScopeDto: {
+            /** @enum {string} */
+            permiso: "queries:read" | "results:read" | "exports:create" | "connections:read" | "audit:read";
+            descripcion: string;
+            /** @description false si tu rol actual no puede conceder este permiso. */
+            disponible: boolean;
+        };
+        PersonalAccessTokenDto: {
+            id: string;
+            /** @example Power BI - tablero de ventas */
+            nombre: string;
+            /**
+             * @description Inicio del token, para reconocerlo sin revelarlo.
+             * @example pat_Xk3f9QaB
+             */
+            prefijo: string;
+            permisos: ("queries:read" | "results:read" | "exports:create" | "connections:read" | "audit:read")[];
+            /** @enum {string} */
+            estado: "ACTIVO" | "CADUCADO";
+            /** Format: date-time */
+            expiresAt: string;
+            lastUsedAt?: Record<string, never> | null;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        CreatePersonalAccessTokenDto: {
+            /** @example Power BI - tablero de ventas */
+            nombre: string;
+            /**
+             * @example [
+             *       "queries:read"
+             *     ]
+             */
+            permisos: ("queries:read" | "results:read" | "exports:create" | "connections:read" | "audit:read")[];
+            /**
+             * @description Días de validez (por defecto 90). Todo token caduca.
+             * @example 90
+             */
+            expiraEnDias?: number;
+        };
+        CreatedPersonalAccessTokenDto: {
+            id: string;
+            /** @example Power BI - tablero de ventas */
+            nombre: string;
+            /**
+             * @description Inicio del token, para reconocerlo sin revelarlo.
+             * @example pat_Xk3f9QaB
+             */
+            prefijo: string;
+            permisos: ("queries:read" | "results:read" | "exports:create" | "connections:read" | "audit:read")[];
+            /** @enum {string} */
+            estado: "ACTIVO" | "CADUCADO";
+            /** Format: date-time */
+            expiresAt: string;
+            lastUsedAt?: Record<string, never> | null;
+            /** Format: date-time */
+            createdAt: string;
+            /**
+             * @description Token completo. Se muestra **una sola vez**: guárdalo en un lugar seguro.
+             * @example pat_Xk3f9QaB...
+             */
+            token: string;
         };
         AuditLogEntryResponseDto: {
             /** Format: uuid */
@@ -3634,6 +3821,192 @@ export interface operations {
             };
         };
     };
+    PersonalAccessTokensController_scopes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PatScopeDto"][];
+                };
+            };
+            /** @description Sesión inválida o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Los tokens de acceso personal no pueden gestionar tokens. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PersonalAccessTokensController_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonalAccessTokenDto"][];
+                };
+            };
+            /** @description Sesión inválida o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Los tokens de acceso personal no pueden gestionar tokens. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PersonalAccessTokensController_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePersonalAccessTokenDto"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedPersonalAccessTokenDto"];
+                };
+            };
+            /** @description Sesión inválida o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Los tokens de acceso personal no pueden gestionar tokens. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PersonalAccessTokensController_rotate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedPersonalAccessTokenDto"];
+                };
+            };
+            /** @description Sesión inválida o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Los tokens de acceso personal no pueden gestionar tokens. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description El token no existe, ya fue revocado o es de otro usuario. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    PersonalAccessTokensController_revoke: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Token revocado. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Sesión inválida o ausente. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Los tokens de acceso personal no pueden gestionar tokens. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description El token no existe, ya fue revocado o es de otro usuario. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     AuditController_findAll: {
         parameters: {
             query?: {
@@ -3646,7 +4019,7 @@ export interface operations {
                 /** @description Filtrar registros hasta esta fecha (formato ISO 8601) */
                 fechaFin?: string;
                 /** @description Filtrar por tipo de acción o evento */
-                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED" | "INVITATION_RESENT" | "INVITATION_REVOKED" | "INVITATION_ACCEPTED" | "USER_REMOVED" | "BROWSE_DATA" | "SAVED_QUERY_CREATED" | "SAVED_QUERY_UPDATED" | "SAVED_QUERY_DELETED" | "SCHEDULED_REPORT_CREATED" | "SCHEDULED_REPORT_UPDATED" | "SCHEDULED_REPORT_DELETED" | "SCHEDULED_REPORT_RUN" | "ACCOUNT_CREATED" | "PROFILE_UPDATED" | "PASSWORD_CHANGED" | "SESSIONS_REVOKED";
+                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED" | "INVITATION_RESENT" | "INVITATION_REVOKED" | "INVITATION_ACCEPTED" | "USER_REMOVED" | "BROWSE_DATA" | "SAVED_QUERY_CREATED" | "SAVED_QUERY_UPDATED" | "SAVED_QUERY_DELETED" | "SCHEDULED_REPORT_CREATED" | "SCHEDULED_REPORT_UPDATED" | "SCHEDULED_REPORT_DELETED" | "SCHEDULED_REPORT_RUN" | "ACCOUNT_CREATED" | "PROFILE_UPDATED" | "PASSWORD_CHANGED" | "SESSIONS_REVOKED" | "PAT_CREATED" | "PAT_ROTATED" | "PAT_REVOKED" | "PAT_USED";
                 /** @description Nivel de impacto derivado del tipo de evento */
                 impacto?: "BAJO" | "MEDIO" | "ALTO";
                 /** @description Busca en el correo del usuario, la IP o el recurso afectado */
@@ -3741,7 +4114,7 @@ export interface operations {
                 /** @description Filtrar registros hasta esta fecha (formato ISO 8601) */
                 fechaFin?: string;
                 /** @description Filtrar por tipo de acción o evento */
-                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED" | "INVITATION_RESENT" | "INVITATION_REVOKED" | "INVITATION_ACCEPTED" | "USER_REMOVED" | "BROWSE_DATA" | "SAVED_QUERY_CREATED" | "SAVED_QUERY_UPDATED" | "SAVED_QUERY_DELETED" | "SCHEDULED_REPORT_CREATED" | "SCHEDULED_REPORT_UPDATED" | "SCHEDULED_REPORT_DELETED" | "SCHEDULED_REPORT_RUN" | "ACCOUNT_CREATED" | "PROFILE_UPDATED" | "PASSWORD_CHANGED" | "SESSIONS_REVOKED";
+                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED" | "INVITATION_RESENT" | "INVITATION_REVOKED" | "INVITATION_ACCEPTED" | "USER_REMOVED" | "BROWSE_DATA" | "SAVED_QUERY_CREATED" | "SAVED_QUERY_UPDATED" | "SAVED_QUERY_DELETED" | "SCHEDULED_REPORT_CREATED" | "SCHEDULED_REPORT_UPDATED" | "SCHEDULED_REPORT_DELETED" | "SCHEDULED_REPORT_RUN" | "ACCOUNT_CREATED" | "PROFILE_UPDATED" | "PASSWORD_CHANGED" | "SESSIONS_REVOKED" | "PAT_CREATED" | "PAT_ROTATED" | "PAT_REVOKED" | "PAT_USED";
                 format?: "csv" | "json";
             };
             header?: never;
@@ -6928,6 +7301,172 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    HealthController_live: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description La API está viva */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    HealthController_ready: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The Health Check is successful */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /**
+                         * @example ok
+                         * @enum {string}
+                         */
+                        status?: "ok" | "degraded";
+                        /**
+                         * @example {
+                         *       "database": {
+                         *         "status": "up",
+                         *         "responseTime": 12
+                         *       }
+                         *     }
+                         */
+                        info?: {
+                            [key: string]: {
+                                /** @enum {string} */
+                                status: "up" | "degraded" | "down";
+                                /** @description Time the health indicator took to respond, in ms */
+                                responseTime?: number;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        } | null;
+                        /** @example {} */
+                        error?: {
+                            [key: string]: {
+                                /** @enum {string} */
+                                status: "up" | "degraded" | "down";
+                                /** @description Time the health indicator took to respond, in ms */
+                                responseTime?: number;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        } | null;
+                        /**
+                         * @example {
+                         *       "database": {
+                         *         "status": "up",
+                         *         "responseTime": 12
+                         *       }
+                         *     }
+                         */
+                        details?: {
+                            [key: string]: {
+                                /** @enum {string} */
+                                status: "up" | "degraded" | "down";
+                                /** @description Time the health indicator took to respond, in ms */
+                                responseTime?: number;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+            /** @description The Health Check is not successful */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /**
+                         * @example error
+                         * @enum {string}
+                         */
+                        status?: "error" | "shutting_down";
+                        /**
+                         * @example {
+                         *       "database": {
+                         *         "status": "up",
+                         *         "responseTime": 12
+                         *       }
+                         *     }
+                         */
+                        info?: {
+                            [key: string]: {
+                                /** @enum {string} */
+                                status: "up" | "degraded" | "down";
+                                /** @description Time the health indicator took to respond, in ms */
+                                responseTime?: number;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        } | null;
+                        /**
+                         * @example {
+                         *       "redis": {
+                         *         "status": "down",
+                         *         "message": "Could not connect",
+                         *         "responseTime": 3005
+                         *       }
+                         *     }
+                         */
+                        error?: {
+                            [key: string]: {
+                                /** @enum {string} */
+                                status: "up" | "degraded" | "down";
+                                /** @description Time the health indicator took to respond, in ms */
+                                responseTime?: number;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        } | null;
+                        /**
+                         * @example {
+                         *       "database": {
+                         *         "status": "up",
+                         *         "responseTime": 12
+                         *       },
+                         *       "redis": {
+                         *         "status": "down",
+                         *         "message": "Could not connect",
+                         *         "responseTime": 3005
+                         *       }
+                         *     }
+                         */
+                        details?: {
+                            [key: string]: {
+                                /** @enum {string} */
+                                status: "up" | "degraded" | "down";
+                                /** @description Time the health indicator took to respond, in ms */
+                                responseTime?: number;
+                            } & {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
+                };
             };
         };
     };

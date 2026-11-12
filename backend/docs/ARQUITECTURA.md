@@ -23,6 +23,7 @@ DataNexus es una plataforma empresarial diseñada para unificar silos relacional
 | **Fase 7** | **Seguridad Perimetral, CORS & Rate Limiting** | Políticas CORS estrictas para Next.js (local y producción) y protección contra sobrecarga de CPU con `@nestjs/throttler` (20 req/min en exportaciones). | ✅ Completada (Issue #6) |
 | **Fase 8** | **Ecosistema Empresarial & Miembros** | Gestión de miembros del Workspace, invitaciones con roles y contraseñas temporales, y aislamiento multi-tenant por Workspace. | ✅ Completada |
 | **Fase 9** | **Calidad, Observabilidad & Hardening** | Pruebas e2e con esquema PostgreSQL aislado por suite, matriz RBAC completa y aislamiento multi-tenant (#50); `/health` y `/health/ready` con terminus, logs JSON con `requestId` y formato de error uniforme (#51); helmet, límite de cuerpo, TLS obligatorio hacia bases externas, `npm audit` en CI y revisión OWASP (#52). Ver [OBSERVABILIDAD.md](OBSERVABILIDAD.md), [SEGURIDAD.md](SEGURIDAD.md) y [PRUEBAS.md](PRUEBAS.md). | ✅ Completada (Sprint 5) |
+| **Fase 10** | **Integraciones & Documentación Final** | Tokens de acceso personal `pat_...` para BI y scripts, con alcances de solo lectura y nunca más permisos que el rol del dueño (#65). OpenAPI generado del código, plan de respaldo y recuperación ([DRP.md](DRP.md)), SLA/OLA ([SLA-OLA.md](SLA-OLA.md)) y guía de contribución (#53). | ✅ Completada (Sprint 5) |
 
 ---
 
@@ -30,44 +31,52 @@ DataNexus es una plataforma empresarial diseñada para unificar silos relacional
 
 ```mermaid
 graph TD
-    Client[Cliente Web Next.js / API Client] -->|HTTPS + JWT| Perimiter[Seguridad Perimetral: CORS + Throttler Guard]
-    
+    Client[Cliente Web Next.js] -->|HTTPS + JWT de sesión| Proxy[Proxy HTTPS / TLS 1.2+]
+    BI[Integraciones BI / scripts] -->|HTTPS + Bearer pat_...| Proxy
+    Proxy --> Perimeter[Perímetro: request id · helmet · CORS · límite de cuerpo · Throttler]
+
     subgraph "DataNexus Backend (NestJS)"
-        Perimiter --> ControllerLayer[Capa de Controladores REST]
-        
-        ControllerLayer --> AuthCtrl[AuthController /auth]
-        ControllerLayer --> ConnCtrl[ConnectionsController /connections]
-        ControllerLayer --> EngineCtrl[DataEngineController /engine]
-        ControllerLayer --> AuditCtrl[AuditController /audit]
-        ControllerLayer --> ReportsCtrl[ReportsController /reports]
-        ControllerLayer --> UsersCtrl[UsersController /users]
-        ControllerLayer --> WorkspacesCtrl[WorkspacesController /workspaces]
-        
+        Perimeter --> Guards[JwtAuthGuard sesión o PAT + RolesGuard matriz RBAC]
+        Guards --> ControllerLayer[Controladores REST]
+
+        ControllerLayer --> AuthCtrl[Auth /auth · sesiones · perfil · tokens]
+        ControllerLayer --> ConnCtrl[Connections /connections]
+        ControllerLayer --> EngineCtrl[DataEngine /engine · jobs · campos sensibles]
+        ControllerLayer --> QueriesCtrl[SavedQueries /queries]
+        ControllerLayer --> ReportsCtrl[Reports /reports · schedules]
+        ControllerLayer --> AuditCtrl[Audit /audit]
+        ControllerLayer --> UsersCtrl[Users /users · invitaciones]
+        ControllerLayer --> WorkspacesCtrl[Workspaces /workspaces]
+        ControllerLayer --> DashboardCtrl[Dashboard /dashboard]
+        ControllerLayer --> HealthCtrl[Health /health · /health/ready]
+
         EngineCtrl --> EngineService[DataEngineService]
-        EngineService --> CrossJoin[In-Memory Hash Join O N+M]
-        EngineService --> Masking[MaskingService: LECTOR Role]
-        EngineService --> Export[ExportService: ExcelJS / PDFKit / docx]
-        
-        ReportsCtrl --> ReportsService[ReportsService]
-        ReportsService --> Cron[ScheduleModule: Daily Midnight UTC]
-        ReportsService --> MailService[MailService: Nodemailer + Attachments]
-        
-        AuditCtrl --> AuditService[AuditService]
-        ConnCtrl --> ConnService[ConnectionsService]
-        ConnService --> Encryption[EncryptionService: AES-256-GCM]
+        QueriesCtrl --> EngineService
+        EngineService --> CrossJoin[Hash join N fuentes INNER/LEFT/RIGHT/FULL]
+        EngineService --> Masking[MaskingService: sin VIEW_UNMASKED_DATA]
+        EngineService --> Export[ExportService: Excel / CSV / PDF / Word / JSON]
+        EngineService --> Jobs[Cola de joins asíncronos BullMQ]
+        EngineService --> Registry[AdapterRegistry + pool de clientes]
+
+        ReportsCtrl --> ReportsService[Reportes programados + reintentos]
+        ReportsService --> MailService[MailService SMTP]
+        ReportsService --> Storage[Almacenamiento local / GCS]
+
+        ConnCtrl --> Encryption[EncryptionService AES-256-GCM]
+        AuditCtrl --> AuditService[AuditService solo inserción]
     end
-    
-    subgraph "Almacenamiento Local"
-        PrismaService[Prisma ORM Client] --> LocalDB[(PostgreSQL)]
-        AuditService --> PrismaService
-        ConnService --> PrismaService
+
+    subgraph "Persistencia interna"
+        Prisma[Prisma ORM] --> PG[(PostgreSQL)]
+        Jobs --> Redis[(Redis opcional)]
     end
-    
-    subgraph "Fuentes de Datos Externas"
-        EngineService --> SqlAdapter[SQL Adapters: Postgres / SQL Server / MySQL]
-        EngineService --> NoSqlAdapter[NoSQL Adapters: Firestore / Firebase]
-        SqlAdapter -.-> ExternalSQL[(Bases Relacionales)]
-        NoSqlAdapter -.-> ExternalNoSQL[(Colecciones NoSQL)]
+
+    subgraph "Fuentes externas del cliente (TLS)"
+        Registry -.-> ExtPG[(PostgreSQL)]
+        Registry -.-> ExtMy[(MySQL)]
+        Registry -.-> ExtSql[(SQL Server)]
+        Registry -.-> ExtMongo[(MongoDB)]
+        Registry -.-> ExtFs[(Firestore)]
     end
 ```
 
@@ -110,6 +119,12 @@ access tokens ya emitidos. Reglas:
   solo se almacena su hash SHA-256, vence a los 30 minutos (`PASSWORD_RESET_TTL_MINUTES`), es de un solo uso y pedir
   uno nuevo invalida el anterior. Ambos endpoints están limitados a 5 solicitudes cada 15 minutos por IP y se auditan
   como `PASSWORD_RESET_REQUESTED` y `PASSWORD_RESET`.
+
+**Tokens de acceso personal (issue #65)** — solo con una sesión iniciada:
+- `GET /auth/tokens/scopes`: alcances disponibles y cuáles puede conceder el rol actual.
+- `POST /auth/tokens`: crea un token (`nombre`, `permisos`, `expiraEnDias` ≤ 365). Devuelve `token` una sola vez.
+- `GET /auth/tokens`: lista con estado `ACTIVO`/`CADUCADO`, vencimiento y último uso.
+- `POST /auth/tokens/:id/rotate` y `DELETE /auth/tokens/:id`. Ver §5.1.
 
 ### 4.2 Conexiones de Datos (`/connections`)
 - `POST /connections`: Alta con **credenciales estructuradas por motor** (RF-08, ADMIN). `credenciales` se valida
@@ -277,6 +292,15 @@ contraseñas temporales.
   joins, exportaciones y reportes. `UsageMeterService` acumula en memoria y vuelca cada 15 s a `WorkspaceUsageDaily`
   (días UTC) con `INSERT ... ON CONFLICT`, así varias réplicas suman sobre el mismo día.
 
+### 4.9 Salud y observabilidad (`/health`) — issue #51
+- `GET /health`: liveness para el health check del contenedor.
+- `GET /health/ready`: PostgreSQL, Redis y SMTP (`503` si cae PostgreSQL o Redis). Ver [OBSERVABILIDAD.md](OBSERVABILIDAD.md).
+
+El contrato completo de todos los endpoints está en [`openapi/v1.yaml`](openapi/v1.yaml), generado del código con
+`npm run openapi:generate`.
+
+---
+
 ## 5. Matriz de Roles y Seguridad (RBAC)
 
 DataNexus aplica la segregación de funciones de 4 roles definida en el Dossier Técnico. La matriz vive en código en
@@ -294,6 +318,8 @@ en los controladores y `hasPermission()` en los servicios (defensa en profundida
 | `READ_AUDIT` · Consultar la bitácora de auditoría | ✅ | ❌ | ❌ | ✅ |
 | `MANAGE_MEMBERS` · Invitar miembros y cambiar roles | ✅ | ❌ | ❌ | ❌ |
 | `MANAGE_WORKSPACE` · Editar datos y configuración del workspace | ✅ | ❌ | ❌ | ❌ |
+| `MANAGE_QUERIES` · Crear / editar / borrar consultas guardadas | ✅ | ✅ | ❌ | ❌ |
+| `RUN_SAVED_QUERIES` · Ejecutar consultas guardadas (LECTOR: solo publicadas) | ✅ | ✅ | ✅ | ❌ |
 | `MODIFY_RECORDS` · Editar celdas en las fuentes externas | ✅ | ✅ | ❌ | ❌ |
 | `VIEW_UNMASKED_DATA` · Ver datos sin enmascarar | ✅ | ✅ | ❌ | ❌ |
 
@@ -301,6 +327,28 @@ en los controladores y `hasPermission()` en los servicios (defensa en profundida
   recibe correos, teléfonos y secretos enmascarados.
 - El LECTOR consumirá consultas predefinidas (Consultas Guardadas, Sprint 3) siempre con datos enmascarados.
 - Los endpoints protegidos responden `403 Forbidden` cuando el rol no tiene el permiso.
+- `test/rbac.e2e-spec.ts` prueba cada permiso con los 4 roles contra la API real y falla si se añade un permiso sin cubrirlo.
+
+### 5.1 Tokens de acceso personal (integraciones)
+
+Las herramientas externas (Power BI, scripts, SIEM) se autentican con `Authorization: Bearer pat_...` en lugar de una sesión.
+Los tokens se crean en `POST /auth/tokens`, y se listan, rotan y revocan desde el perfil.
+
+| Alcance | Permisos que concede |
+| --- | --- |
+| `queries:read` | `RUN_SAVED_QUERIES` |
+| `results:read` | `RUN_JOINS`, `EXPLORE_DATA` |
+| `exports:create` | `EXPORT_DATA` |
+| `connections:read` | `VIEW_CONNECTIONS` |
+| `audit:read` | `READ_AUDIT` |
+
+- **Nunca más que el rol:** solo se pueden conceder alcances que el rol del dueño tenga, y `RolesGuard` evalúa en cada petición
+  el rol **actual** del dueño. Si lo bajan de rol, el token pierde esos permisos al instante.
+- Solo sirven en endpoints con `@RequirePermission` cubiertos por su alcance. No acceden al perfil, a las sesiones ni a la
+  gestión de tokens, y ningún alcance permite gestionar conexiones, miembros ni editar datos.
+- Se guarda solo el hash SHA-256; el token se muestra una vez. Todos caducan (máximo 365 días). Un token caducado
+  o revocado devuelve `401`.
+- Bitácora: `PAT_CREATED`, `PAT_ROTATED` y `PAT_REVOKED` (impacto alto), y `PAT_USED` (una vez por hora y token).
 
 ---
 

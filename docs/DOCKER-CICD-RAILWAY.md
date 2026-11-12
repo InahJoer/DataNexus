@@ -32,7 +32,7 @@ Que falten funcionalidades no impide construir la imagen: el código actual debe
 
 ## GitHub Actions y GHCR
 
-`.github/workflows/ci-cd.yml` corre en pushes a `DOCKERCICD` y `main`, Pull Requests hacia `main` y ejecuciones manuales. El job **Validate backend** inicia PostgreSQL y Redis y ejecuta, en orden: `npm ci`, `prisma generate`, `prisma validate`, migraciones, `npm run lint` (oxlint `--type-aware`), `npm run build` y las pruebas con cobertura. Después, **Build and validate Docker images** construye las dos imágenes. Solo cuando ambas compilaciones Docker terminan correctamente, otro job publica las imágenes desde pushes.
+`.github/workflows/ci-cd.yml` corre en pushes a `DOCKERCICD` y `main`, Pull Requests hacia `main` y ejecuciones manuales. El job **Validate backend** inicia PostgreSQL y Redis y ejecuta, en orden: `npm ci`, `prisma generate`, `prisma validate`, migraciones, `npm run lint` (oxlint `--type-aware`), `npm run build`, las pruebas con cobertura, las pruebas e2e (`npm run test:e2e`) y `npm audit --omit=dev --audit-level=high`. Después, **Build and validate Docker images** construye las dos imágenes. Solo cuando ambas compilaciones Docker terminan correctamente, otro job publica las imágenes desde pushes.
 
 ### Cobertura (issue #48)
 
