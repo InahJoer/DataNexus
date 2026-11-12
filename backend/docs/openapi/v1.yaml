@@ -3901,10 +3901,14 @@ components:
           type: string
           example: S3creta#2026
           description: Se cifra con AES-256 y nunca se devuelve
+        caCertificate:
+          type: string
+          maxLength: 16384
+          description: PEM de la CA del servidor (p. ej. Supabase). Requiere ssl; se verifica el servidor con esa CA
         ssl:
           type: boolean
           default: false
-          description: Exigir TLS (sslmode=require)
+          description: Exigir TLS y verificar el certificado del servidor
       required:
         - host
         - database
@@ -3932,6 +3936,10 @@ components:
           type: string
           example: S3creta#2026
           description: Se cifra con AES-256 y nunca se devuelve
+        caCertificate:
+          type: string
+          maxLength: 16384
+          description: PEM de la CA del servidor (p. ej. Supabase). Requiere ssl; se verifica el servidor con esa CA
         ssl:
           type: boolean
           default: false

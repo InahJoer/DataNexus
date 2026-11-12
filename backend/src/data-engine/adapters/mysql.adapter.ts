@@ -26,6 +26,7 @@ import {
   type DataPage,
   type DataPageOptions,
 } from '../pagination/keyset.js';
+import { mysqlSslOption } from '../../connections/credentials/tls-ca.js';
 
 const MAX_IDENTIFIER_LENGTH = 64;
 const SOURCE_ALIAS = '`__dn_src`';
@@ -399,7 +400,7 @@ export class MysqlAdapter implements IDataSourceAdapter {
       user: decodeURIComponent(url.username),
       password: decodeURIComponent(url.password),
       database: connection.dbName,
-      ssl: url.searchParams.get('ssl') === 'true' ? {} : undefined,
+      ssl: mysqlSslOption(url),
       connectTimeout: EXTERNAL_QUERY_TIMEOUT_MS,
       connectionLimit: 4,
       maxIdle: 2,
