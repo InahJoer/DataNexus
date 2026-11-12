@@ -137,3 +137,33 @@ Para activarlo:
 5. Activa el pipeline con la variable de repositorio `ENABLE_STAGING_CD=true`.
 
 Los nombres de los secretos son distintos a los de producción a propósito. Si faltara alguno, el job falla en vez de usar por error el token de producción.
+
+## PostgreSQL en un volumen pequeño (plan gratuito de Railway)
+
+En los planes Free y Trial de Railway el volumen de PostgreSQL mide 0.5 GB y no se puede ampliar. Si se llena, PostgreSQL no puede ni escribir su registro de recuperación y entra en un ciclo de caídas. Sin plan de pago, la única salida es borrar el volumen; las migraciones vuelven a crear las tablas al arrancar la API.
+
+Para que no se llene:
+
+1. **Limita las cargas de Excel**, que guardan cada hoja como una tabla. Configura `EXCEL_DB_MAX_MB=300` en el backend: al superar ese tamaño, la carga se detiene con un aviso en lugar de llenar el disco.
+2. **Limita el WAL** (registro de transacciones). Por defecto puede crecer hasta 1 GB, más que todo el volumen. Una sola vez, con `psql` contra la base:
+
+   ```sql
+   ALTER SYSTEM SET max_wal_size = '96MB';
+   ALTER SYSTEM SET min_wal_size = '32MB';
+   SELECT pg_reload_conf();
+   ```
+
+   La configuración se guarda en el volumen: repítela si lo recreas.
+3. **Limpieza automática.** La API borra cada día, a las 03:30 UTC y un minuto después de arrancar, lo siguiente:
+   - las sesiones vencidas o revocadas hace más de 7 días, con sus refresh tokens;
+   - los tokens de recuperación de contraseña vencidos o usados hace más de 7 días.
+
+   No necesita configuración.
+4. **La bitácora de auditoría no se borra.** Es inmutable (RF-26) y se conserva 5 años (`backend/docs/SLA-OLA.md`). Si ocupa demasiado, exporta y archiva la bitácora según `backend/docs/DRP.md`, o usa un plan con más disco.
+
+Para ver qué ocupa espacio:
+
+```sql
+SELECT relname AS tabla, pg_size_pretty(pg_total_relation_size(relid)) AS tamano
+FROM pg_catalog.pg_statio_user_tables ORDER BY pg_total_relation_size(relid) DESC LIMIT 10;
+```

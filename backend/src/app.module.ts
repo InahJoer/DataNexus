@@ -18,6 +18,7 @@ import { ReportsModule } from './reports/reports.module.js';
 import { WorkspacesModule } from './workspaces/workspaces.module.js';
 import { QueriesModule } from './queries/queries.module.js';
 import { UsageModule } from './usage/usage.module.js';
+import { MaintenanceModule } from './maintenance/maintenance.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { HealthModule } from './health/health.module.js';
 import { hasNamedThrottle } from './common/named-throttle.js';
@@ -58,6 +59,7 @@ import { hasNamedThrottle } from './common/named-throttle.js';
     WorkspacesModule,
     QueriesModule,
     UsageModule,
+    MaintenanceModule,
     DashboardModule,
     HealthModule,
   ],
