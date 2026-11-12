@@ -2,6 +2,9 @@ import type { TipoMotor } from '../../common/tipo-motor.js';
 import type { DataFilter, FilterNode } from '../filters/filter-tree.js';
 import type { DataPage, DataPageOptions } from '../pagination/keyset.js';
 
+/** Motores con adaptador: los de las conexiones y EXCEL (archivos subidos, que no son una ConexionDB). */
+export type AdapterEngine = TipoMotor | 'EXCEL';
+
 export type CatalogObjectType = 'TABLE' | 'VIEW' | 'COLLECTION';
 
 export interface CatalogObject {
@@ -62,7 +65,7 @@ export interface DataSourceCapabilities {
  * los cierra por inactividad y los invalida al editar o eliminar la conexión.
  */
 export interface IDataSourceAdapter {
-  readonly tipoMotor: TipoMotor;
+  readonly tipoMotor: AdapterEngine;
   readonly capabilities: DataSourceCapabilities;
   listObjects(connection: DataSourceConnection): Promise<CatalogObject[]>;
   listFields(connection: DataSourceConnection, objectName: string, schema?: string): Promise<string[]>;

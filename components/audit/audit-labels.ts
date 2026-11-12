@@ -39,6 +39,9 @@ export const EVENT_LABELS: Record<string, string> = {
   PAT_ROTATED: 'Token de acceso rotado',
   PAT_REVOKED: 'Token de acceso revocado',
   PAT_USED: 'Token de acceso usado',
+  EXCEL_UPLOADED: 'Excel subido',
+  EXCEL_REPLACED: 'Excel reemplazado',
+  EXCEL_DELETED: 'Excel eliminado',
 };
 
 export const IMPACT_VIEW: Record<'BAJO' | 'MEDIO' | 'ALTO', { label: string; tone: string }> = {

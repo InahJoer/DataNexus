@@ -95,6 +95,7 @@ function setup() {
     savedQuery: { findFirst: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
     savedQueryVersion: { findUnique: vi.fn(), findMany: vi.fn().mockResolvedValue([]) },
     conexionDB: { count: vi.fn().mockResolvedValue(2) },
+    archivoExcel: { count: vi.fn().mockResolvedValue(0) },
   };
   const dataEngine = {
     executeCrossJoin: vi.fn().mockResolvedValue({ total: 2, limit: 25, offset: 50, data: [{ a: 1 }, { a: 2 }] }),

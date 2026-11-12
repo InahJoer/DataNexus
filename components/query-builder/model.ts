@@ -172,6 +172,9 @@ function valueEvidence(rowsA: Record<string, unknown>[], fa: string, rowsB: Reco
  * (`cliente_id` ↔ `clientes.id`, misma llave en ambas, documento ↔ subcolección) con los valores reales de la
  * muestra (qué parte coincide y si un lado es llave única). Devuelve la mejor unión de cada par, de más a menos segura.
  */
+/** En un Excel subido, la primera columna es el identificador de cada registro: una llave natural para unir. */
+export const isExcelKey = (source: QbSource, field: string) => source.engine === 'EXCEL' && source.fields[0]?.name === field;
+
 export function detectLinks(model: QbModel, samples: Samples = {}): LinkSuggestion[] {
   const linked = (a: string, b: string) => model.links.some((link) => (link.from.source === a && link.to.source === b) || (link.from.source === b && link.to.source === a));
   const result: LinkSuggestion[] = [];
@@ -186,17 +189,22 @@ export function detectLinks(model: QbModel, samples: Samples = {}): LinkSuggesti
           const named = nameEvidence(left, fa.name, right, fb.name);
           const values = valueEvidence(samples[left.id] ?? [], fa.name, samples[right.id] ?? [], fb.name);
           const reasons: string[] = [];
+          const excelKey = isExcelKey(left, fa.name) || isExcelKey(right, fb.name);
           let score: number;
           if (named) {
             reasons.push(named.reason);
             score = values.smaller ? 0.55 * named.score + 0.45 * values.overlap : named.score * 0.85;
           } else {
             // Solo por valores: exige mucha coincidencia, un lado con valores únicos y valores no triviales.
-            if (values.trivial || !values.unique || values.overlap < 0.6) continue;
+            if (values.trivial || !(values.unique || excelKey) || values.overlap < 0.6) continue;
             score = 0.7 * values.overlap;
           }
           if (values.smaller) reasons.push(`${Math.round(values.overlap * 100)}% de los valores de muestra coinciden (${values.matches} de ${values.smaller})`);
           if (values.unique && values.overlap > 0) reasons.push('Uno de los lados tiene valores únicos (parece llave)');
+          if (excelKey && (named || values.overlap > 0)) {
+            score += 0.08;
+            reasons.push('Es la columna identificadora del Excel (primera columna)');
+          }
           if (joinCompatibility(fa.type, fb.type) === 'warning') {
             score -= 0.1;
             reasons.push(`Tipos distintos (${fa.type} y ${fb.type})`);
