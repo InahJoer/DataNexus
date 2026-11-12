@@ -22,6 +22,7 @@ DataNexus es una plataforma empresarial diseñada para unificar silos relacional
 | **Fase 6** | **Automatización de Reportes & Cron** | Programación periódica a la medianoche con `@nestjs/schedule` (CronJobs), servicio de despacho por correo (`nodemailer`) con reportes adjuntos para analistas. | ✅ Completada (Issue #4) |
 | **Fase 7** | **Seguridad Perimetral, CORS & Rate Limiting** | Políticas CORS estrictas para Next.js (local y producción) y protección contra sobrecarga de CPU con `@nestjs/throttler` (20 req/min en exportaciones). | ✅ Completada (Issue #6) |
 | **Fase 8** | **Ecosistema Empresarial & Miembros** | Gestión de miembros del Workspace, invitaciones con roles y contraseñas temporales, y aislamiento multi-tenant por Workspace. | ✅ Completada |
+| **Fase 9** | **Calidad, Observabilidad & Hardening** | Pruebas e2e con esquema PostgreSQL aislado por suite, matriz RBAC completa y aislamiento multi-tenant (#50); `/health` y `/health/ready` con terminus, logs JSON con `requestId` y formato de error uniforme (#51); helmet, límite de cuerpo, TLS obligatorio hacia bases externas, `npm audit` en CI y revisión OWASP (#52). Ver [OBSERVABILIDAD.md](OBSERVABILIDAD.md), [SEGURIDAD.md](SEGURIDAD.md) y [PRUEBAS.md](PRUEBAS.md). | ✅ Completada (Sprint 5) |
 
 ---
 
@@ -309,4 +310,5 @@ El proyecto cuenta con una cobertura integral de pruebas unitarias sobre todos l
 - **Pruebas de Conexión y Exploración:** Manejo de timeouts (10s), liberación de conexiones y sanitización de metadatos.
 - **Pruebas de Cross-Join:** Validación de unicidad de llaves, relaciones $1:N$, enmascaramiento y paginación.
 - **Pruebas de Exportación y Correo:** Verificación de encabezados binarios (`%PDF`, `.xlsx`) y despacho simulado.
-- **Ejecución de Tests:** `npm run test` (65 tests pasando en 16 suites).
+- **Pruebas e2e:** auth y sesión, matriz RBAC de 4 roles, flujos conexión → join → exportación → reportes → auditoría, aislamiento entre workspaces y plataforma (health, cabeceras, límites). Ver [PRUEBAS.md](PRUEBAS.md).
+- **Ejecución de Tests:** `npm test` (unitarias e integración) y `npm run test:e2e` (requiere PostgreSQL). Ambas corren en CI.

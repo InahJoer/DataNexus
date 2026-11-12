@@ -94,6 +94,17 @@ jobs:
           --coverage.exclude='src/**/*.spec.ts'
         working-directory: backend
 
+      # Flujos críticos, matriz RBAC y aislamiento entre workspaces contra la API completa (issue #50).
+      # Cada suite crea y borra su propio esquema de PostgreSQL.
+      - name: Run backend e2e tests
+        run: npm run test:e2e
+        working-directory: backend
+
+      # Revisión OWASP (issue #52): falla si una dependencia de producción tiene vulnerabilidades altas o críticas.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+        working-directory: backend
+
       - name: Publish coverage summary
         if: ${{ always() && hashFiles('backend/coverage/coverage-summary.json') != '' }}
         run: node .github/scripts/coverage-summary.mjs backend/coverage/coverage-summary.json >> "$GITHUB_STEP_SUMMARY"
