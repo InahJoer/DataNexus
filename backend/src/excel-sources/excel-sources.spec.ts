@@ -141,3 +141,34 @@ describe('semi-join para hojas grandes', () => {
     expect(semiJoinKeys(plan('INNER'), 'metas', new Map())).toBeNull();
   });
 });
+
+describe('ExcelSourcesService ante una base de datos sin espacio', () => {
+  it('no tumba la API: registra el error aunque la base de datos ya no responda para marcar el fallo', async () => {
+    const { ExcelSourcesService } = await import('./excel-sources.service.js');
+    const path = join(dir, 'lleno.csv');
+    writeFileSync(path, 'id,valor\n1,a\n2,b\n');
+    const diskFull = Object.assign(new Error('could not write to file "pg_wal/xlogtemp.1": No space left on device'), { code: '53100' });
+    const down = new Error('FATAL: the database system is in recovery mode');
+    const prisma = {
+      archivoExcel: {
+        create: async () => ({ id: 'a1', nombre: 'x', nombreArchivo: 'lleno.csv', tamanoBytes: 10n, creadoPor: 'a@b.c', createdAt: new Date(), updatedAt: new Date(), estado: 'PROCESANDO', progreso: 0, filasProcesadas: 0, error: null, avisos: [], hojas: [] }),
+        findUnique: async () => { throw down; },
+      },
+    };
+    const tables = {
+      assertStorage: async () => undefined,
+      checkpoint: async () => undefined,
+      newTableName: () => 'xl_000000000000_0000000000000000',
+      createLoader: async () => { throw diskFull; },
+      drop: async () => undefined,
+    };
+    const service = new ExcelSourcesService(prisma as never, {} as never, tables as never, {} as never);
+    const errors: string[] = [];
+    (service as unknown as { logger: { error: (m: string) => void; log: () => void } }).logger = { error: (m) => errors.push(m), log: () => undefined };
+    const actor = { id: 'u', email: 'a@b.c', workspaceId: 'w', role: 'ADMIN' } as never;
+    await service.upload(actor, { originalname: 'lleno.csv', mimetype: 'text/csv', size: 18, path }, undefined, {});
+    await service.idle();
+    expect(errors.join('\n')).toMatch(/No space left on device/);
+    expect(errors.join('\n')).toMatch(/No se pudo marcar el Excel a1 como fallido/);
+  }, 30_000);
+});

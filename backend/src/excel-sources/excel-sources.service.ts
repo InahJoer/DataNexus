@@ -42,6 +42,8 @@ type FileRow = Prisma.ArchivoExcelGetPayload<{ select: typeof FILE_SELECT }>;
 const MAX_CONCURRENT_LOADS = 2;
 /** Cada cuánto se guarda el avance de una carga. */
 const PROGRESS_EVERY_MS = 1_000;
+/** Filas entre CHECKPOINT en discos pequeños (EXCEL_DB_MAX_MB), para que el WAL no crezca sin control. */
+const CHECKPOINT_EVERY_ROWS = 200_000;
 
 interface LoadJob {
   kind: 'upload' | 'replace';
@@ -223,7 +225,10 @@ export class ExcelSourcesService implements OnApplicationBootstrap {
       const job = this.queue.shift()!;
       this.running += 1;
       this.loading.add(job.archivoId);
-      void this.process(job).finally(() => {
+      // Una carga nunca debe tumbar la API: cualquier error que escape de process() solo se registra.
+      void this.process(job)
+        .catch((error: Error) => this.logger.error(`La carga del Excel ${job.archivoId} terminó con un error: ${error.message}`))
+        .finally(() => {
         this.running -= 1;
         this.loading.delete(job.archivoId);
         this.cancelled.delete(job.archivoId);
@@ -241,18 +246,26 @@ export class ExcelSourcesService implements OnApplicationBootstrap {
     let fraction = 0;
     let rows = 0;
     let lastReport = 0;
+    let lastCheckpoint = 0;
     const maxRows = getExcelMaxRows();
 
     const report = async (force = false) => {
       if (this.cancelled.has(job.archivoId)) throw new LoadCancelled();
       if (!force && Date.now() - lastReport < PROGRESS_EVERY_MS) return;
       lastReport = Date.now();
+      // Se detiene antes de llenar el disco de la base de datos (EXCEL_DB_MAX_MB) y, en discos pequeños, recicla el WAL.
+      if (rows - lastCheckpoint >= CHECKPOINT_EVERY_ROWS) {
+        lastCheckpoint = rows;
+        await this.tables.checkpoint();
+      }
+      await this.tables.assertStorage();
       const progreso = Math.min(99, Math.floor(fraction * 100));
       // Sin tocar updatedAt (es la versión de los datos): por eso SQL directo y no update de Prisma.
       await this.prisma.$executeRaw`UPDATE "ArchivoExcel" SET "progreso" = ${progreso}, "filasProcesadas" = ${rows} WHERE "id" = ${job.archivoId}`;
     };
 
     try {
+      await this.tables.assertStorage();
       const used = new Set<string>();
       for await (const raw of readWorkbook(job.path, job.originalname, (value) => (fraction = value))) {
         const assembler = new SheetAssembler(uniqueName(raw.nombre, used));
@@ -299,9 +312,17 @@ export class ExcelSourcesService implements OnApplicationBootstrap {
     } catch (error) {
       await this.tables.drop(created);
       if (error instanceof LoadCancelled || this.cancelled.has(job.archivoId)) return;
-      const message = error instanceof HttpException ? error.message : 'No se pudo procesar el archivo: verifica que no esté dañado';
+      const message =
+        error instanceof HttpException
+          ? error.message
+          : isDiskFull(error)
+            ? 'La base de datos se quedó sin espacio en disco: amplía su volumen o sube un archivo más pequeño'
+            : 'No se pudo procesar el archivo: verifica que no esté dañado';
       if (!(error instanceof HttpException)) this.logger.error(`Falló la carga del Excel ${job.archivoId}: ${(error as Error).message}`);
-      await this.fail(job, message);
+      // Si la base de datos no responde (p. ej. se reinicia), el estado se corrige al arrancar de nuevo.
+      await this.fail(job, message).catch((failure: Error) =>
+        this.logger.error(`No se pudo marcar el Excel ${job.archivoId} como fallido: ${failure.message}`),
+      );
     } finally {
       await this.discardPath(job.path);
     }
@@ -443,4 +464,10 @@ export class ExcelSourcesService implements OnApplicationBootstrap {
       })),
     };
   }
+}
+
+/** PostgreSQL sin espacio en disco (53100 disk_full o el mensaje del sistema operativo). */
+function isDiskFull(error: unknown): boolean {
+  const { code, message } = (error ?? {}) as { code?: string; message?: string };
+  return code === '53100' || /no space left on device|disk full/i.test(message ?? '');
 }

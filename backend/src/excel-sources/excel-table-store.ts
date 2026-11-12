@@ -27,6 +27,12 @@ const TABLE_PATTERN = /^xl_[0-9a-f]{12}_[0-9a-f]{16}$/;
 /** Errores de PostgreSQL por un valor que no encaja con el tipo de la columna (p. ej. filtrar "abc" en números). */
 const INVALID_VALUE_CODES = new Set(['22P02', '22003', '22007', '22008']);
 
+/** Tamaño máximo de la base de datos durante una carga de Excel (MB). Sin EXCEL_DB_MAX_MB, sin límite. */
+export function getExcelDbMaxMb(): number {
+  const value = Number(process.env.EXCEL_DB_MAX_MB);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
 const physical = (index: number) => `"c${index + 1}"`;
 const SQL_TYPE = { numero: 'double precision', booleano: 'boolean', texto: 'text' } as const;
 
@@ -73,6 +79,34 @@ export class ExcelTableStore implements OnModuleDestroy {
     const definition = columnas.map((_, index) => `${physical(index)} text`).join(', ');
     await this.getPool().query(`CREATE TABLE ${table} ("_fila" bigint NOT NULL${definition ? `, ${definition}` : ''})`);
     return new TableLoader(this.getPool(), table, columnas);
+  }
+
+  /**
+   * Corta la carga si la base de datos superó EXCEL_DB_MAX_MB. Llenar el disco de PostgreSQL lo detiene por completo
+   * (no puede ni escribir su registro de recuperación), así que se configura por debajo del tamaño del volumen.
+   */
+  async assertStorage(): Promise<void> {
+    const limitMb = getExcelDbMaxMb();
+    if (!limitMb) return;
+    const { rows } = await this.getPool().query<{ bytes: string }>('SELECT pg_database_size(current_database()) AS bytes');
+    const usedMb = Number(rows[0]?.bytes ?? 0) / 1024 / 1024;
+    if (usedMb >= limitMb) {
+      throw new BadRequestException(
+        `La base de datos llegó al espacio máximo configurado para Excel (${Math.round(usedMb)} de ${limitMb} MB): amplía el volumen de PostgreSQL o elimina archivos que ya no uses`,
+      );
+    }
+  }
+
+  /**
+   * Con un disco pequeño (EXCEL_DB_MAX_MB configurado), fuerza un CHECKPOINT para que PostgreSQL recicle el registro
+   * de transacciones (WAL) durante cargas grandes; si no, puede crecer hasta max_wal_size (1 GB por defecto). Si el
+   * usuario de la base de datos no tiene permiso, se ignora.
+   */
+  async checkpoint(): Promise<void> {
+    if (!getExcelDbMaxMb()) return;
+    await this.getPool()
+      .query('CHECKPOINT')
+      .catch(() => undefined);
   }
 
   async drop(tablas: string[]): Promise<void> {

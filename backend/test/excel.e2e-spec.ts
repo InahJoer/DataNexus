@@ -144,6 +144,20 @@ describe('Archivos de Excel masivos (e2e)', () => {
     await ctx.http().delete(`/excel/${response.body.id}`).set(bearer(ws.users.ADMIN)).expect(204);
   });
 
+  it('con EXCEL_DB_MAX_MB superado, la carga se detiene con un mensaje claro y la API sigue respondiendo', async () => {
+    process.env.EXCEL_DB_MAX_MB = '1';
+    try {
+      const response = await ctx.http().post('/excel').set(bearer(ws.users.ADMIN)).attach('archivo', csv(50), 'grande.csv').expect(202);
+      const failed = await waitReady(response.body.id);
+      expect(failed).toMatchObject({ estado: 'ERROR', hojas: [] });
+      expect(failed.error).toMatch(/espacio máximo configurado/);
+      await ctx.http().delete(`/excel/${response.body.id}`).set(bearer(ws.users.ADMIN)).expect(204);
+    } finally {
+      delete process.env.EXCEL_DB_MAX_MB;
+    }
+    expect(await excelTables()).toHaveLength(1);
+  });
+
   it('eliminar el archivo borra también sus tablas', async () => {
     await ctx.http().delete(`/excel/${excelId}`).set(bearer(ws.users.ADMIN)).expect(204);
     await ctx.http().get(`/excel/${excelId}`).set(bearer(ws.users.ADMIN)).expect(404);
