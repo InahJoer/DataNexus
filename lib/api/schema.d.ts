@@ -1212,6 +1212,63 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/excel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Listar los archivos de Excel del workspace con sus hojas */
+        get: operations["ExcelSourcesController_list"];
+        put?: never;
+        /**
+         * Subir un libro .xlsx o un .csv como fuente de datos
+         * @description Cada hoja con datos se convierte en una tabla: la fila 1 son los encabezados y la columna 1 el identificador de cada registro. La respuesta llega en cuanto el archivo se recibe (estado PROCESANDO); la lectura sigue en segundo plano por streaming, sin límite de registros, y el archivo pasa a LISTO al terminar (consulta GET /excel/{id}). El id devuelto funciona como conexionId en el explorador, el editor de consultas y las exportaciones.
+         */
+        post: operations["ExcelSourcesController_upload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/excel/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Detalle de un archivo de Excel y los reportes guardados que lo usan */
+        get: operations["ExcelSourcesController_get"];
+        put?: never;
+        post?: never;
+        /** Eliminar un archivo de Excel (los reportes que lo usan dejarán de ejecutarse) */
+        delete: operations["ExcelSourcesController_remove"];
+        options?: never;
+        head?: never;
+        /** Renombrar un archivo de Excel */
+        patch: operations["ExcelSourcesController_rename"];
+        trace?: never;
+    };
+    "/excel/{id}/archivo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Reemplazar el contenido del Excel conservando su id (los reportes que lo usan siguen funcionando) */
+        put: operations["ExcelSourcesController_replace"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/reports/executions": {
         parameters: {
             query?: never;
@@ -1912,8 +1969,10 @@ export interface components {
              * @example S3creta#2026
              */
             password: string;
+            /** @description PEM de la CA del servidor (p. ej. Supabase). Requiere ssl; se verifica el servidor con esa CA */
+            caCertificate?: string;
             /**
-             * @description Exigir TLS (sslmode=require)
+             * @description Exigir TLS y verificar el certificado del servidor
              * @default false
              */
             ssl?: boolean;
@@ -1941,6 +2000,8 @@ export interface components {
              * @example S3creta#2026
              */
             password: string;
+            /** @description PEM de la CA del servidor (p. ej. Supabase). Requiere ssl; se verifica el servidor con esa CA */
+            caCertificate?: string;
             /**
              * @description Conectar con TLS
              * @default false
@@ -2767,6 +2828,80 @@ export interface components {
              * @example clientes
              */
             entidad?: string;
+        };
+        ExcelSheetResponseDto: {
+            /** @example Clientes */
+            nombre: string;
+            /**
+             * @example [
+             *       "codigo",
+             *       "nombre",
+             *       "meta"
+             *     ]
+             */
+            columnas: string[];
+            /**
+             * @description Primera columna de la hoja: identificador de cada registro.
+             * @example codigo
+             */
+            columnaId: string;
+            /** @example 120 */
+            totalFilas: number;
+            /**
+             * @description Tipo de cada columna en el orden de columnas: texto, numero o booleano.
+             * @example [
+             *       "texto",
+             *       "texto",
+             *       "numero"
+             *     ]
+             */
+            tipos: string[];
+        };
+        ExcelUsageDto: {
+            id: string;
+            nombre: string;
+        };
+        ExcelFileResponseDto: {
+            /** @description Se usa como conexionId en el explorador, el editor de consultas y las exportaciones. */
+            id: string;
+            /** @example Metas de ventas 2026 */
+            nombre: string;
+            /** @example metas_2026.xlsx */
+            nombreArchivo: string;
+            /** @example 48213 */
+            tamanoBytes: number;
+            /** @example analista@empresa.com */
+            creadoPor: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            hojas: components["schemas"]["ExcelSheetResponseDto"][];
+            /**
+             * @description La carga corre en segundo plano: consulta el archivo hasta que esté LISTO.
+             * @enum {string}
+             */
+            estado: "PROCESANDO" | "LISTO" | "ERROR";
+            /**
+             * @description Avance de la carga, de 0 a 100.
+             * @example 100
+             */
+            progreso: number;
+            /**
+             * @description Registros guardados (durante la carga, los leídos hasta ahora).
+             * @example 1250000
+             */
+            filasProcesadas: number;
+            /** @description Motivo de la última carga fallida. Si falla un reemplazo, los datos anteriores siguen disponibles. */
+            error?: string | null;
+            /** @description Observaciones de la última carga (encabezados ajustados, identificadores vacíos o repetidos). */
+            avisos: string[];
+            /** @description Reportes guardados que usan el archivo (solo en el detalle). */
+            usadoEn?: components["schemas"]["ExcelUsageDto"][];
+        };
+        RenameExcelDto: {
+            /** @example Metas de ventas 2026 */
+            nombre: string;
         };
         ReportExecutionResponseDto: {
             /** Format: uuid */
@@ -4019,7 +4154,7 @@ export interface operations {
                 /** @description Filtrar registros hasta esta fecha (formato ISO 8601) */
                 fechaFin?: string;
                 /** @description Filtrar por tipo de acción o evento */
-                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED" | "INVITATION_RESENT" | "INVITATION_REVOKED" | "INVITATION_ACCEPTED" | "USER_REMOVED" | "BROWSE_DATA" | "SAVED_QUERY_CREATED" | "SAVED_QUERY_UPDATED" | "SAVED_QUERY_DELETED" | "SCHEDULED_REPORT_CREATED" | "SCHEDULED_REPORT_UPDATED" | "SCHEDULED_REPORT_DELETED" | "SCHEDULED_REPORT_RUN" | "ACCOUNT_CREATED" | "PROFILE_UPDATED" | "PASSWORD_CHANGED" | "SESSIONS_REVOKED" | "PAT_CREATED" | "PAT_ROTATED" | "PAT_REVOKED" | "PAT_USED";
+                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED" | "INVITATION_RESENT" | "INVITATION_REVOKED" | "INVITATION_ACCEPTED" | "USER_REMOVED" | "BROWSE_DATA" | "SAVED_QUERY_CREATED" | "SAVED_QUERY_UPDATED" | "SAVED_QUERY_DELETED" | "SCHEDULED_REPORT_CREATED" | "SCHEDULED_REPORT_UPDATED" | "SCHEDULED_REPORT_DELETED" | "SCHEDULED_REPORT_RUN" | "ACCOUNT_CREATED" | "PROFILE_UPDATED" | "PASSWORD_CHANGED" | "SESSIONS_REVOKED" | "PAT_CREATED" | "PAT_ROTATED" | "PAT_REVOKED" | "PAT_USED" | "EXCEL_UPLOADED" | "EXCEL_REPLACED" | "EXCEL_DELETED";
                 /** @description Nivel de impacto derivado del tipo de evento */
                 impacto?: "BAJO" | "MEDIO" | "ALTO";
                 /** @description Busca en el correo del usuario, la IP o el recurso afectado */
@@ -4114,7 +4249,7 @@ export interface operations {
                 /** @description Filtrar registros hasta esta fecha (formato ISO 8601) */
                 fechaFin?: string;
                 /** @description Filtrar por tipo de acción o evento */
-                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED" | "INVITATION_RESENT" | "INVITATION_REVOKED" | "INVITATION_ACCEPTED" | "USER_REMOVED" | "BROWSE_DATA" | "SAVED_QUERY_CREATED" | "SAVED_QUERY_UPDATED" | "SAVED_QUERY_DELETED" | "SCHEDULED_REPORT_CREATED" | "SCHEDULED_REPORT_UPDATED" | "SCHEDULED_REPORT_DELETED" | "SCHEDULED_REPORT_RUN" | "ACCOUNT_CREATED" | "PROFILE_UPDATED" | "PASSWORD_CHANGED" | "SESSIONS_REVOKED" | "PAT_CREATED" | "PAT_ROTATED" | "PAT_REVOKED" | "PAT_USED";
+                tipoAccion?: "LOGIN_SUCCESS" | "LOGIN_FAILURE" | "USER_ROLE_CHANGED" | "USER_INVITED" | "CONNECTION_CREATED" | "CONNECTION_UPDATED" | "CONNECTION_DELETED" | "REPORT_GENERATED_AND_SENT" | "EXECUTE_JOIN" | "EXPORT" | "MODIFY_RECORD" | "AUDIT_LOG_EXPORTED" | "PASSWORD_RESET_REQUESTED" | "PASSWORD_RESET" | "LOGOUT" | "SESSION_EXPIRED" | "REFRESH_TOKEN_REUSED" | "ACCOUNT_LOCKED" | "WORKSPACE_UPDATED" | "INVITATION_RESENT" | "INVITATION_REVOKED" | "INVITATION_ACCEPTED" | "USER_REMOVED" | "BROWSE_DATA" | "SAVED_QUERY_CREATED" | "SAVED_QUERY_UPDATED" | "SAVED_QUERY_DELETED" | "SCHEDULED_REPORT_CREATED" | "SCHEDULED_REPORT_UPDATED" | "SCHEDULED_REPORT_DELETED" | "SCHEDULED_REPORT_RUN" | "ACCOUNT_CREATED" | "PROFILE_UPDATED" | "PASSWORD_CHANGED" | "SESSIONS_REVOKED" | "PAT_CREATED" | "PAT_ROTATED" | "PAT_REVOKED" | "PAT_USED" | "EXCEL_UPLOADED" | "EXCEL_REPLACED" | "EXCEL_DELETED";
                 format?: "csv" | "json";
             };
             header?: never;
@@ -6379,6 +6514,182 @@ export interface operations {
             };
             /** @description Regla inexistente o de otro workspace. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ExcelSourcesController_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExcelFileResponseDto"][];
+                };
+            };
+        };
+    };
+    ExcelSourcesController_upload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description Libro .xlsx o archivo .csv. Sin límite de tamaño salvo EXCEL_MAX_UPLOAD_MB.
+                     */
+                    archivo: string;
+                    nombre?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Archivo recibido: se está procesando en segundo plano. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExcelFileResponseDto"];
+                };
+            };
+            /** @description Archivo ausente, vacío o con un formato no admitido. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description El archivo supera EXCEL_MAX_UPLOAD_MB (si está configurado). */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ExcelSourcesController_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExcelFileResponseDto"];
+                };
+            };
+            /** @description Archivo no encontrado en el workspace. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ExcelSourcesController_remove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    ExcelSourcesController_rename: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameExcelDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExcelFileResponseDto"];
+                };
+            };
+        };
+    };
+    ExcelSourcesController_replace: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Format: binary
+                     * @description Libro .xlsx o archivo .csv. Sin límite de tamaño salvo EXCEL_MAX_UPLOAD_MB.
+                     */
+                    archivo: string;
+                    nombre?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Se procesa en segundo plano; los datos anteriores siguen disponibles hasta que termine. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExcelFileResponseDto"];
+                };
+            };
+            /** @description El archivo todavía se está cargando. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

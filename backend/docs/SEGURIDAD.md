@@ -65,6 +65,11 @@ Con `EXTERNAL_DB_REQUIRE_TLS=true` (el valor por defecto con `NODE_ENV=productio
 | MongoDB | `mongodb+srv://`, o `tls=true` / `ssl=true` en la URI |
 | Firestore | Siempre usa TLS (gRPC sobre HTTPS) |
 
+**Proveedores con CA propia (Supabase, Aiven, RDS…).** El driver de PostgreSQL trata `sslmode=require` como `verify-full`: verifica el certificado del servidor contra las CA públicas de Node. Si el proveedor firma con su propia CA, la prueba falla con "Falló la negociación SSL/TLS". La solución no es desactivar la verificación: pega el PEM de la CA del proveedor en el campo **Certificado CA** de la conexión (credencial `caCertificate`, PostgreSQL y MySQL, solo con `ssl: true`).
+- La conexión sigue cifrada y el servidor se verifica contra esa CA (`rejectUnauthorized: true`).
+- El certificado se guarda cifrado junto con las demás credenciales. Los metadatos solo indican `certificadoCa: true`.
+- En Supabase se descarga en **Database → Settings → SSL Configuration → Download certificate**.
+
 Las conexiones ya guardadas siguen funcionando. La política se aplica al crearlas, editarlas o probarlas con credenciales nuevas. Si una base de demo no admite TLS, se puede desactivar explícitamente con `EXTERNAL_DB_REQUIRE_TLS=false`.
 
 ## 3. Revisión OWASP API Security Top 10 (2023)

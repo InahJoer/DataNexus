@@ -229,3 +229,19 @@
 @media (prefers-reduced-motion: reduce) {
   .qb-port { transition: none; }
 }
+
+/* Fuentes del editor: grupos Bases de datos / Excels */
+.qb-palette-group { display: flex; align-items: center; justify-content: space-between; margin: 12px 4px 4px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.qb-palette-group:first-of-type { margin-top: 4px; }
+.qb-palette-group .auth-link { font-size: 11px; letter-spacing: 0; text-transform: none; }
+.qb-sheet-id { margin-left: auto; padding: 1px 6px; overflow: hidden; color: var(--green-dark); border-radius: 999px; background: var(--green-pale); font-size: 9px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; max-width: 90px; }
+.qb-palette { grid-template-columns: minmax(0, 1fr); }
+.qb-palette .tree-item > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qb-palette .qb-sheet-id { flex: 0 1 auto; text-transform: none; }
+/* Campos fuera del resultado: se quitan antes de ejecutar y siguen disponibles para unir. */
+.qb-field-check { width: 13px; height: 13px; flex: 0 0 auto; margin: 0; accent-color: var(--green); cursor: pointer; }
+.qb-card li[data-excluded] .qb-field-name { color: var(--muted); text-decoration: line-through; }
+.qb-card li[data-excluded] .qb-type { opacity: .5; }
+.qb-card header > button.qb-fields-toggle { width: auto; min-width: 34px; height: 20px; padding: 0 6px; color: var(--green-dark); border-radius: 999px; background: var(--green-pale); font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.qb-card header > button.qb-fields-toggle[data-partial] { color: var(--warning); background: var(--warning-pale); }
+.qb-card header > button.qb-fields-toggle:hover { color: var(--ink); background: var(--line); }

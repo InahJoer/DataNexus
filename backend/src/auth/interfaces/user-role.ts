@@ -46,6 +46,8 @@ export const ROLE_PERMISSIONS = {
   RUN_SAVED_QUERIES: ['ADMIN', 'OPERADOR', 'LECTOR'],
   /** Editar celdas en registros de fuentes externas (issue #36). */
   MODIFY_RECORDS: ['ADMIN', 'OPERADOR'],
+  /** Subir, reemplazar, renombrar y eliminar archivos de Excel como fuente de datos. */
+  MANAGE_EXCEL: ['ADMIN', 'OPERADOR'],
   /** Recibir datos de negocio sin enmascarar. El resto de roles siempre recibe datos enmascarados. */
   VIEW_UNMASKED_DATA: ['ADMIN', 'OPERADOR'],
 } as const satisfies Record<string, readonly UserRole[]>;

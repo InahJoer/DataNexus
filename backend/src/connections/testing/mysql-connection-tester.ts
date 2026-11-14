@@ -5,6 +5,7 @@ import {
   type ConnectionPingResult,
   type ConnectionTester,
 } from './connection-tester.interface.js';
+import { mysqlSslOption } from '../credentials/tls-ca.js';
 
 interface VersionRow extends RowDataPacket {
   version: string;
@@ -31,7 +32,7 @@ export class MysqlConnectionTester implements ConnectionTester {
       password: decodeURIComponent(url.password),
       database: dbName,
       connectTimeout: timeoutMs,
-      ssl: url.searchParams.get('ssl') === 'true' ? {} : undefined,
+      ssl: mysqlSslOption(url),
     });
     this.connection.on('error', () => undefined);
 

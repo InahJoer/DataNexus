@@ -108,7 +108,8 @@ export function DataView({ target, subcollections, onOpen }: DataViewProps) {
   const call = useApiCall();
   const { session } = useAuth();
   const { connection, object } = target;
-  const canEdit = connection.tipoMotor !== 'FIRESTORE' && hasPermission(session?.user.role, 'MODIFY_RECORDS');
+  // Firestore y los archivos de Excel son de solo lectura en el explorador.
+  const canEdit = connection.tipoMotor !== 'FIRESTORE' && connection.tipoMotor !== 'EXCEL' && hasPermission(session?.user.role, 'MODIFY_RECORDS');
   const isSql = ENGINES[connection.tipoMotor].kind === 'sql';
 
   const [pageSize, setPageSize] = useState(50);
@@ -331,7 +332,7 @@ export function DataView({ target, subcollections, onOpen }: DataViewProps) {
           <span className="engine-badge" data-engine={connection.tipoMotor}>{ENGINES[connection.tipoMotor].short}</span>
           <div>
             <h2>{objectLabel(object)}</h2>
-            <p>{connection.nombre ?? connection.dbName} · {isGroup ? `todas las subcolecciones de ${object.name.split('/*/')[0]}` : object.type === 'COLLECTION' ? 'colección' : object.type === 'VIEW' ? 'vista' : 'tabla'}</p>
+            <p>{connection.nombre ?? connection.dbName} · {isGroup ? `todas las subcolecciones de ${object.name.split('/*/')[0]}` : object.type === 'COLLECTION' ? 'colección' : object.type === 'VIEW' ? 'vista' : connection.tipoMotor === 'EXCEL' ? 'hoja de Excel' : 'tabla'}</p>
           </div>
         </div>
         <div className="explorer-actions">

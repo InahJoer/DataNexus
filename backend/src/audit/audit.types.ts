@@ -45,6 +45,10 @@ export const AUDIT_EVENT_TYPES = [
   'PAT_ROTATED',
   'PAT_REVOKED',
   'PAT_USED',
+  /** Archivos de Excel como fuente de datos. */
+  'EXCEL_UPLOADED',
+  'EXCEL_REPLACED',
+  'EXCEL_DELETED',
 ] as const;
 
 export type AuditEventType = (typeof AUDIT_EVENT_TYPES)[number];
@@ -55,7 +59,7 @@ export interface AuditEventInput {
   actorUserId?: string;
   actorEmail?: string;
   workspaceId?: string;
-  targetType?: 'USER' | 'CONNECTION' | 'REPORT' | 'CROSS_JOIN' | 'AUDIT_LOG' | 'RECORD' | 'SESSION' | 'WORKSPACE' | 'INVITATION' | 'SAVED_QUERY' | 'SCHEDULED_REPORT' | 'PERSONAL_ACCESS_TOKEN';
+  targetType?: 'USER' | 'CONNECTION' | 'REPORT' | 'CROSS_JOIN' | 'AUDIT_LOG' | 'RECORD' | 'SESSION' | 'WORKSPACE' | 'INVITATION' | 'SAVED_QUERY' | 'SCHEDULED_REPORT' | 'PERSONAL_ACCESS_TOKEN' | 'EXCEL';
   targetId?: string;
   details?: Record<string, unknown>;
   ipAddress?: string;

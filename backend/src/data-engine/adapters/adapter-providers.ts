@@ -1,6 +1,7 @@
 import type { Provider } from '@nestjs/common';
 import { AdapterRegistry } from './adapter-registry.js';
 import { DATA_SOURCE_ADAPTERS, type IDataSourceAdapter } from './data-source-adapter.interface.js';
+import { ExcelAdapter } from './excel.adapter.js';
 import { FirestoreAdapter } from './firestore.adapter.js';
 import { MongoDbAdapter } from './mongodb.adapter.js';
 import { MysqlAdapter } from './mysql.adapter.js';
@@ -17,6 +18,7 @@ export const DATA_SOURCE_ADAPTER_CLASSES = [
   SqlServerAdapter,
   FirestoreAdapter,
   MongoDbAdapter,
+  ExcelAdapter,
 ];
 
 /** Proveedores del registro de adaptadores (requieren DataSourcePoolModule). */

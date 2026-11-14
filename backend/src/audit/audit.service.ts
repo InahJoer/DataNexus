@@ -401,6 +401,15 @@ export class AuditService {
       if (typeof details.usuario === 'string') safeDetails.usuario = details.usuario.slice(0, 254);
     }
 
+    if (eventType === 'EXCEL_UPLOADED' || eventType === 'EXCEL_REPLACED' || eventType === 'EXCEL_DELETED') {
+      for (const key of ['nombre', 'archivo']) {
+        if (typeof details[key] === 'string') safeDetails[key] = (details[key] as string).slice(0, 255);
+      }
+      for (const key of ['hojas', 'filas']) {
+        if (typeof details[key] === 'number' && Number.isFinite(details[key])) safeDetails[key] = details[key];
+      }
+    }
+
     if (eventType === 'BROWSE_DATA') {
       for (const key of ['entidad', 'esquema', 'tipoMotor', 'error']) {
         if (typeof details[key] === 'string') safeDetails[key] = (details[key] as string).slice(0, 300);

@@ -2,6 +2,9 @@ import type { TipoMotor } from '../../common/tipo-motor.js';
 import type { DataFilter, FilterNode } from '../filters/filter-tree.js';
 import type { DataPage, DataPageOptions } from '../pagination/keyset.js';
 
+/** Motores con adaptador: los de las conexiones y EXCEL (archivos subidos, que no son una ConexionDB). */
+export type AdapterEngine = TipoMotor | 'EXCEL';
+
 export type CatalogObjectType = 'TABLE' | 'VIEW' | 'COLLECTION';
 
 export interface CatalogObject {
@@ -25,6 +28,11 @@ export interface ExtractOptions {
   schema?: string;
   /** Filtros que el adaptador debe aplicar en el motor (ya validados; solo los que declara en canPushDown). */
   filters?: FilterNode[];
+  /**
+   * Semi-join: solo los registros cuyo campo (como texto recortado) está en la lista. Lo envía el motor de cruces a
+   * los adaptadores que declaran `supportsKeyIn`, con las llaves de la otra fuente ya extraída.
+   */
+  keyIn?: { field: string; values: string[] };
 }
 
 export type JsonScalar = string | number | boolean | null;
@@ -62,7 +70,7 @@ export interface DataSourceCapabilities {
  * los cierra por inactividad y los invalida al editar o eliminar la conexión.
  */
 export interface IDataSourceAdapter {
-  readonly tipoMotor: TipoMotor;
+  readonly tipoMotor: AdapterEngine;
   readonly capabilities: DataSourceCapabilities;
   listObjects(connection: DataSourceConnection): Promise<CatalogObject[]>;
   listFields(connection: DataSourceConnection, objectName: string, schema?: string): Promise<string[]>;
@@ -79,6 +87,8 @@ export interface IDataSourceAdapter {
   readPage?(connection: DataSourceConnection, entityName: string, options: DataPageOptions): Promise<DataPage>;
   /** Conditionally changes one cell. Adapters without this method remain read-only. */
   updateRecord?(connection: DataSourceConnection, input: UpdateRecordInput): Promise<UpdateRecordResult>;
+  /** Si el adaptador aplica `keyIn` (semi-join) en el motor. Sin declarar = no. */
+  readonly supportsKeyIn?: boolean;
   /** Si el motor puede ejecutar grupos AND/OR anidados. Sin declarar = sí. */
   readonly pushesFilterGroups?: boolean;
 }

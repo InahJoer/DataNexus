@@ -1,14 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { ENGINES, type Connection } from '@/components/connections/engines';
+import { ENGINES, type Connection, type DataSource } from '@/components/connections/engines';
 import { Icon } from '@/components/icons';
 import { apiErrorMessage, NETWORK_ERROR_MESSAGE } from '@/lib/api/errors';
 import { useApiCall } from '@/lib/api/use-api-call';
 import type { components } from '@/lib/api/schema';
 
 export type CatalogObject = components['schemas']['CatalogObjectResponseDto'];
-export type ExplorerTarget = Readonly<{ connection: Connection; object: CatalogObject }>;
+/** Tabla o colección abierta: de una conexión o una hoja de un archivo de Excel. */
+export type ExplorerTarget = Readonly<{ connection: DataSource; object: CatalogObject }>;
 
 type SchemaState = { state: 'loading' } | { state: 'error'; message: string } | { state: 'ready'; objects: CatalogObject[] };
 

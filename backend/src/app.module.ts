@@ -11,12 +11,14 @@ import { AuthModule } from './auth/auth.module.js';
 import { ConnectionsModule } from './connections/connections.module.js';
 import { UsersModule } from './users/users.module.js';
 import { DataEngineModule } from './data-engine/data-engine.module.js';
+import { ExcelSourcesModule } from './excel-sources/excel-sources.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { MailerModule } from './mailer/mailer.module.js';
 import { ReportsModule } from './reports/reports.module.js';
 import { WorkspacesModule } from './workspaces/workspaces.module.js';
 import { QueriesModule } from './queries/queries.module.js';
 import { UsageModule } from './usage/usage.module.js';
+import { MaintenanceModule } from './maintenance/maintenance.module.js';
 import { DashboardModule } from './dashboard/dashboard.module.js';
 import { HealthModule } from './health/health.module.js';
 import { hasNamedThrottle } from './common/named-throttle.js';
@@ -50,12 +52,14 @@ import { hasNamedThrottle } from './common/named-throttle.js';
     ConnectionsModule,
     UsersModule,
     DataEngineModule,
+    ExcelSourcesModule,
     AuditModule,
     MailerModule,
     ReportsModule,
     WorkspacesModule,
     QueriesModule,
     UsageModule,
+    MaintenanceModule,
     DashboardModule,
     HealthModule,
   ],

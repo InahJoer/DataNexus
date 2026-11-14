@@ -13,7 +13,17 @@ import {
   Min,
 } from 'class-validator';
 
+import { CA_CERTIFICATE_PATTERN, MAX_CA_CERTIFICATE_LENGTH } from './tls-ca.js';
+
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
+/** Texto vacío = sin certificado (al editar, quita el que hubiera). */
+const trimOrUndefined = ({ value }: { value: unknown }) => {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  return trimmed === '' ? undefined : `${trimmed}\n`;
+};
+
+const CA_DESCRIPTION = 'PEM de la CA del servidor (p. ej. Supabase). Requiere ssl; se verifica el servidor con esa CA';
 
 /** Nombre de host, IPv4 o IPv6 (sin esquema, ruta ni credenciales). */
 export const HOST_PATTERN =
@@ -56,14 +66,25 @@ abstract class SqlCredentialsBase {
   password: string;
 }
 
-export class PostgresCredentialsDto extends SqlCredentialsBase {
-  @ApiPropertyOptional({ default: false, description: 'Exigir TLS (sslmode=require)' })
+/** PostgreSQL y MySQL: TLS opcional y, si el proveedor usa su propia CA, su certificado. */
+abstract class TlsSqlCredentialsBase extends SqlCredentialsBase {
+  @ApiPropertyOptional({ maxLength: MAX_CA_CERTIFICATE_LENGTH, description: CA_DESCRIPTION })
+  @Transform(trimOrUndefined)
+  @IsOptional()
+  @Matches(CA_CERTIFICATE_PATTERN, { message: 'El certificado CA debe estar en formato PEM (-----BEGIN CERTIFICATE-----)' })
+  @MaxLength(MAX_CA_CERTIFICATE_LENGTH, { message: 'El certificado CA es demasiado largo' })
+  @IsString({ message: 'El certificado CA debe ser un texto' })
+  caCertificate?: string;
+}
+
+export class PostgresCredentialsDto extends TlsSqlCredentialsBase {
+  @ApiPropertyOptional({ default: false, description: 'Exigir TLS y verificar el certificado del servidor' })
   @IsOptional()
   @IsBoolean({ message: 'ssl debe ser verdadero o falso' })
   ssl?: boolean;
 }
 
-export class MysqlCredentialsDto extends SqlCredentialsBase {
+export class MysqlCredentialsDto extends TlsSqlCredentialsBase {
   @ApiPropertyOptional({ default: false, description: 'Conectar con TLS' })
   @IsOptional()
   @IsBoolean({ message: 'ssl debe ser verdadero o falso' })

@@ -10,6 +10,7 @@ import {
   SqlServerCredentialsDto,
 } from './credential-dtos.js';
 import { assertTlsPolicy } from './tls-policy.js';
+import { CA_URL_PARAM, encodeCaCertificate } from './tls-ca.js';
 
 /** Versión del formato cifrado. 1 = cadena de conexión libre (legado); 2 = JSON estructurado. */
 export const LEGACY_CREDENTIALS_VERSION = 1;
@@ -28,6 +29,8 @@ export interface SqlCredentials {
 }
 export interface PostgresCredentials extends SqlCredentials {
   ssl: boolean;
+  /** PEM de la CA del servidor (proveedores con CA propia, p. ej. Supabase). Solo con ssl. */
+  caCertificate?: string;
 }
 export type MysqlCredentials = PostgresCredentials;
 export interface SqlServerCredentials extends SqlCredentials {
@@ -158,6 +161,10 @@ export async function validateCredentials<T extends TipoMotor>(
   if (errors.length > 0) throw new BadRequestException(flattenErrors(errors));
 
   const credentials = buildCredentials(tipoMotor, dto as Record<string, unknown>);
+  const tls = credentials as Partial<PostgresCredentials>;
+  if (tls.caCertificate && !tls.ssl) {
+    throw new BadRequestException(['credenciales.caCertificate: activa SSL/TLS para usar un certificado CA']);
+  }
   assertTlsPolicy(tipoMotor, credentials);
   return credentials;
 }
@@ -173,6 +180,7 @@ function buildCredentials<T extends TipoMotor>(tipoMotor: T, input: Record<strin
         username: input.username as string,
         password: input.password as string,
         ssl: (input.ssl as boolean | undefined) ?? false,
+        ...(typeof input.caCertificate === 'string' ? { caCertificate: input.caCertificate } : {}),
       } as CredentialsByEngine[T];
     case 'SQLSERVER':
       return {
@@ -236,6 +244,7 @@ export function toDriverConnectionString(decrypted: string): string {
       url.password = encodeURIComponent(c.password);
       url.pathname = `/${encodeURIComponent(c.database)}`;
       if (c.ssl) url.searchParams.set(stored.tipoMotor === 'POSTGRESQL' ? 'sslmode' : 'ssl', stored.tipoMotor === 'POSTGRESQL' ? 'require' : 'true');
+      if (c.ssl && c.caCertificate) url.searchParams.set(CA_URL_PARAM, encodeCaCertificate(c.caCertificate));
       return url.toString();
     }
     case 'SQLSERVER': {
@@ -271,7 +280,11 @@ export function describeCredentials(tipoMotor: TipoMotor, credentials: Connectio
     case 'POSTGRESQL':
     case 'MYSQL': {
       const c = credentials as PostgresCredentials;
-      return { host: c.host, dbName: c.database, detalles: { puerto: c.port, usuario: c.username, ssl: c.ssl } };
+      return {
+        host: c.host,
+        dbName: c.database,
+        detalles: { puerto: c.port, usuario: c.username, ssl: c.ssl, ...(c.caCertificate ? { certificadoCa: true } : {}) },
+      };
     }
     case 'SQLSERVER': {
       const c = credentials as SqlServerCredentials;

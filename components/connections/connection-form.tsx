@@ -18,6 +18,7 @@ type Fields = {
   username: string;
   password: string;
   ssl: boolean;
+  caCertificate: string;
   uri: string;
   serviceAccount: string;
   databaseId: string;
@@ -26,7 +27,7 @@ type Fields = {
 type TestState = { state: 'idle' } | { state: 'running' } | { state: 'ok'; detail: string } | { state: 'error'; detail: string };
 type DatabaseList = { databaseIds: string[]; partial: boolean };
 
-const EMPTY: Fields = { nombre: '', host: '', port: '', database: '', username: '', password: '', ssl: false, uri: '', serviceAccount: '', databaseId: '' };
+const EMPTY: Fields = { nombre: '', host: '', port: '', database: '', username: '', password: '', ssl: false, caCertificate: '', uri: '', serviceAccount: '', databaseId: '' };
 
 function parseServiceAccount(text: string): Record<string, unknown> | null {
   try {
@@ -59,6 +60,8 @@ function buildCredentials(engine: Engine, fields: Fields): Credentials | string 
     username: fields.username.trim(),
     password: fields.password,
     ...(engine === 'SQLSERVER' ? { encrypt: fields.ssl } : { ssl: fields.ssl }),
+    // CA propia del proveedor (p. ej. Supabase): solo con SSL. Vacío = conservar el guardado al editar.
+    ...(engine !== 'SQLSERVER' && fields.ssl && fields.caCertificate.trim() ? { caCertificate: fields.caCertificate.trim() } : {}),
   };
 }
 
@@ -84,8 +87,9 @@ export function ConnectionForm({ connection, onClose, onSaved }: ConnectionFormP
   const [isSaving, setIsSaving] = useState(false);
   const kind = ENGINES[engine].kind;
   // Al editar, las credenciales son opcionales: si no se escriben, se conservan las guardadas.
-  const touchedCredentials = kind === 'sql' ? Boolean(fields.password || fields.username) : kind === 'mongo' ? Boolean(fields.uri) : Boolean(fields.serviceAccount);
+  const touchedCredentials = kind === 'sql' ? Boolean(fields.password || fields.username || fields.caCertificate) : kind === 'mongo' ? Boolean(fields.uri) : Boolean(fields.serviceAccount);
   const sendCredentials = !isEdit || touchedCredentials || engine !== connection?.tipoMotor;
+  const hasSavedCa = connection?.tipoMotor === engine && connection?.detalles?.certificadoCa === true;
   const needsDatabase = kind === 'firestore' && databases !== null && !databases.databaseIds.includes(fields.databaseId);
 
   const set = <K extends keyof Fields>(key: K, value: Fields[K]) => {
@@ -229,6 +233,23 @@ export function ConnectionForm({ connection, onClose, onSaved }: ConnectionFormP
               <input type="checkbox" checked={fields.ssl} onChange={(event) => set('ssl', event.target.checked)} />
               <span>{engine === 'SQLSERVER' ? 'Cifrar la conexión (encrypt)' : 'Usar SSL/TLS'}</span>
             </label>
+            {engine !== 'SQLSERVER' && fields.ssl && (
+              <label className="form-field form-field--wide">
+                <span>Certificado CA (opcional)</span>
+                <textarea
+                  className="form-input form-textarea"
+                  value={fields.caCertificate}
+                  onChange={(event) => set('caCertificate', event.target.value)}
+                  placeholder={'-----BEGIN CERTIFICATE-----\n…\n-----END CERTIFICATE-----'}
+                  spellCheck={false}
+                />
+                <small className="form-hint">
+                  {hasSavedCa
+                    ? 'Hay un certificado guardado: déjalo vacío para conservarlo.'
+                    : 'Solo si el proveedor firma sus servidores con su propia CA (Supabase, Aiven, RDS…). Pega el contenido del archivo .crt.'}
+                </small>
+              </label>
+            )}
           </>
         )}
         {kind === 'mongo' && (
