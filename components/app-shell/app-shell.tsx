@@ -20,6 +20,25 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
   const { session } = useAuth();
   const pathname = usePathname();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
+
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 901px)');
+    const sync = () => setIsDesktop(media.matches);
+    sync();
+    media.addEventListener('change', sync);
+    try { setIsCollapsed(window.localStorage.getItem('datanexus:sidebar:collapsed') === 'true'); } catch {}
+    return () => media.removeEventListener('change', sync);
+  }, []);
+
+  function toggleMenu() {
+    if (!isDesktop) { setIsMenuOpen((open) => !open); return; }
+    setIsCollapsed((collapsed) => {
+      try { window.localStorage.setItem('datanexus:sidebar:collapsed', String(!collapsed)); } catch {}
+      return !collapsed;
+    });
+  }
 
   // En móvil el menú es un panel: se cierra al navegar y con Escape.
   useEffect(() => setIsMenuOpen(false), [pathname]);
@@ -37,11 +56,11 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
 
   return (
     <WorkspaceProvider>
-      <div className="shell">
+      <div className="shell" data-collapsed={isCollapsed}>
         <AppSidebar id={SIDEBAR_ID} isOpen={isMenuOpen} onNavigate={() => setIsMenuOpen(false)} />
         {isMenuOpen && <div className="shell-backdrop" aria-hidden="true" onClick={() => setIsMenuOpen(false)} />}
         <div className="shell-main">
-          <AppTopbar sidebarId={SIDEBAR_ID} isMenuOpen={isMenuOpen} onToggleMenu={() => setIsMenuOpen((open) => !open)} />
+          <AppTopbar sidebarId={SIDEBAR_ID} isMenuOpen={isDesktop ? !isCollapsed : isMenuOpen} onToggleMenu={toggleMenu} />
           <main className="shell-content" id="contenido">
             {isAllowed ? (
               children

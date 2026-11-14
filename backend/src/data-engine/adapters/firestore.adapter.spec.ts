@@ -14,7 +14,8 @@ const mocks = vi.hoisted(() => ({
   pageCalls: [] as Array<[string, unknown]>,
 }));
 
-vi.mock('@google-cloud/firestore', () => ({
+vi.mock('@google-cloud/firestore', async (importOriginal) => ({
+  default: (await importOriginal<typeof import('@google-cloud/firestore')>()).default,
   Firestore: vi.fn(function (options: Record<string, unknown>) {
     mocks.options.push(options);
     return {
@@ -28,6 +29,7 @@ vi.mock('@google-cloud/firestore', () => ({
 }));
 
 import { FirestoreAdapter } from './firestore.adapter.js';
+import firestoreSdk from '@google-cloud/firestore';
 import { DataSourceClientPool } from '../pool/data-source-client-pool.js';
 
 const account = {
@@ -148,11 +150,22 @@ describe('FirestoreAdapter', () => {
     ]);
   });
 
-  it('no envía rangos de fechas al servidor: un Timestamp no se compara con texto ISO y se filtra en memoria', () => {
-    expect(adapter.canPushDown({ campo: 'createdAt', operador: 'between', valor: ['2026-01-01T00:00:00.000Z', '2026-01-31T23:59:59.999Z'] })).toBe(false);
-    expect(adapter.canPushDown({ campo: 'createdAt', operador: 'gte', valor: '2026-01-01' })).toBe(false);
+  it('permite enviar rangos de fechas a Firestore antes del límite de lectura', () => {
+    expect(adapter.canPushDown({ campo: 'createdAt', operador: 'between', valor: ['2026-01-01T00:00:00.000Z', '2026-01-31T23:59:59.999Z'] })).toBe(true);
+    expect(adapter.canPushDown({ campo: 'createdAt', operador: 'gte', valor: '2026-01-01' })).toBe(true);
     expect(adapter.canPushDown({ campo: 'total', operador: 'between', valor: [1, 2] })).toBe(true);
     expect(adapter.canPushDown({ campo: 'estado', operador: 'gte', valor: 'b' })).toBe(true);
+  });
+
+  it('filtra Timestamp y texto ISO en Firestore antes de limitar los documentos', async () => {
+    const valor = '2026-11-01';
+    await adapter.extract(connection, 'orders', { filters: [{ campo: 'createdAt', operador: 'gt', valor }] });
+    const { Filter, Timestamp } = firestoreSdk;
+    expect(mocks.filterCalls[0][0]).toEqual(Filter.or(
+      Filter.where('createdAt', '>', Timestamp.fromMillis(Date.parse('2026-11-01T00:00:00Z'))),
+      Filter.where('createdAt', '>', valor),
+    ));
+    expect(mocks.limit).toHaveBeenCalledWith(6);
   });
 
   it('traduce between a dos where e isNull a == / != null (issue #31)', async () => {

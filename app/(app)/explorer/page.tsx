@@ -87,6 +87,9 @@ export default function ExplorerPage() {
           </button>
         </div>
         <nav className="explorer-tabs-links" aria-label="Vistas de consultas">
+          {tab === 'excel' && excelTarget && (
+            <button className="row-action" type="button" onClick={() => setExcelTarget(null)}>Añadir o administrar Excel</button>
+          )}
           <Link className="auth-link" href="/queries">Combinar fuentes en el editor de consultas</Link>
         </nav>
       </div>
