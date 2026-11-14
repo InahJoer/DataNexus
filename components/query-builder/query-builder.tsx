@@ -620,6 +620,7 @@ export function QueryBuilder() {
               />
             )}
             <div className="qb-status">
+              <button type="button" className="row-action" onClick={() => setPanelTab('group')}>Crear métricas</button>
               <span className="status-pill" data-tone={payload ? 'ok' : 'muted'}><i />{status}</span>
               {suggestions.length > 0 && (
                 <button type="button" className="row-action qb-smart" onClick={() => chooseMode('table')} title="Ver por qué se sugieren">
@@ -629,15 +630,16 @@ export function QueryBuilder() {
               <button type="button" className="row-action" aria-pressed={showSql} onClick={() => setShowSql((value) => !value)}>{showSql ? 'Ocultar SQL' : 'Ver SQL equivalente'}</button>
             </div>
             {showSql && <pre className="json-view qb-sql" aria-label="SQL equivalente">{sql}</pre>}
+
+          </div>
+
+          <OutputPanel model={model} tab={panelTab} onTab={setPanelTab} selected={selectedSource} outputColumns={outputColumns} update={(recipe) => history.set(recipe)} />
             <section className="qb-preview" aria-label="Vista previa">
-              <header><strong>Vista previa</strong><span className="results-meta">{isPreviewing ? 'Actualizando…' : preview ? `${preview.total.toLocaleString('es')} filas en total · se muestran 10` : 'Aparece cuando todas las fuentes están unidas'}</span></header>
+              <header><strong>Vista previa</strong><span className="results-meta">{isPreviewing ? 'Actualizando…' : preview ? `${preview.total.toLocaleString('es')} filas en total · se muestran ${preview.rows.length}` : 'Aparece cuando todas las fuentes están unidas'}</span></header>
               {previewError && <p className="form-error">{previewError}</p>}
               {preview && preview.rows.length > 0 && <ResultsGrid rows={preview.rows} caption="Vista previa del cruce" />}
               {preview && preview.rows.length === 0 && <p className="panel-empty">El cruce no encuentra coincidencias. Revisa las llaves (y que tengan el mismo tipo) o usa LEFT para conservar filas.</p>}
             </section>
-          </div>
-
-          <OutputPanel model={model} tab={panelTab} onTab={setPanelTab} selected={selectedSource} outputColumns={outputColumns} update={(recipe) => history.set(recipe)} />
         </div>
       )}
 

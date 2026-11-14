@@ -65,7 +65,12 @@
 .shell-region { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
 .shell-icon-button { position: relative; display: grid; width: 34px; height: 34px; place-items: center; color: var(--muted); border: 1px solid var(--line); border-radius: 8px; background: var(--surface); cursor: pointer; transition: color 140ms ease-out, border-color 140ms ease-out; }
 .shell-icon-button:hover { color: var(--ink); border-color: var(--muted-dark); }
-.shell-icon-button.shell-menu-button { display: none; }
+.shell-icon-button.shell-menu-button { display: grid; }
+
+@media (min-width: 901px) {
+  .shell[data-collapsed="true"] { grid-template-columns: minmax(0, 1fr); }
+  .shell[data-collapsed="true"] .shell-sidebar { display: none; }
+}
 .shell-icon-button:focus-visible { outline: 2px solid var(--green); outline-offset: 1px; }
 .shell-notification-dot { position: absolute; top: 7px; right: 7px; width: 6px; height: 6px; border: 1px solid var(--surface); border-radius: 50%; background: var(--warning); }
 

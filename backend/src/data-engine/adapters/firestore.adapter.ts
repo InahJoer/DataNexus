@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException, PayloadTooLargeException } from '@nestjs/common';
-import { FieldPath, Firestore, Timestamp, type Query, type QueryDocumentSnapshot, type WhereFilterOp } from '@google-cloud/firestore';
+import firestoreSdk, { FieldPath, Firestore, Timestamp, type Query, type QueryDocumentSnapshot, type WhereFilterOp } from '@google-cloud/firestore';
 import { toDataPage, type DataPage, type DataPageOptions } from '../pagination/keyset.js';
 import { DataSourceClientPool } from '../pool/data-source-client-pool.js';
 import {
@@ -11,6 +11,7 @@ import {
 import {
   assertValidFilters,
   isDateRangeFilter,
+  parseIsoDate,
   isFilterGroup,
   matchesFilters,
   type DataFilter,
@@ -81,8 +82,6 @@ export class FirestoreAdapter implements IDataSourceAdapter {
   constructor(private readonly clients: DataSourceClientPool) {}
 
   canPushDown(filter: DataFilter): boolean {
-    // Un rango de fechas no se envía: en Firestore un Timestamp no se compara con un texto ISO.
-    if (isDateRangeFilter(filter)) return false;
     return filter.operador in WHERE_FILTER_OPERATORS || filter.operador === 'between' || filter.operador === 'isNull';
   }
 
@@ -144,7 +143,7 @@ export class FirestoreAdapter implements IDataSourceAdapter {
         for await (const document of stream as AsyncIterable<QueryDocumentSnapshot>) {
           if (!this.belongs(document, entity)) continue;
           if (rows.length >= maxRows) {
-            throw new PayloadTooLargeException(`La colección supera el máximo de ${maxRows} documentos configurado`);
+            throw new PayloadTooLargeException(`La fuente supera el máximo de ${maxRows} documentos por consulta. Reduce el rango de fechas o agrega condiciones en Fuente antes de ejecutar el cruce.`);
           }
           const row = this.toRow(document, entity);
           // Misma semántica que SQL: Firestore incluye los null en != y not-in; aquí se descartan.
@@ -330,6 +329,16 @@ export class FirestoreAdapter implements IDataSourceAdapter {
   }
 
   private applyFilter(query: Query, filter: DataFilter): Query {
+    if (isDateRangeFilter(filter)) {
+      const { Filter, Timestamp: FirestoreTimestamp } = firestoreSdk;
+      const values = filter.operador === 'between' ? filter.valor as string[] : [filter.valor as string];
+      const timestamps = values.map((value) => FirestoreTimestamp.fromMillis(parseIsoDate(value)!));
+      const range = (bounds: unknown[]) => filter.operador === 'between'
+        ? Filter.and(Filter.where(filter.campo, '>=', bounds[0]), Filter.where(filter.campo, '<=', bounds[1]))
+        : Filter.where(filter.campo, WHERE_FILTER_OPERATORS[filter.operador]!, bounds[0]);
+      // Firestore compara por tipo. Incluye fechas Timestamp y textos ISO existentes.
+      return query.where(Filter.or(range(timestamps), range(values)));
+    }
     if (filter.operador === 'isNull') return query.where(filter.campo, filter.valor ? '==' : '!=', null);
     if (filter.operador === 'between') {
       const [min, max] = filter.valor as [string | number, string | number];

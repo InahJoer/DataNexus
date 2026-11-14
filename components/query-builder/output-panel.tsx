@@ -55,7 +55,7 @@ export function OutputPanel({ model, tab, onTab, selected, outputColumns, update
   return (
     <aside className="qb-panel" aria-label="Configuración de la consulta">
       <div className="segmented qb-panel-tabs" role="tablist">
-        {([['source', 'Fuente'], ['columns', 'Columnas'], ['group', 'Agrupar'], ['sort', 'Orden']] as const).filter(([value]) => !hideSourceTab || value !== 'source').map(([value, label]) => (
+        {([['source', 'Fuente'], ['columns', 'Columnas'], ['group', 'Métricas'], ['sort', 'Orden']] as const).filter(([value]) => !hideSourceTab || value !== 'source').map(([value, label]) => (
           <button key={value} type="button" role="tab" aria-selected={tab === value} aria-pressed={tab === value} onClick={() => onTab(value)}>{label}</button>
         ))}
       </div>
@@ -131,6 +131,7 @@ export function OutputPanel({ model, tab, onTab, selected, outputColumns, update
 
       {tab === 'group' && (
         <section className="qb-section">
+          <p className="field-help">Crea conteos, sumas, promedios, mínimos y máximos sobre las filas filtradas del cruce. Deja la agrupación vacía para calcular un total general.</p>
           <strong>Agrupar por</strong>
           <div className="qb-chips">
             {model.groupBy.map((field) => <span key={field} className="filter-chip">{field}<button type="button" aria-label={`Quitar ${field}`} onClick={() => update((current) => ({ ...current, groupBy: current.groupBy.filter((item) => item !== field) }))}><Icon name="close" size={11} /></button></span>)}

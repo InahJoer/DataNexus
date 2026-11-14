@@ -2,6 +2,8 @@
    coinciden con CARD_HEADER y FIELD_HEIGHT de model.ts; si cambian aquí, cambian allá (las líneas de unión dependen de ellas). */
 
 .qb { display: grid; gap: 12px; min-width: 0; }
+.qb-workspace > .qb-preview { grid-column: 1 / -1; min-width: 0; }
+.qb-workspace > .qb-preview .results-scroll { max-height: 600px; }
 
 .qb-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .qb-toolbar .segmented button[aria-pressed="true"] { color: var(--green-dark); }
