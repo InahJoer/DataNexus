@@ -22,6 +22,12 @@ export interface SendMailResult {
   rejected: string[];
 }
 
+export class SmtpNotConfiguredError extends Error {
+  constructor() {
+    super('SMTP no está configurado para el envío de reportes');
+  }
+}
+
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
@@ -40,6 +46,7 @@ export class MailService {
         host,
         port,
         secure: port === 465,
+        requireTLS: port !== 465,
         auth: { user, pass },
       });
       this.logger.log(`Transporter SMTP configurado hacia ${host}:${port}`);
@@ -77,13 +84,11 @@ export class MailService {
 
   async sendReportEmail(options: SendMailOptions): Promise<SendMailResult> {
     if (!this.hasSmtp && this.configService.get<string>('NODE_ENV') === 'production') {
-      throw new Error('SMTP no está configurado para el envío de reportes');
+      throw new SmtpNotConfiguredError();
     }
     const from =
       this.configService.get<string>('MAIL_FROM') ?? 'DataNexus <no-reply@datanexus.io>';
-    const recipients = Array.isArray(options.to) ? options.to.join(', ') : options.to;
-
-    this.logger.log(`Enviando reporte por correo a: ${recipients} | Asunto: ${options.subject}`);
+    const recipients = Array.isArray(options.to) ? options.to : [options.to];
 
     const mailOptions = {
       from,
@@ -109,7 +114,7 @@ export class MailService {
 
     return {
       messageId: info.messageId,
-      accepted: (info.accepted as string[]) ?? [recipients],
+      accepted: (info.accepted as string[]) ?? recipients,
       rejected: (info.rejected as string[]) ?? [],
     };
   }

@@ -9,7 +9,7 @@ import type { LocalReportDownload, ReportStorageAdapter } from './storage/report
 import { REPORT_STORAGE_ADAPTER } from './storage/report-storage.interface.js';
 import { DataEngineService } from '../data-engine/data-engine.service.js';
 import type { ExportFormat } from '../data-engine/dto/cross-join.dto.js';
-import { MailService } from '../mailer/mail.service.js';
+import { MailService, SmtpNotConfiguredError } from '../mailer/mail.service.js';
 import { renderReportEmail } from './templates/report-email.template.js';
 import { AuditService } from '../audit/audit.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -20,6 +20,7 @@ import { REPORT_CONTENT_TYPES_BY_EXTENSION } from './storage/report-storage.inte
 import {
   RetriesExhaustedError,
   getReportRetryPolicy,
+  isRetryableReportError,
   retryWithBackoff,
   type RetryPolicy,
 } from './report-retry.js';
@@ -71,14 +72,32 @@ class DeliveryFailedError extends Error {
     readonly attempts: number,
     override readonly cause: unknown,
   ) {
-    super(SAFE_REPORT_ERRORS.delivery);
+    super(deliveryFailureMessage(cause));
   }
 }
 
 class EmailRejectedError extends Error {
-  constructor() {
+  constructor(readonly partiallyAccepted: boolean) {
     super('No se pudo entregar el reporte a todos los destinatarios');
   }
+}
+
+function deliveryFailureMessage(error: unknown): string {
+  const prefix = 'El reporte se generó, pero';
+  if (error instanceof SmtpNotConfiguredError) return `${prefix} falta configurar SMTP.`;
+  if (error instanceof EmailRejectedError) return `${prefix} el servidor SMTP rechazó uno o más destinatarios.`;
+  if (error && typeof error === 'object') {
+    if ('code' in error && error.code === 'EAUTH') return `${prefix} falló la autenticación SMTP.`;
+    if ('responseCode' in error && typeof error.responseCode === 'number' && error.responseCode >= 500) {
+      return `${prefix} el servidor SMTP rechazó el mensaje. Revisa el remitente y los destinatarios.`;
+    }
+  }
+  return SAFE_REPORT_ERRORS.delivery;
+}
+
+function canRetryDelivery(error: unknown): boolean {
+  if (error instanceof EmailRejectedError) return !error.partiallyAccepted;
+  return deliveryFailureMessage(error) === SAFE_REPORT_ERRORS.delivery && isRetryableReportError(error);
 }
 
 @Injectable()
@@ -158,7 +177,7 @@ export class ReportsService {
             leaseExpiresAt: null,
             durationMs: finishedAt.getTime() - execution.startedAt.getTime(),
             attempts,
-            error: error instanceof DeliveryFailedError ? SAFE_REPORT_ERRORS.delivery : SAFE_REPORT_ERRORS.generation,
+            error: error instanceof DeliveryFailedError ? error.message : SAFE_REPORT_ERRORS.generation,
           },
         })
         .catch(() => this.logger.error(`No se pudo registrar el fallo de la ejecución ${execution.id}`));
@@ -253,12 +272,13 @@ export class ReportsService {
               html: email.html,
             });
             if (emailResult.rejected.length > 0 || emailResult.accepted.length === 0) {
-              throw new EmailRejectedError();
+              throw new EmailRejectedError(emailResult.accepted.length > 0);
             }
             return emailResult;
           },
           {
             policy: options.emailRetryPolicy ?? this.retryPolicy(),
+            isRetryable: canRetryDelivery,
             onRetry: (nextAttempt) =>
               this.logger.warn(`Reintentando el envío del reporte '${dto.reportTitle}' (intento ${nextAttempt})`),
             sleep: this.sleep,
@@ -273,7 +293,7 @@ export class ReportsService {
         if (!options.keepFileWhenEmailFails) {
           throw new DeliveryFailedError(exhausted.attempts, exhausted.lastError);
         }
-        deliveryError = SAFE_REPORT_ERRORS.delivery;
+        deliveryError = deliveryFailureMessage(exhausted.lastError);
         this.logger.error(`No se pudo enviar el reporte '${dto.reportTitle}' tras ${exhausted.attempts} intento(s)`);
       }
     }
