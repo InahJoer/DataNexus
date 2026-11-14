@@ -300,6 +300,9 @@ jobs:
     needs: publish-images
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ENABLE_RAILWAY_CD == 'true' }}
     runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://datanexus-frontend-production.up.railway.app/login
     env:
       RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       RAILWAY_FRONTEND_SERVICE_ID: ${{ secrets.RAILWAY_FRONTEND_SERVICE_ID }}
